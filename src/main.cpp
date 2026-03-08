@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 
-std::string configLocation = "./config.yml";
+std::string configLocation = "config.yml";
 std::atomic<bool> running = true;
 
 void signalHandler(int signal) { running = false; }
@@ -33,14 +33,16 @@ class Config {
   Config(std::string path) {
     try {
       config = YAML::LoadFile(path);
+
+      serialPort = config["serial_port"].as<std::string>("");
+      baudRate = config["baud_rate"].as<int>(115200);
+      randomOrSeq = config["random_or_sequential"].as<bool>(false);
+      usePishock = config["use_pishock"].as<bool>(true);
     } catch (YAML::BadFile fileNotFound) {
       fmt::print("Config file missing.\n");
+    } catch (std::exception& e) {
+      fmt::print("Config parse error: {}\n", e.what());
     }
-
-    serialPort = config["serial_port"].as<std::string>("");
-    baudRate = config["baud_rate"].as<int>(115200);
-    randomOrSeq = config["random_or_sequential"].as<bool>(false);
-    usePishock = config["use_pishock"].as<bool>(true);
 
     for (auto id : config["shocker_ids"]) {
       ShockerIDs.push_back(id.as<int>());
@@ -92,18 +94,19 @@ class ShockerHub {
     } else if (usePishock) {
       for (int i = 1; i <= 50; i++) {
         serialPort = "COM" + std::to_string(i);
+        fmt::print("port: {}\n", serialPort);
         if (serial.openDevice(serialPort.c_str(), baudRate) == 1) {
           bool found = false;
           serial.writeString("{\"cmd\": \"info\"}\n");
 
           for (int attempt = 0; attempt < 40; attempt++) {
-            char buf[64] = {0};
-            serial.readString(buf, '\n', 64, 1000);
+            char buf[1024] = {0};
+            serial.readString(buf, '\n', 1024, 1000);
             std::string response(buf);
+            fmt::print("response: {}\n", response);
             if (response.starts_with("TERMINALINFO: ")) {
               if (response.find("pishock") != std::string::npos) {
                 found = true;
-
                 if (shockerIDs.empty()) {
                   std::string json_str =
                       response.substr(14);  // Remove "TERMINALINFO: ", 14 chars
@@ -228,12 +231,25 @@ class ShockerHub {
     }
   }
 
+  void listShockers() {
+    std::string ids;
+    for (size_t i = 0; i < shockerIDs.size(); ++i) {
+      if (i > 0) ids += ", ";
+      ids += shockerIDs[i];
+    }
+    fmt::print("Shockers found: {}\n", ids);
+  }
+
   void sendShock(int durationMs, int strength, std::string shockerID) {
     std::string command;
     if (usePishock) {
-      command = "{\"cmd\":\"operate\",\"id\":" + shockerID +
-                ",\"op\":1,\"duration\":" + std::to_string(durationMs) +
-                ",\"intensity\":" + std::to_string(strength) + "}\n";
+      nlohmann::json payload = {{"cmd", "operate"},
+                                {"value",
+                                 {{"id", std::stoi(shockerID)},
+                                  {"op", "shock"},
+                                  {"duration", durationMs},
+                                  {"intensity", strength}}}};
+      command = payload.dump() + "\n";
     } else {
       command =
           "rftransmit {\"model\":\"caixianlin\",\"id\":" + shockerID +
@@ -267,10 +283,11 @@ int main() {
 
   fmt::print("Attempting to connect\n");
   shockerHub.connectSerial();
+  shockerHub.listShockers();
 
   // Keep app running until CTRL + C
   while (running) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     if (shockerHub.hasSerial()) {
       shockerHub.queueShock(500, 20);
     }
