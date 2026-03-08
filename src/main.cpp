@@ -27,7 +27,7 @@ class Config {
   std::string serialPort;
   int baudRate;
   bool randomOrSeq;
-  std::vector<int> ShockerIDs;
+  std::vector<std::string> ShockerIDs;
   bool usePishock;
 
   Config(std::string path) {
@@ -45,20 +45,16 @@ class Config {
     }
 
     for (auto id : config["shocker_ids"]) {
-      ShockerIDs.push_back(id.as<int>());
+      ShockerIDs.push_back(std::to_string(id.as<int>()));
     }
   }
+
+  void pushShockerId(std::string id) { ShockerIDs.push_back(id); }
 };
 
 class ShockerHub {
  private:
   Config& config;
-
-  std::string serialPort;
-  int baudRate;
-  bool randomOrSeq;
-  std::vector<std::string> shockerIDs;
-  bool usePishock;
 
   int lastShockerIndex = -1;
 
@@ -69,21 +65,14 @@ class ShockerHub {
   std::atomic<bool> stopWorker = false;
 
  public:
-  ShockerHub(Config& cfg) : config(cfg) {
-    this->baudRate = config.baudRate;
-    this->serialPort = config.serialPort;
-    this->randomOrSeq = config.randomOrSeq;
-    for (int id : config.ShockerIDs) {
-      this->shockerIDs.push_back(std::to_string(id));
-    }
-    this->usePishock = config.usePishock;
-  }
+  ShockerHub(Config& cfg) : config(cfg) {}
 
   bool hasSerial() { return serial.isDeviceOpen(); }
 
   bool connectSerial() {
-    if (serialPort != "") {
-      if (serial.openDevice(serialPort.c_str(), baudRate) != 1) {
+    std::string serialPort = config.serialPort;
+    if (config.serialPort != "") {
+      if (serial.openDevice(config.serialPort.c_str(), config.baudRate) != 1) {
         fmt::print("Connected\n");
         return false;
       }
@@ -91,11 +80,12 @@ class ShockerHub {
         workerThread = std::thread(&ShockerHub::workerLoop, this);
       }
       return 1;
-    } else if (usePishock) {
+    } else if (config.usePishock) {
       for (int i = 1; i <= 50; i++) {
-        serialPort = "COM" + std::to_string(i);
-        fmt::print("port: {}\n", serialPort);
-        if (serial.openDevice(serialPort.c_str(), baudRate) == 1) {
+        config.serialPort = "COM" + std::to_string(i);
+        fmt::print("port: {}\n", config.serialPort);
+        if (serial.openDevice(config.serialPort.c_str(), config.baudRate) ==
+            1) {
           bool found = false;
           serial.writeString("{\"cmd\": \"info\"}\n");
 
@@ -103,17 +93,16 @@ class ShockerHub {
             char buf[1024] = {0};
             serial.readString(buf, '\n', 1024, 1000);
             std::string response(buf);
-            fmt::print("response: {}\n", response);
             if (response.starts_with("TERMINALINFO: ")) {
               if (response.find("pishock") != std::string::npos) {
                 found = true;
-                if (shockerIDs.empty()) {
+                if (config.ShockerIDs.empty()) {
                   std::string json_str =
                       response.substr(14);  // Remove "TERMINALINFO: ", 14 chars
                   auto json = nlohmann::json::parse(json_str, nullptr, false);
                   if (!json.is_discarded() && json.contains("shockers")) {
                     for (auto& s : json["shockers"]) {
-                      shockerIDs.push_back(std::to_string(s["id"].get<int>()));
+                      config.pushShockerId(std::to_string(s["id"].get<int>()));
                     }
                   }
                 }
@@ -142,8 +131,9 @@ class ShockerHub {
       return reconnect_serial();
     } else {
       for (int i = 1; i <= 50; i++) {
-        serialPort = "COM" + std::to_string(i);
-        if (serial.openDevice(serialPort.c_str(), baudRate) == 1) {
+        config.serialPort = "COM" + std::to_string(i);
+        if (serial.openDevice(config.serialPort.c_str(), config.baudRate) ==
+            1) {
           bool found = false;
           serial.writeString("domain\n");
 
@@ -191,13 +181,12 @@ class ShockerHub {
   bool reconnect_serial() {
     while (true) {
       serial.closeDevice();
-      serialPort = config.serialPort;  // Reset port to default value
       if (connectSerial()) {
         return true;
       } else {
         fmt::print(
-            "Reconnect failed, all shocks have been dropped.\npress any key to "
-            "retry...\n");
+            "Reconnect failed, all shocks have been dropped.\n"
+            "Press any key to retry...\n");
         emptyQueue();
         system("pause");
       }
@@ -216,7 +205,8 @@ class ShockerHub {
 
         // False for random, True for sequential
         std::string chosenShocker;
-        if (randomOrSeq) {
+        std::vector<std::string> shockerIDs = config.ShockerIDs;
+        if (config.randomOrSeq) {
           int index = rand() % shockerIDs.size();
           chosenShocker = shockerIDs[index];
         } else {
@@ -231,18 +221,29 @@ class ShockerHub {
     }
   }
 
-  void listShockers() {
-    std::string ids;
-    for (size_t i = 0; i < shockerIDs.size(); ++i) {
-      if (i > 0) ids += ", ";
-      ids += shockerIDs[i];
+  bool listShockers() {
+    int sizeShockerIDs = config.ShockerIDs.size();
+    if (sizeShockerIDs == 0) {
+      fmt::print(
+          "No shockers configured and none found automatically.\n"
+          "Please set them up in config.yml\n"
+          "The program will now exit...\n");
+      system("pause");
+      return false;
+    } else {
+      std::string ids;
+      for (size_t i = 0; i < sizeShockerIDs; ++i) {
+        if (i > 0) ids += ", ";
+        ids += config.ShockerIDs[i];
+      }
+      fmt::print("Shockers found: {}\n", ids);
+      return true;
     }
-    fmt::print("Shockers found: {}\n", ids);
   }
 
   void sendShock(int durationMs, int strength, std::string shockerID) {
     std::string command;
-    if (usePishock) {
+    if (config.usePishock) {
       nlohmann::json payload = {{"cmd", "operate"},
                                 {"value",
                                  {{"id", std::stoi(shockerID)},
@@ -251,10 +252,12 @@ class ShockerHub {
                                   {"intensity", strength}}}};
       command = payload.dump() + "\n";
     } else {
-      command =
-          "rftransmit {\"model\":\"caixianlin\",\"id\":" + shockerID +
-          ",\"type\":\"shock\",\"intensity\":" + std::to_string(strength) +
-          ",\"durationMs\":" + std::to_string(durationMs) + "}\n";
+      nlohmann::json payload = {{"model", "caixianlin"},
+                                {"id", std::stoi(shockerID)},
+                                {"type", "shock"},
+                                {"intensity", strength},
+                                {"durationMs", durationMs}};
+      command = "rftransmit " + payload.dump() + "\n";
     }
     int result = serial.writeString(command.c_str());
     if (result <= 0) {
@@ -283,7 +286,10 @@ int main() {
 
   fmt::print("Attempting to connect\n");
   shockerHub.connectSerial();
-  shockerHub.listShockers();
+  if (!shockerHub.listShockers()) {
+    shockerHub.shutdown();
+    return 0;
+  }
 
   // Keep app running until CTRL + C
   while (running) {
