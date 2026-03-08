@@ -19,3 +19,4 @@ cmake_install.cmake
 
 # External libs (we'll handle these with CMake, not git)
 external/
+VRhat-Shocker-Link (C++).code-workspace
