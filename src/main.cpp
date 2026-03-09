@@ -595,16 +595,10 @@ class OscQueryServer {
   }
 
   void onOscMessage(const std::string& path, float value) {
-    // Skip if the value hasn't changed (Windows loopback can send duplicate
-    // packets)
+    // Skip if the value hasn't changed (Prevent duplicate packets)
     auto it = lastValues_.find(path);
     if (it != lastValues_.end() && it->second == value) return;
     lastValues_[path] = value;
-
-    // Log everything except leash params (too spammy)
-    if (path.find("Leash") == std::string::npos) {
-      fmt::print("[OSC] {} = {}\n", path, value);
-    }
 
     if (path == shockPath_ && value > 0.0f) {
       onShock_(value);
