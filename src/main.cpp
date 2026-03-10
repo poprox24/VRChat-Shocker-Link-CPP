@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -28,23 +29,34 @@
 #include "mdns_advertiser.h"
 
 std::string configLocation = "config.yml";
+std::string settingsLocation = "settings.json";
 std::atomic<bool> running = true;
 
 void signalHandler(int signal) { running = false; }
 
+struct Preset {
+  std::string name;
+  float minShockDuration;
+  float maxShockDuration;
+};
+
 class Config {
  public:
-  std::string serialPort;
-  int baudRate;
-  bool randomOrSeq;
-  std::vector<std::string> ShockerIDs;
+  // Serial Config
+  std::string shockParameter;
+  std::string secondShockParameter;
   bool usePishock;
-  int oscPort;
-  std::string oscPath;
+  std::vector<std::string> ShockerIDs;
+  bool randomOrSeq;
+  std::string serialPort;
+
   int shockStrength;
-  std::string serviceName;
-  int minShockDuration;
-  int maxShockDuration;
+
+  int presetCount;
+
+  static const int baudRate = 115200;
+  static const int oscPort = 39570;
+  static constexpr std::string_view serviceName = "ShockerLink";
 
   Config(std::string path) {
     YAML::Node config;
@@ -59,28 +71,93 @@ class Config {
       return;
     }
 
-    serialPort = config["serial_port"].as<std::string>("");
-    baudRate = config["baud_rate"].as<int>(115200);
-    randomOrSeq = config["random_or_sequential"].as<bool>(false);
-    usePishock = config["use_pishock"].as<bool>(true);
-    oscPort = config["osc_port"].as<int>(39570);
-    oscPath = config["osc_path"].as<std::string>("/avatar/parameters/Shock");
-    shockStrength = config["shock_strength"].as<int>(20);
-    serviceName = "ShockerLink";
-    minShockDuration = config["min_shock_duration"].as<int>(1);
-    maxShockDuration = config["max_shock_duration"].as<int>(2);
-
-    for (auto id : config["shocker_ids"]) {
+    // Serial Config
+    shockParameter = "/avatar/parameters/" +
+                     config["SHOCK_PARAMETER"].as<std::string>("Shock");
+    secondShockParameter = "/avatar/parameters/" +
+                           config["SECOND_SHOCK_PARAMETER"].as<std::string>("");
+    usePishock = config["USE_PISHOCK"].as<bool>(true);
+    for (auto id : config["SHOCKER_IDS"]) {
       ShockerIDs.push_back(std::to_string(id.as<int>()));
     }
+    randomOrSeq = config["RANDOM_OR_SEQUENTIAL"].as<bool>(false);
+    serialPort = config["SERIAL_PORT"].as<std::string>("");
+
+    // Style Config
+    presetCount = config["PRESET_COUNT"].as<int>(3);
+
+    shockStrength = 20;
   }
 
   void pushShockerId(std::string id) { ShockerIDs.push_back(id); }
 };
 
+class Settings {
+ private:
+  Config& config;
+
+ public:
+  int minShockDuration;
+  int maxShockDuration;
+  int defaultPreset;
+
+  std::vector<std::optional<Preset>> presets;
+
+  Settings(std::string path, Config& cfg)
+      : config(cfg),
+        presets(config.presetCount),
+        minShockDuration(1),
+        maxShockDuration(2),
+        defaultPreset(-1) {
+    try {
+      std::ifstream file(path);
+      if (file.is_open()) {
+        nlohmann::json j = nlohmann::json::parse(file);
+        int i = 0;
+        for (auto& item : j["presets"]) {
+          if (i >= (int)presets.size()) break;
+          if (item.is_null()) {
+            presets[i] = std::nullopt;
+          } else {
+            presets[i] = Preset{item["name"].get<std::string>(),
+                                item["minShockDuration"].get<float>(),
+                                item["maxShockDuration"].get<float>()};
+          }
+          i++;
+        }
+        defaultPreset = j.value("defaultPreset", -1);
+        if (defaultPreset >= 0 && defaultPreset < (int)presets.size() &&
+            presets[defaultPreset].has_value()) {
+          minShockDuration = presets[defaultPreset]->minShockDuration;
+          maxShockDuration = presets[defaultPreset]->maxShockDuration;
+        }
+      }
+    } catch (std::exception& e) {
+      fmt::print("Settings parse error: {}\n", e.what());
+    }
+  }
+
+  void save(std::string path) {
+    nlohmann::json j;
+    j["defaultPreset"] = defaultPreset;
+    j["presets"] = nlohmann::json::array();
+    for (auto& p : presets) {
+      if (p.has_value()) {
+        j["presets"].push_back({{"name", p->name},
+                                {"minShockDuration", p->minShockDuration},
+                                {"maxShockDuration", p->maxShockDuration}});
+      } else {
+        j["presets"].push_back(nullptr);
+      }
+    }
+    std::ofstream file(path);
+    file << j.dump(2);
+  }
+};
+
 class ShockerHub {
  public:
-  ShockerHub(Config& cfg) : config(cfg) {}
+  ShockerHub(Config& cfg, Settings& set) : config(cfg), settings(set) {}
 
   bool connectSerial() {
     if (config.serialPort != "") {
@@ -152,6 +229,7 @@ class ShockerHub {
 
  private:
   Config& config;
+  Settings& settings;
   int lastShockerIndex = -1;
   serialib serial;
 
@@ -163,7 +241,6 @@ class ShockerHub {
   bool scanForPishock() {
     for (int i = 1; i <= 50; i++) {
       config.serialPort = "COM" + std::to_string(i);
-      fmt::print("Trying {}\n", config.serialPort);
 
       bool opened =
           serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
@@ -275,11 +352,11 @@ class ShockerHub {
         }
 
         if (durationMs == -1) {
-          durationMs =
-              (int)((config.minShockDuration +
-                     (float)rand() / RAND_MAX *
-                         (config.maxShockDuration - config.minShockDuration)) *
-                    1000);
+          durationMs = (int)((settings.minShockDuration +
+                              (float)rand() / RAND_MAX *
+                                  (settings.maxShockDuration -
+                                   settings.minShockDuration)) *
+                             1000);
         }
 
         sendShock(durationMs, strength, chosenShocker);
@@ -590,7 +667,8 @@ class OscQueryServer {
 
 int main() {
   Config config(configLocation);
-  ShockerHub shockerHub(config);
+  Settings settings(settingsLocation, config);
+  ShockerHub shockerHub(config, settings);
 
   std::signal(SIGINT, signalHandler);
 
@@ -601,8 +679,8 @@ int main() {
     return 0;
   }
 
-  OscQueryServer oscQuery(config.oscPort, config.serviceName);
-  oscQuery.setShockPath(config.oscPath);
+  OscQueryServer oscQuery(config.oscPort, std::string(config.serviceName));
+  oscQuery.setShockPath(config.shockParameter);
 
   if (!oscQuery.start()) {
     fmt::print("Failed to start OSCQuery server\n");
@@ -620,6 +698,8 @@ int main() {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+
+  settings.save(settingsLocation);
 
   fmt::print("Shutting down...\n");
   oscQuery.stop();
