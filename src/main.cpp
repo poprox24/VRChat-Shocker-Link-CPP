@@ -27,17 +27,11 @@
 #include "httplib.h"
 #include "mdns_advertiser.h"
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 std::string configLocation = "config.yml";
 std::atomic<bool> running = true;
 
 void signalHandler(int signal) { running = false; }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Config
-// Loads settings from config.yml into easy-to-use public fields
-// ─────────────────────────────────────────────────────────────────────────────
 class Config {
  public:
   std::string serialPort;
@@ -84,16 +78,11 @@ class Config {
   void pushShockerId(std::string id) { ShockerIDs.push_back(id); }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ShockerHub
-// Handles serial connection to PiShock/OpenShock and sends shock commands
-// ─────────────────────────────────────────────────────────────────────────────
 class ShockerHub {
  public:
   ShockerHub(Config& cfg) : config(cfg) {}
 
   bool connectSerial() {
-    // If serial_port is set in config, connect directly instead of scanning
     if (config.serialPort != "") {
       bool opened =
           serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
@@ -105,7 +94,6 @@ class ShockerHub {
       return true;
     }
 
-    // No port set, scan COM1-COM50 to find the device
     if (config.usePishock) {
       return scanForPishock();
     } else {
@@ -113,7 +101,6 @@ class ShockerHub {
     }
   }
 
-  // Add a shock to the queue — the worker thread will send it
   void queueShock(int strength, int duration = -1) {
     std::lock_guard<std::mutex> lock(queueMutex);
     shockQueue.push({duration, strength});
@@ -136,7 +123,6 @@ class ShockerHub {
     }
   }
 
-  // Print detected shockers and return false if there are none
   bool listShockers() {
     if (config.ShockerIDs.empty()) {
       fmt::print(
@@ -194,7 +180,6 @@ class ShockerHub {
         if (response.starts_with("TERMINALINFO: ") &&
             response.find("pishock") != std::string::npos) {
           found = true;
-          // If no shockers are set in config, parse them from the response
           if (config.ShockerIDs.empty()) {
             std::string jsonStr =
                 response.substr(14);  // strip "TERMINALINFO: "
@@ -265,7 +250,6 @@ class ShockerHub {
     }
   }
 
-  // Runs on a background thread, pulls shocks from the queue and sends them
   void workerLoop() {
     // Set seed for random
     srand((unsigned)std::chrono::high_resolution_clock::now()
@@ -339,14 +323,8 @@ class ShockerHub {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OscListener
-// Listens for OSC UDP packets and calls a callback with the path and value
-// ─────────────────────────────────────────────────────────────────────────────
 class OscListener {
  public:
-  // "Callback" is just a shorthand for: a function that takes a path string and
-  // a float
   using Callback = std::function<void(const std::string& path, float value)>;
 
   OscListener(int port, Callback callback) : port_(port), callback_(callback) {}
@@ -516,16 +494,8 @@ class OscListener {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OscQueryServer:
-//    HTTP server
-//    OSC listener
-//    mDNS advertiser
-// ─────────────────────────────────────────────────────────────────────────────
 class OscQueryServer {
  public:
-  // Set to true by the OSC listener when the shock parameter fires.
-  // Main loop reads this and decides what to do with it.
   std::atomic<bool> shockPending = false;
 
   OscQueryServer(int oscPort, std::string serviceName)
@@ -583,19 +553,15 @@ class OscQueryServer {
   std::unordered_map<std::string, float> lastValues_;
 
   void handleHttpRequest(const httplib::Request& req, httplib::Response& res) {
-    // VRChat queries HOST_INFO as a query parameter: /?HOST_INFO
     bool isHostInfo = req.params.find("HOST_INFO") != req.params.end() ||
                       req.target.find("HOST_INFO") != std::string::npos;
 
     if (isHostInfo) {
-      // Tell VRChat our name and which UDP port to send OSC to
       nlohmann::json response = {{"NAME", serviceName_},
                                  {"OSC_PORT", oscPort_}};
       res.set_content(response.dump(), "application/json");
 
     } else {
-      // Return our parameter tree so VRChat knows we want to receive
-      // /avatar/parameters/Shock
       std::string paramName = shockPath_.substr(shockPath_.rfind('/') + 1);
       nlohmann::json response = {
           {"FULL_PATH", "/"},
@@ -612,19 +578,16 @@ class OscQueryServer {
   }
 
   void onOscMessage(const std::string& path, float value) {
-    // Skip if the value hasn't changed (Prevent duplicate packets)
     auto it = lastValues_.find(path);
     if (it != lastValues_.end() && it->second == value) return;
     lastValues_[path] = value;
 
-    // Just set the flag — main loop handles the rest
     if (path == shockPath_ && value > 0.0f) {
       shockPending = true;
     }
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 int main() {
   Config config(configLocation);
   ShockerHub shockerHub(config);
