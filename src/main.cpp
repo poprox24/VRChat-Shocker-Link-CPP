@@ -12,10 +12,12 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <queue>
 #include <string>
 #include <thread>
@@ -45,9 +47,10 @@ class Config {
   bool usePishock;
   int oscPort;
   std::string oscPath;
-  int shockDuration;
   int shockStrength;
   std::string serviceName;
+  int minShockDuration;
+  int maxShockDuration;
 
   Config(std::string path) {
     YAML::Node config;
@@ -68,9 +71,10 @@ class Config {
     usePishock = config["use_pishock"].as<bool>(true);
     oscPort = config["osc_port"].as<int>(39570);
     oscPath = config["osc_path"].as<std::string>("/avatar/parameters/Shock");
-    shockDuration = config["shock_duration"].as<int>(500);
     shockStrength = config["shock_strength"].as<int>(20);
     serviceName = "ShockerLink";
+    minShockDuration = config["min_shock_duration"].as<int>(1);
+    maxShockDuration = config["max_shock_duration"].as<int>(2);
 
     for (auto id : config["shocker_ids"]) {
       ShockerIDs.push_back(std::to_string(id.as<int>()));
@@ -110,13 +114,13 @@ class ShockerHub {
   }
 
   // Add a shock to the queue — the worker thread will send it
-  void queueShock(int durationMs, int strength) {
+  void queueShock(int strength, int duration = -1) {
     std::lock_guard<std::mutex> lock(queueMutex);
-    shockQueue.push({durationMs, strength});
+    shockQueue.push({duration, strength});
   }
 
   void emptyQueue() {
-    std::queue<std::pair<int, int>> emptyQ;
+    decltype(shockQueue) emptyQ;
     shockQueue.swap(emptyQ);
   }
 
@@ -165,7 +169,7 @@ class ShockerHub {
   int lastShockerIndex = -1;
   serialib serial;
 
-  std::queue<std::pair<int, int>> shockQueue;
+  std::queue<std::pair<std::optional<int>, int>> shockQueue;
   std::mutex queueMutex;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
@@ -263,11 +267,15 @@ class ShockerHub {
 
   // Runs on a background thread, pulls shocks from the queue and sends them
   void workerLoop() {
+    // Set seed for random
+    srand((unsigned)std::chrono::high_resolution_clock::now()
+              .time_since_epoch()
+              .count());
     while (!stopWorker) {
       std::unique_lock<std::mutex> lock(queueMutex);
 
       if (!shockQueue.empty()) {
-        int durationMs = shockQueue.front().first;
+        int durationMs = shockQueue.front().first.value_or(-1);
         int strength = shockQueue.front().second;
         shockQueue.pop();
         lock.unlock();
@@ -280,6 +288,14 @@ class ShockerHub {
         } else {
           lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
           chosenShocker = ids[lastShockerIndex];
+        }
+
+        if (durationMs == -1) {
+          durationMs =
+              (int)((config.minShockDuration +
+                     (float)rand() / RAND_MAX *
+                         (config.maxShockDuration - config.minShockDuration)) *
+                    1000);
         }
 
         sendShock(durationMs, strength, chosenShocker);
@@ -314,12 +330,12 @@ class ShockerHub {
     if (result <= 0) {
       fmt::print("Serial write failed, reconnecting...\n");
       reconnectSerial();
-      queueShock(durationMs, strength);
+      queueShock(strength, durationMs);
       return;
     }
 
     fmt::print("Sent shock: {}%, {}s\n", strength,
-               round(durationMs / 100) / 10);
+               round(durationMs / 100.0f) / 10.0f);
   }
 };
 
@@ -508,11 +524,13 @@ class OscListener {
 // ─────────────────────────────────────────────────────────────────────────────
 class OscQueryServer {
  public:
-  OscQueryServer(int oscPort, std::string serviceName,
-                 std::function<void(float)> onShock)
+  // Set to true by the OSC listener when the shock parameter fires.
+  // Main loop reads this and decides what to do with it.
+  std::atomic<bool> shockPending = false;
+
+  OscQueryServer(int oscPort, std::string serviceName)
       : oscPort_(oscPort),
         serviceName_(serviceName),
-        onShock_(onShock),
         oscListener_(oscPort, [this](const std::string& path, float value) {
           onOscMessage(path, value);
         }) {}
@@ -555,7 +573,6 @@ class OscQueryServer {
   int httpPort_ = -1;
   std::string serviceName_;
   std::string shockPath_ = "/avatar/parameters/Shock";
-  std::function<void(float)> onShock_;
 
   httplib::Server httpServer_;
   std::thread httpThread_;
@@ -600,8 +617,9 @@ class OscQueryServer {
     if (it != lastValues_.end() && it->second == value) return;
     lastValues_[path] = value;
 
+    // Just set the flag — main loop handles the rest
     if (path == shockPath_ && value > 0.0f) {
-      onShock_(value);
+      shockPending = true;
     }
   }
 };
@@ -620,9 +638,7 @@ int main() {
     return 0;
   }
 
-  OscQueryServer oscQuery(config.oscPort, config.serviceName, [&](float value) {
-    shockerHub.queueShock(config.shockDuration, config.shockStrength);
-  });
+  OscQueryServer oscQuery(config.oscPort, config.serviceName);
   oscQuery.setShockPath(config.oscPath);
 
   if (!oscQuery.start()) {
@@ -631,9 +647,15 @@ int main() {
     return 1;
   }
 
+  shockerHub.queueShock(config.shockStrength);
+
   fmt::print("Running. Ctrl+C to quit.\n");
   while (running) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (oscQuery.shockPending) {
+      oscQuery.shockPending = false;
+      shockerHub.queueShock(config.shockStrength);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   fmt::print("Shutting down...\n");
