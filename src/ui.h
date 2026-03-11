@@ -2,6 +2,7 @@
 
 #include <commdlg.h>
 #include <d3d11.h>
+#include <dwmapi.h>
 #include <dxgi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -268,23 +269,32 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
 // UI entry point
 inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
                    const std::string& settingsPath) {
+  HICON hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(1));
   WNDCLASSEXW wc{sizeof(wc),
                  CS_CLASSDC,
                  WndProc,
                  0,
                  0,
                  GetModuleHandle(nullptr),
+                 hIcon,
                  nullptr,
                  nullptr,
                  nullptr,
-                 nullptr,
-                 L"ShockerLink",
-                 nullptr};
+                 L"Shocker Link",
+                 hIcon};
   ImGui_ImplWin32_EnableDpiAwareness();
   RegisterClassExW(&wc);
+
   g_hwnd =
       CreateWindowW(wc.lpszClassName, L"ShockerLink", WS_OVERLAPPEDWINDOW, 100,
                     100, 750, 520, nullptr, nullptr, wc.hInstance, nullptr);
+
+  BOOL dark = TRUE;
+  DwmSetWindowAttribute(g_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark,
+                        sizeof(dark));
+
+  SendMessage(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+  SendMessage(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
 
   if (!InitD3D(g_hwnd)) return;
 

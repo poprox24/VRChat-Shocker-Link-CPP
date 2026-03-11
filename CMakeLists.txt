@@ -52,6 +52,7 @@ FetchContent_MakeAvailable(implot)
 
 add_executable(ShockerLink WIN32
     src/main.cpp
+    src/resource.rc
     lib/serialib.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -75,6 +76,7 @@ target_link_libraries(ShockerLink PUBLIC
     d3dcompiler
     comdlg32
     shell32
+    dwmapi
 )
 
 target_include_directories(ShockerLink PRIVATE
