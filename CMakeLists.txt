@@ -50,7 +50,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(implot)
 
-add_executable(ShockerLink
+add_executable(ShockerLink WIN32
     src/main.cpp
     lib/serialib.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp

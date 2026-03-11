@@ -183,24 +183,78 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
   }
 
   // --- Import config.yml ---
-  // --- Import config.yml ---
   try {
     std::string srcYml = folder + "config.yml";
     std::ifstream src(srcYml);
     if (src.is_open()) {
+      // Keys to drop entirely
+      static const std::vector<std::string> dropKeys = {
+          "OSC_LISTEN_PORT",
+          "OSC_SEND_PORT",
+          "test",
+          "OPENSHOCK_SHOCKER_ID",  // handled separately below
+      };
+
+      std::string openshockId, pishockId;
+      std::vector<std::string> lines;
+      std::string line;
+
+      // First pass: collect lines + extract both ID values
+      while (std::getline(src, line)) {
+        auto keyOf = [&](const std::string& key) {
+          return line.find(key + ":") == 0;
+        };
+        if (keyOf("OPENSHOCK_SHOCKER_ID")) {
+          openshockId = line.substr(line.find(':') + 1);
+          continue;  // don't emit yet
+        }
+        if (keyOf("PISHOCK_SHOCKER_ID")) {
+          pishockId = line.substr(line.find(':') + 1);
+          continue;  // don't emit yet
+        }
+        bool drop = false;
+        for (auto& k : dropKeys)
+          if (keyOf(k)) {
+            drop = true;
+            break;
+          }
+        if (!drop) lines.push_back(line);
+      }
+
+      // Resolve shocker ID: pishock wins if present
+      std::string resolvedId = pishockId.empty() ? openshockId : pishockId;
+      // Strip leading whitespace
+      auto start = resolvedId.find_first_not_of(" \t");
+      if (start != std::string::npos) resolvedId = resolvedId.substr(start);
+      // Strip inline comment
+      auto comment = resolvedId.find('#');
+      if (comment != std::string::npos)
+        resolvedId = resolvedId.substr(0, comment);
+      // Strip trailing whitespace
+      auto end = resolvedId.find_last_not_of(" \t");
+      if (end != std::string::npos) resolvedId = resolvedId.substr(0, end + 1);
+
       std::ofstream dst("config.yml");
-      dst << src.rdbuf();
-      logMsg("Imported config.yml, restarting in 5s...");
+      for (auto& l : lines) {
+        dst << l << '\n';
+        // Emit SHOCKER_IDS right after SERIAL_PORT line (keeps logical
+        // grouping)
+        if (l.find("SERIAL_PORT:") == 0)
+          dst << "SHOCKER_IDS: [" << resolvedId
+              << "] # Shocker IDs, if you have multiple, split by comma (eg.: "
+                 "[12345, 23456]), PiShock should find them "
+                 "automatically(OpenShock doesn't save them on the hub)\n";
+      }
       dst.close();
+      logMsg("Imported config.yml, restarting in 5s...");
 
       char exePath[MAX_PATH] = {};
       GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-
       std::thread([exePath]() {
         std::this_thread::sleep_for(std::chrono::seconds(5));
         ShellExecuteA(nullptr, "open", exePath, nullptr, nullptr,
                       SW_SHOWNORMAL);
-        PostQuitMessage(0);
+        PostMessage(g_hwnd, WM_QUIT, 0, 0);
       }).detach();
     } else {
       logMsg("config.yml not found in selected folder, skipping");
