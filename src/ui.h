@@ -3,6 +3,8 @@
 #include <commdlg.h>
 #include <d3d11.h>
 #include <dxgi.h>
+#include <shellapi.h>
+#include <shlobj.h>
 #include <windows.h>
 
 #include <array>
@@ -109,76 +111,106 @@ static bool SaveButton(const char* id) {
 inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
                                float& minDur, float& maxDur,
                                const std::string& settingsPath) {
-  char filePath[MAX_PATH] = {};
-  OPENFILENAMEA ofn{};
-  ofn.lStructSize = sizeof(ofn);
-  ofn.hwndOwner = g_hwnd;
-  ofn.lpstrFilter = "JSON Files\0*.json\0All Files\0*.*\0";
-  ofn.lpstrFile = filePath;
-  ofn.nMaxFile = MAX_PATH;
-  ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-  ofn.lpstrTitle = "Import Python curve_config.json";
-  if (!GetOpenFileNameA(&ofn)) return false;
+  // Folder picker
+  char folderPath[MAX_PATH] = {};
+  BROWSEINFOA bi{};
+  bi.hwndOwner = g_hwnd;
+  bi.pszDisplayName = folderPath;
+  bi.lpszTitle = "Select your Python ShockerLink folder";
+  bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+  LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
+  if (!pidl) return false;
+  SHGetPathFromIDListA(pidl, folderPath);
+  CoTaskMemFree(pidl);
 
+  std::string folder = std::string(folderPath) + "\\";
+
+  // --- Import curve_config.json ---
   try {
-    std::ifstream f(filePath);
-    nlohmann::json j = nlohmann::json::parse(f);
+    std::ifstream f(folder + "curve_config.json");
+    if (f.is_open()) {
+      nlohmann::json j = nlohmann::json::parse(f);
 
-    // Curve points
-    if (j.contains("curve_points") && j["curve_points"].size() == 3) {
-      for (int i = 0; i < 3; i++)
-        hub.curvePoints[i] = {j["curve_points"][i][0].get<double>(),
-                              j["curve_points"][i][1].get<double>()};
-    }
+      if (j.contains("curve_points") && j["curve_points"].size() == 3)
+        for (int i = 0; i < 3; i++)
+          hub.curvePoints[i] = {j["curve_points"][i][0].get<double>(),
+                                j["curve_points"][i][1].get<double>()};
 
-    // Durations
-    if (j.contains("min_duration"))
-      minDur = settings.minShockDuration = j["min_duration"].get<float>();
-    if (j.contains("max_duration"))
-      maxDur = settings.maxShockDuration = j["max_duration"].get<float>();
+      if (j.contains("min_duration"))
+        minDur = settings.minShockDuration = j["min_duration"].get<float>();
+      if (j.contains("max_duration"))
+        maxDur = settings.maxShockDuration = j["max_duration"].get<float>();
 
-    // Presets
-    auto& rawPresets = j["presets"];
-    const nlohmann::json names =
-        j.contains("preset_names") ? j["preset_names"] : nlohmann::json{};
-    for (int i = 0;
-         i < (int)settings.presets.size() && i < (int)rawPresets.size(); i++) {
-      auto& rp = rawPresets[i];
-      if (rp.is_null()) {
-        settings.presets[i] = std::nullopt;
-        continue;
+      auto& rawPresets = j["presets"];
+      const nlohmann::json names =
+          j.contains("preset_names") ? j["preset_names"] : nlohmann::json{};
+      for (int i = 0;
+           i < (int)settings.presets.size() && i < (int)rawPresets.size();
+           i++) {
+        auto& rp = rawPresets[i];
+        if (rp.is_null()) {
+          settings.presets[i] = std::nullopt;
+          continue;
+        }
+        Preset p;
+        p.name = (names.is_array() && i < (int)names.size())
+                     ? names[i].get<std::string>()
+                     : ("Preset " + std::to_string(i + 1));
+        p.minShockDuration = rp.value("min_duration", 1.0f);
+        p.maxShockDuration = rp.value("max_duration", 2.0f);
+        if (rp.contains("curve_points") && rp["curve_points"].size() == 3)
+          for (int k = 0; k < 3; k++)
+            p.curvePoints[k] = {rp["curve_points"][k][0].get<double>(),
+                                rp["curve_points"][k][1].get<double>()};
+        settings.presets[i] = p;
       }
-      Preset p;
-      p.name = (names.is_array() && i < (int)names.size())
-                   ? names[i].get<std::string>()
-                   : ("Preset " + std::to_string(i + 1));
-      p.minShockDuration = rp.value("min_duration", 1.0f);
-      p.maxShockDuration = rp.value("max_duration", 2.0f);
-      if (rp.contains("curve_points") && rp["curve_points"].size() == 3)
-        for (int k = 0; k < 3; k++)
-          p.curvePoints[k] = {rp["curve_points"][k][0].get<double>(),
-                              rp["curve_points"][k][1].get<double>()};
-      settings.presets[i] = p;
-    }
 
-    settings.defaultPreset = j.value("default_preset", -1);
-    // Apply default preset to live state if valid
-    if (settings.defaultPreset >= 0 &&
-        settings.defaultPreset < (int)settings.presets.size() &&
-        settings.presets[settings.defaultPreset].has_value()) {
-      auto& dp = settings.presets[settings.defaultPreset];
-      minDur = settings.minShockDuration = dp->minShockDuration;
-      maxDur = settings.maxShockDuration = dp->maxShockDuration;
-      hub.curvePoints = dp->curvePoints;
+      settings.defaultPreset = j.value("default_preset", -1);
+      if (settings.defaultPreset >= 0 &&
+          settings.defaultPreset < (int)settings.presets.size() &&
+          settings.presets[settings.defaultPreset].has_value()) {
+        auto& dp = settings.presets[settings.defaultPreset];
+        minDur = settings.minShockDuration = dp->minShockDuration;
+        maxDur = settings.maxShockDuration = dp->maxShockDuration;
+        hub.curvePoints = dp->curvePoints;
+      }
+      logMsg("Imported curve_config.json");
+    } else {
+      logMsg("curve_config.json not found in selected folder, skipping");
     }
-
-    settings.save(settingsPath);
-    logMsg("Imported Python config from {}", filePath);
-    return true;
   } catch (std::exception& e) {
-    logMsg("Import failed: {}", e.what());
-    return false;
+    logMsg("curve_config.json import failed: {}", e.what());
   }
+
+  // --- Import config.yml ---
+  // --- Import config.yml ---
+  try {
+    std::string srcYml = folder + "config.yml";
+    std::ifstream src(srcYml);
+    if (src.is_open()) {
+      std::ofstream dst("config.yml");
+      dst << src.rdbuf();
+      logMsg("Imported config.yml, restarting in 5s...");
+      dst.close();
+
+      char exePath[MAX_PATH] = {};
+      GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+
+      std::thread([exePath]() {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        ShellExecuteA(nullptr, "open", exePath, nullptr, nullptr,
+                      SW_SHOWNORMAL);
+        PostQuitMessage(0);
+      }).detach();
+    } else {
+      logMsg("config.yml not found in selected folder, skipping");
+    }
+  } catch (std::exception& e) {
+    logMsg("config.yml import failed: {}", e.what());
+  }
+
+  settings.save(settingsPath);
+  return true;
 }
 
 // UI entry point
