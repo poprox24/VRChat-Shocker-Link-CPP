@@ -1,24 +1,30 @@
 #pragma once
 
-#include <fmt/base.h>
 #include <serialib.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <limits>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <queue>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "config.h"
+#include "curve.h"
+#include "logger.h"
 #include "settings.h"
 
 class ShockerHub {
  public:
+  std::array<CurvePoint, 3> curvePoints = {
+      {{20.0, 0.8}, {50.0, 0.5}, {80.0, 0.2}}};
+
   ShockerHub(Config& cfg, Settings& set) : config(cfg), settings(set) {}
 
   bool connectSerial() {
@@ -26,7 +32,7 @@ class ShockerHub {
       bool opened =
           serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
       if (!opened) {
-        fmt::print("Could not open port {}\n", config.serialPort);
+        logMsg("Could not open port {}\n", config.serialPort);
         return false;
       }
       startWorkerThread();
@@ -54,7 +60,7 @@ class ShockerHub {
     while (true) {
       serial.closeDevice();
       if (connectSerial()) return true;
-      fmt::print(
+      logMsg(
           "Reconnect failed, all queued shocks dropped.\nPress any key to "
           "retry...\n");
       emptyQueue();
@@ -64,7 +70,7 @@ class ShockerHub {
 
   bool listShockers() {
     if (config.ShockerIDs.empty()) {
-      fmt::print(
+      logMsg(
           "No shockers configured and none found automatically.\n"
           "Please set them up in config.yml\n"
           "The program will now exit...\n");
@@ -77,7 +83,7 @@ class ShockerHub {
       if (i > 0) ids += ", ";
       ids += config.ShockerIDs[i];
     }
-    fmt::print("Shockers found: {}\n", ids);
+    logMsg("Shockers found: {}\n", ids);
     return true;
   }
 
@@ -142,7 +148,7 @@ class ShockerHub {
       serial.closeDevice();
     }
 
-    fmt::print(
+    logMsg(
         "Couldn't connect to PiShock HUB, check connection and press any key "
         "to retry...\n");
     system("pause");
@@ -177,7 +183,7 @@ class ShockerHub {
       serial.closeDevice();
     }
 
-    fmt::print(
+    logMsg(
         "Couldn't connect to OpenShock HUB, check connection and press any key "
         "to retry...\n");
     system("pause");
@@ -186,7 +192,7 @@ class ShockerHub {
 
   void startWorkerThread() {
     if (!workerThread.joinable()) {
-      fmt::print("Connected\n");
+      logMsg("Connected\n");
       workerThread = std::thread([this]() { workerLoop(); });
     }
   }
@@ -198,10 +204,9 @@ class ShockerHub {
   }
 
   void workerLoop() {
-    // Set seed for random
-    srand((unsigned)std::chrono::high_resolution_clock::now()
-              .time_since_epoch()
-              .count());
+    std::mt19937 rng((unsigned)std::chrono::high_resolution_clock::now()
+                         .time_since_epoch()
+                         .count());
     while (!stopWorker) {
       std::unique_lock<std::mutex> lock(queueMutex);
 
@@ -224,8 +229,8 @@ class ShockerHub {
 
           // Check if still on cooldown
           if (now - lastTriggerTime <= dynamicCooldown) {
-            fmt::print("On cooldown: {:.1f}s\n",
-                       lastTriggerTime - now + dynamicCooldown);
+            logMsg("On cooldown: {:.1f}s\n",
+                   lastTriggerTime - now + dynamicCooldown);
             shockQueue.pop();
             lock.unlock();
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -241,21 +246,22 @@ class ShockerHub {
         std::string chosenShocker;
         std::vector<std::string>& ids = config.ShockerIDs;
         if (config.randomOrSeq) {
-          chosenShocker = ids[rand() % ids.size()];
+          std::uniform_int_distribution<int> idxDist(0, (int)ids.size() - 1);
+          chosenShocker = ids[idxDist(rng)];
         } else {
           lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
           chosenShocker = ids[lastShockerIndex];
         }
 
         if (durationMs == -1) {
-          durationMs = (int)((settings.minShockDuration +
-                              (float)rand() / RAND_MAX *
-                                  (settings.maxShockDuration -
-                                   settings.minShockDuration)) *
-                             1000);
+          std::uniform_real_distribution<float> durDist(
+              settings.minShockDuration,
+              std::nextafter(settings.maxShockDuration,
+                             std::numeric_limits<float>::infinity()));
+          durationMs = std::max(100, (int)(durDist(rng) * 1000));
         }
 
-        sendShock(durationMs, strength, chosenShocker);
+        sendShock(durationMs, sampleIntensity(curvePoints), chosenShocker);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         continue;
       }
@@ -285,7 +291,7 @@ class ShockerHub {
 
     int result = serial.writeString(command.c_str());
     if (result <= 0) {
-      fmt::print("Serial write failed, reconnecting...\n");
+      logMsg("Serial write failed, reconnecting...\n");
       reconnectSerial();
       queueShock(strength, durationMs);
       return;
@@ -294,6 +300,6 @@ class ShockerHub {
     shockTimestamps.push_back(getCurrentTime());
     lastTriggerTime = getCurrentTime();
 
-    fmt::print("Sent shock: {}%, {:.1f}s\n", strength, (durationMs / 1000.0f));
+    logMsg("Sent shock: {}%, {:.1f}s\n", strength, (durationMs / 1000.0f));
   }
 };

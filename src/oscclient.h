@@ -1,9 +1,5 @@
 #pragma once
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <fmt/base.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
@@ -47,7 +43,7 @@ class OscListener {
 
     running_ = true;
     thread_ = std::thread([this]() { loop(); });
-    fmt::print("[OSC] Listening on UDP port {}\n", port_);
+    logMsg("[OSC] Listening on UDP port {}\n", port_);
     return true;
   }
 
@@ -211,15 +207,15 @@ class OscQueryServer {
 
     httpPort_ = httpServer_.bind_to_any_port("127.0.0.1");
     if (httpPort_ < 0) {
-      fmt::print("[OSCQuery] Failed to bind HTTP server\n");
+      logMsg("[OSCQuery] Failed to bind HTTP server\n");
       return false;
     }
-    fmt::print("[OSCQuery] HTTP server on port {}\n", httpPort_);
+    logMsg("[OSCQuery] HTTP server on port {}\n", httpPort_);
 
     httpThread_ = std::thread([this]() { httpServer_.listen_after_bind(); });
 
     if (!oscListener_.start()) {
-      fmt::print("[OSCQuery] Failed to start OSC listener\n");
+      logMsg("[OSCQuery] Failed to start OSC listener\n");
       return false;
     }
 

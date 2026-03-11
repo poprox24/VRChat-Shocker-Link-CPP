@@ -2,7 +2,6 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <fmt/base.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
@@ -12,6 +11,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "logger.h"
 
 class MdnsAdvertiser {
  public:
@@ -62,7 +63,7 @@ class MdnsAdvertiser {
 
     running_ = true;
     listenerThread_ = std::thread(&MdnsAdvertiser::listenerLoop, this);
-    fmt::print("[mDNS] Advertising {} on port {}\n", serviceName_, httpPort_);
+    logMsg("[mDNS] Advertising {} on port {}\n", serviceName_, httpPort_);
     return true;
   }
 

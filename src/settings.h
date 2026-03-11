@@ -1,18 +1,20 @@
 #pragma once
 
-#include <fmt/base.h>
-
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
 #include "config.h"
+#include "curve.h"
+#include "logger.h"
 
 struct Preset {
   std::string name;
   float minShockDuration;
   float maxShockDuration;
+  std::array<CurvePoint, 3> curvePoints = {
+      {{20.0, 0.8}, {50.0, 0.5}, {80.0, 0.2}}};
 };
 
 class Settings {
@@ -20,8 +22,8 @@ class Settings {
   Config& config;
 
  public:
-  int minShockDuration;
-  int maxShockDuration;
+  float minShockDuration;
+  float maxShockDuration;
   int defaultPreset;
 
   std::vector<std::optional<Preset>> presets;
@@ -45,6 +47,14 @@ class Settings {
             presets[i] = Preset{item["name"].get<std::string>(),
                                 item["minShockDuration"].get<float>(),
                                 item["maxShockDuration"].get<float>()};
+            if (item.contains("curvePoints") &&
+                item["curvePoints"].size() == 3) {
+              for (int k = 0; k < 3; k++) {
+                presets[i]->curvePoints[k] = {
+                    item["curvePoints"][k]["x"].get<double>(),
+                    item["curvePoints"][k]["y"].get<double>()};
+              }
+            }
           }
           i++;
         }
@@ -56,7 +66,7 @@ class Settings {
         }
       }
     } catch (std::exception& e) {
-      fmt::print("Settings parse error: {}\n", e.what());
+      logMsg("Settings parse error: {}\n", e.what());
     }
   }
 
@@ -66,14 +76,19 @@ class Settings {
     j["presets"] = nlohmann::json::array();
     for (auto& p : presets) {
       if (p.has_value()) {
+        nlohmann::json pts = nlohmann::json::array();
+        for (auto& cp : p->curvePoints)
+          pts.push_back({{"x", cp.x}, {"y", cp.y}});
         j["presets"].push_back({{"name", p->name},
                                 {"minShockDuration", p->minShockDuration},
-                                {"maxShockDuration", p->maxShockDuration}});
+                                {"maxShockDuration", p->maxShockDuration},
+                                {"curvePoints", pts}});
       } else {
         j["presets"].push_back(nullptr);
       }
     }
     std::ofstream file(path);
     file << j.dump(2);
+    logMsg("Preset updated");
   }
 };
