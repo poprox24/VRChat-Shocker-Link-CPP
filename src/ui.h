@@ -28,6 +28,8 @@ static IDXGISwapChain* g_pSwapChain = nullptr;
 static ID3D11RenderTargetView* g_mainRTV = nullptr;
 static HWND g_hwnd = nullptr;
 
+extern std::atomic<bool> shouldRestart;
+
 static void CreateRTV() {
   ID3D11Texture2D* buf = nullptr;
   g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&buf));
@@ -247,11 +249,10 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
 
       char exePath[MAX_PATH] = {};
       GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-      std::thread([exePath]() {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        ShellExecuteA(nullptr, "open", exePath, nullptr, nullptr,
-                      SW_SHOWNORMAL);
-        PostMessage(g_hwnd, WM_QUIT, 0, 0);
+      std::thread([exePath, &hub]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        shouldRestart = true;
+        PostMessage(g_hwnd, WM_CLOSE, 0, 0);
       }).detach();
     } else {
       logMsg("config.yml not found in selected folder, skipping");

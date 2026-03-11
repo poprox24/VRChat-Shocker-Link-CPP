@@ -13,6 +13,7 @@
 std::string configLocation = "config.yml";
 std::string settingsLocation = "settings.json";
 std::atomic<bool> running = true;
+std::atomic<bool> shouldRestart = false;
 
 void signalHandler(int) { running = false; }
 
@@ -59,10 +60,15 @@ int main() {
 
   ui_run(config, settings, hub, settingsLocation);
   running = false;
-
   oscBridge.join();
   oscQuery.stop();
   hub.shutdown();
   settings.save(settingsLocation);
+
+  if (shouldRestart) {
+    char exePath[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    ShellExecuteA(nullptr, "open", exePath, nullptr, nullptr, SW_SHOWNORMAL);
+  }
   return 0;
 }
