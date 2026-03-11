@@ -29,7 +29,24 @@ class MdnsAdvertiser {
     BOOL reuse = TRUE;
     setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse));
 
-    BOOL loop = TRUE;
+    // Get local IP
+    char hostname[256] = {};
+    gethostname(hostname, sizeof(hostname));
+    addrinfo hints{}, *addrRes = nullptr;
+    hints.ai_family = AF_INET;
+    ULONG localAddr = INADDR_ANY;
+    if (getaddrinfo(hostname, nullptr, &hints, &addrRes) == 0 && addrRes) {
+      localAddr = ((sockaddr_in*)addrRes->ai_addr)->sin_addr.s_addr;
+      char ipStr[INET_ADDRSTRLEN];
+      inet_ntop(AF_INET, &localAddr, ipStr, sizeof(ipStr));
+      freeaddrinfo(addrRes);
+    }
+
+    // Set outgoing multicast interface
+    setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_IF, (char*)&localAddr,
+               sizeof(localAddr));
+
+    BOOL loop = FALSE;  // disable loopback so we don't receive our own packets
     setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_LOOP, (char*)&loop,
                sizeof(loop));
 
@@ -47,15 +64,13 @@ class MdnsAdvertiser {
 
     ip_mreq mreq{};
     inet_pton(AF_INET, "224.0.0.251", &mreq.imr_multiaddr);
-    mreq.imr_interface.s_addr = INADDR_ANY;
-    setsockopt(sock_, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq,
-               sizeof(mreq));
+    mreq.imr_interface.s_addr = localAddr;
+    if (setsockopt(sock_, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq,
+                   sizeof(mreq)) != 0) {
+    }
 
-    char hostname[256] = {};
-    gethostname(hostname, sizeof(hostname));
     hostname_ = std::string(hostname);
 
-    // Announce a few times so mDNS clients don't miss it
     for (int i = 0; i < 3; i++) {
       sendAnnouncement();
       if (i < 2) std::this_thread::sleep_for(std::chrono::milliseconds(250));

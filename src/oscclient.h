@@ -245,24 +245,41 @@ class OscQueryServer {
 
     if (isHostInfo) {
       nlohmann::json response = {{"NAME", serviceName_},
-                                 {"OSC_PORT", oscPort_}};
+                                 {"OSC_PORT", oscPort_},
+                                 {"OSC_IP", "127.0.0.1"},
+                                 {"OSC_TRANSPORT", "UDP"},
+                                 {"EXTENSIONS",
+                                  {{"ACCESS", true},
+                                   {"CLIPMODE", false},
+                                   {"RANGE", true},
+                                   {"TYPE", true},
+                                   {"VALUE", true}}}};
       res.set_content(response.dump(), "application/json");
 
     } else {
       std::string paramName = shockPath_.substr(shockPath_.rfind('/') + 1);
-      nlohmann::json contents = {{paramName, {{"FULL_PATH", shockPath_}}}};
+      nlohmann::json contents = {{paramName,
+                                  {{"FULL_PATH", shockPath_},
+                                   {"ACCESS", 2},
+                                   {"TYPE", "T"},
+                                   {"DESCRIPTION", ""}}}};
       if (!secondShockPath_.empty()) {
         std::string p2 =
             secondShockPath_.substr(secondShockPath_.rfind('/') + 1);
-        contents[p2] = {{"FULL_PATH", secondShockPath_}};
+        contents[p2] = {
+            {"FULL_PATH", secondShockPath_}, {"ACCESS", 2}, {"TYPE", "T"}};
       }
       nlohmann::json response = {{"FULL_PATH", "/"},
+                                 {"ACCESS", 0},
+                                 {"DESCRIPTION", "root note"},
                                  {"CONTENTS",
                                   {{"avatar",
                                     {{"FULL_PATH", "/avatar"},
+                                     {"ACCESS", 0},
                                      {"CONTENTS",
                                       {{"parameters",
                                         {{"FULL_PATH", "/avatar/parameters"},
+                                         {"ACCESS", 0},
                                          {"CONTENTS", contents}}}}}}}}}};
       res.set_content(response.dump(), "application/json");
     }
@@ -273,12 +290,16 @@ class OscQueryServer {
     if (it != lastValues_.end() && it->second == value) return;
     lastValues_[path] = value;
 
-    if (path == shockPath_ && value > 0.0f) {
-      {
+    if (value > 0.0f) {
+      if (path == shockPath_) {
         std::lock_guard<std::mutex> lock(shockMutex);
         shockPending = true;
+        shockCV.notify_one();
+      } else if (!secondShockPath_.empty() && path == secondShockPath_) {
+        std::lock_guard<std::mutex> lock(shockMutex);
+        secondShockPending = true;
+        shockCV.notify_one();
       }
-      shockCV.notify_one();
     }
   }
 };

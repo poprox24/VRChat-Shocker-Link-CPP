@@ -265,8 +265,6 @@ class ShockerHub {
           chatbox.send(cooldownMsg);
           shockQueue.pop();
           lock.unlock();
-          std::this_thread::sleep_for(
-              std::chrono::milliseconds(static_cast<int>(remaining * 1000)));
           continue;
         }
       }
