@@ -1,5 +1,6 @@
 #pragma once
 
+#include <commdlg.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <windows.h>
@@ -102,6 +103,82 @@ static bool SaveButton(const char* id) {
                         ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
 
   return clicked;
+}
+
+// Button to import old config from
+inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
+                               float& minDur, float& maxDur,
+                               const std::string& settingsPath) {
+  char filePath[MAX_PATH] = {};
+  OPENFILENAMEA ofn{};
+  ofn.lStructSize = sizeof(ofn);
+  ofn.hwndOwner = g_hwnd;
+  ofn.lpstrFilter = "JSON Files\0*.json\0All Files\0*.*\0";
+  ofn.lpstrFile = filePath;
+  ofn.nMaxFile = MAX_PATH;
+  ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+  ofn.lpstrTitle = "Import Python curve_config.json";
+  if (!GetOpenFileNameA(&ofn)) return false;
+
+  try {
+    std::ifstream f(filePath);
+    nlohmann::json j = nlohmann::json::parse(f);
+
+    // Curve points
+    if (j.contains("curve_points") && j["curve_points"].size() == 3) {
+      for (int i = 0; i < 3; i++)
+        hub.curvePoints[i] = {j["curve_points"][i][0].get<double>(),
+                              j["curve_points"][i][1].get<double>()};
+    }
+
+    // Durations
+    if (j.contains("min_duration"))
+      minDur = settings.minShockDuration = j["min_duration"].get<float>();
+    if (j.contains("max_duration"))
+      maxDur = settings.maxShockDuration = j["max_duration"].get<float>();
+
+    // Presets
+    auto& rawPresets = j["presets"];
+    const nlohmann::json names =
+        j.contains("preset_names") ? j["preset_names"] : nlohmann::json{};
+    for (int i = 0;
+         i < (int)settings.presets.size() && i < (int)rawPresets.size(); i++) {
+      auto& rp = rawPresets[i];
+      if (rp.is_null()) {
+        settings.presets[i] = std::nullopt;
+        continue;
+      }
+      Preset p;
+      p.name = (names.is_array() && i < (int)names.size())
+                   ? names[i].get<std::string>()
+                   : ("Preset " + std::to_string(i + 1));
+      p.minShockDuration = rp.value("min_duration", 1.0f);
+      p.maxShockDuration = rp.value("max_duration", 2.0f);
+      if (rp.contains("curve_points") && rp["curve_points"].size() == 3)
+        for (int k = 0; k < 3; k++)
+          p.curvePoints[k] = {rp["curve_points"][k][0].get<double>(),
+                              rp["curve_points"][k][1].get<double>()};
+      settings.presets[i] = p;
+    }
+
+    settings.defaultPreset = j.value("default_preset", -1);
+    // Apply default preset to live state if valid
+    if (settings.defaultPreset >= 0 &&
+        settings.defaultPreset < (int)settings.presets.size() &&
+        settings.presets[settings.defaultPreset].has_value()) {
+      auto& dp = settings.presets[settings.defaultPreset];
+      minDur = settings.minShockDuration = dp->minShockDuration;
+      maxDur = settings.maxShockDuration = dp->maxShockDuration;
+      hub.curvePoints = dp->curvePoints;
+    }
+
+    settings.save(settingsPath);
+    logMsg("Imported Python config from {}", filePath);
+    return true;
+  } catch (std::exception& e) {
+    logMsg("Import failed: {}", e.what());
+    return false;
+  }
 }
 
 // UI entry point
@@ -278,6 +355,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
       }
 
       ImGui::SameLine();
+      ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
+                           (ImGui::GetFrameHeight() - 16.f) * 0.5f);
       if (SaveButton(("##save" + std::to_string(i)).c_str())) {
         Preset p;
         p.name = label;
@@ -302,6 +381,12 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
       if (ImGui::Button("Test 2nd", {-1, 0}))
         hub.queueShockUpperHalf(config.shockStrength);
     }
+
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() -
+                         ImGui::GetFrameHeightWithSpacing() -
+                         ImGui::GetStyle().WindowPadding.y);
+    if (ImGui::Button("Import Python cfg", {-1, 0}))
+      importPythonConfig(settings, hub, minDur, maxDur, settingsPath);
 
     ImGui::EndChild();
 

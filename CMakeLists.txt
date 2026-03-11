@@ -73,6 +73,7 @@ target_link_libraries(ShockerLink PUBLIC
     d3d11
     dxgi
     d3dcompiler
+    comdlg32
 )
 
 target_include_directories(ShockerLink PRIVATE
