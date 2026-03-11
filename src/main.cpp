@@ -44,8 +44,6 @@ int main() {
     return 1;
   }
 
-  shockerHub.queueShock(config.shockStrength);
-
   fmt::print("Running. Ctrl+C to quit.\n");
   while (running) {
     if (oscQuery.shockPending) {
@@ -54,6 +52,8 @@ int main() {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+
+  shockerHub.queueShock(config.shockStrength);
 
   settings.save(settingsLocation);
 
