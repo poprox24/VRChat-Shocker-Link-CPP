@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cmath>
+using namespace std::chrono;
 
 #include "config.h"
 #include "curve.h"
@@ -93,7 +94,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   RegisterClassExW(&wc);
   g_hwnd =
       CreateWindowW(wc.lpszClassName, L"ShockerLink", WS_OVERLAPPEDWINDOW, 100,
-                    100, 900, 600, nullptr, nullptr, wc.hInstance, nullptr);
+                    100, 750, 520, nullptr, nullptr, wc.hInstance, nullptr);
 
   if (!InitD3D(g_hwnd)) return;
 
@@ -103,6 +104,20 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImPlot::CreateContext();
+
+  ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = config.insideCurveBg;
+  ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = config.insideCurveBg;
+  ImPlot::GetStyle().Colors[ImPlotCol_AxisText] = config.labelColor;
+  ImPlot::GetStyle().Colors[ImPlotCol_AxisGrid] = ImVec4(1, 1, 1, 0.25f);
+  ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] =
+      ImVec4(0.1f, 0.1f, 0.15f, 0.85f);
+  ImPlot::GetStyle().Colors[ImPlotCol_LegendBorder] =
+      ImVec4(0.4f, 0.4f, 0.5f, 0.8f);
+  ImPlot::GetStyle().Colors[ImPlotCol_LegendText] = config.labelColor;
+  ImPlot::GetStyle().LegendPadding = ImVec2(10, 8);
+  ImPlot::GetStyle().LegendInnerPadding = ImVec2(6, 4);
+  ImPlot::GetStyle().LegendSpacing = ImVec2(6, 4);
+
   ImGui::StyleColorsDark();
 
   // Apply background colors
@@ -110,10 +125,6 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   style.Colors[ImGuiCol_WindowBg] = config.backgroundColor;
   style.Colors[ImGuiCol_ChildBg] = config.backgroundColor;
   style.Colors[ImGuiCol_Text] = config.labelColor;
-
-  ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = config.insideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = config.insideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_AxisText] = config.labelColor;
 
   ImGui_ImplWin32_Init(g_hwnd);
   ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dContext);
@@ -143,6 +154,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
 
   MSG msg{};
   while (msg.message != WM_QUIT) {
+    auto frameStart = steady_clock::now();
     if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
       TranslateMessage(&msg);
       DispatchMessage(&msg);
@@ -161,7 +173,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     // Left panel
-    ImGui::BeginChild("##controls", {220, -90}, true);
+    ImGui::BeginChild("##controls", {180, -90}, true);
 
     ImGui::Spacing();
     ImGui::Text("Min Duration (s)");
@@ -257,9 +269,12 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     ImGui::BeginChild("##plot", {0, -90}, false);
 
     if (ImPlot::BeginPlot("Intensity Curve", {-1, -1})) {
-      ImPlot::SetupAxes("Intensity (%)", "Weight");
+      ImPlot::SetupAxes("Intensity (%)", "Weight", ImPlotAxisFlags_NoGridLines,
+                        ImPlotAxisFlags_NoGridLines);
       ImPlot::SetupAxisLimits(ImAxis_X1, 0, 100, ImPlotCond_Always);
       ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 1, ImPlotCond_Always);
+      ImPlot::SetupLegend(ImPlotLocation_NorthEast, ImPlotLegendFlags_None);
+      ImPlot::SetupFinish();
 
       ImPlot::PushPlotClipRect();
       ImDrawList* dl = ImPlot::GetPlotDrawList();
@@ -281,13 +296,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
       }
 
       {
-        double lx[3] = {pts[0].x, pts[1].x, pts[2].x};
-        double ly[3] = {pts[0].y, pts[1].y, pts[2].y};
-        ImPlot::SetNextLineStyle(config.curveLineColor, config.lineWidth);
-        ImPlot::PlotLine("Curve", cx.data(), cy.data(), (int)cx.size());
-      }
-
-      {
+        // Sort + cache curve
         auto sorted = pts;
         std::sort(
             sorted.begin(), sorted.end(),
@@ -302,8 +311,58 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
             cy[i] = curve[i].y;
           }
         }
-        ImPlot::SetNextLineStyle({0, 0.76f, 1, 1}, 2.5f);
-        ImPlot::PlotLine("Curve", cx.data(), cy.data(), (int)cx.size());
+
+        // Legend entries
+        char minLabel[64], maxLabel[64];
+        snprintf(minLabel, sizeof(minLabel), "Min: %.0f%%  W: %.2f",
+                 sorted[0].x, sorted[0].y);
+        snprintf(maxLabel, sizeof(maxLabel), "Max: %.0f%%  W: %.2f",
+                 sorted[2].x, sorted[2].y);
+        ImVec4 minCol = {0.35f, 0.9f, 0.35f, 1.f};
+        ImVec4 maxCol = {0.9f, 0.35f, 0.35f, 1.f};
+        ImPlot::SetNextLineStyle(minCol, 1.5f);
+        ImPlot::PlotLine(minLabel, (double*)nullptr, 0);
+        ImPlot::SetNextLineStyle(maxCol, 1.5f);
+        ImPlot::PlotLine(maxLabel, (double*)nullptr, 0);
+
+        // Curve
+        ImPlot::SetNextLineStyle(config.curveLineColor, config.lineWidth);
+        ImPlot::PlotLine("##curve", cx.data(), cy.data(), (int)cx.size());
+
+        // Dashed vertical lines
+        ImPlot::PushPlotClipRect();
+        ImDrawList* dl2 = ImPlot::GetPlotDrawList();
+
+        // Manual grid on top of gradient
+        ImU32 gridCol = ImGui::ColorConvertFloat4ToU32(ImVec4(1, 1, 1, 0.25f));
+        for (int x = 0; x <= 100; x += 10) {
+          ImVec2 p0 = ImPlot::PlotToPixels({(double)x, 0.0});
+          ImVec2 p1 = ImPlot::PlotToPixels({(double)x, 1.0});
+          dl2->AddLine(p0, p1, gridCol, 1.f);
+        }
+        for (int y = 0; y <= 10; y++) {
+          double yv = y * 0.1;
+          ImVec2 p0 = ImPlot::PlotToPixels({0.0, yv});
+          ImVec2 p1 = ImPlot::PlotToPixels({100.0, yv});
+          dl2->AddLine(p0, p1, gridCol, 1.f);
+        }
+
+        // Dashed vertical lines for min/max
+        auto drawDashedV = [&](double x, ImVec4 col, float thickness) {
+          ImVec2 top = ImPlot::PlotToPixels({x, 1.0});
+          ImVec2 bot = ImPlot::PlotToPixels({x, 0.0});
+          ImU32 c = ImGui::ColorConvertFloat4ToU32(col);
+          float y = top.y, dash = 8.f, gap = 5.f;
+          while (y < bot.y) {
+            dl2->AddLine({top.x, y}, {top.x, std::min(y + dash, bot.y)}, c,
+                         thickness);
+            y += dash + gap;
+          }
+        };
+        drawDashedV(sorted[0].x, minCol, 1.5f);
+        drawDashedV(sorted[2].x, maxCol, 1.5f);
+
+        ImPlot::PopPlotClipRect();
       }
 
       ImPlot::EndPlot();
@@ -330,6 +389,13 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     g_pd3dContext->ClearRenderTargetView(g_mainRTV, (float*)&clear);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     g_pSwapChain->Present(1, 0);
+
+    // Frame cap
+    auto elapsed = steady_clock::now() - frameStart;
+    auto target = microseconds(16667);  // ~60fps
+    if (elapsed < target) {
+      std::this_thread::sleep_for(target - elapsed);
+    }
   }
 
   // Cleanup

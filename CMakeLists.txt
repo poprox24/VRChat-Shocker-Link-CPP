@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ShockerLink)
+project("Shocker Link")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -63,7 +63,7 @@ add_executable(ShockerLink
     ${implot_SOURCE_DIR}/implot_items.cpp
 )
 
-# set_target_properties(ShockerLink PROPERTIES WIN32_EXECUTABLE TRUE)
+set_target_properties(ShockerLink PROPERTIES WIN32_EXECUTABLE TRUE)
 target_link_libraries(ShockerLink PUBLIC
     yaml-cpp::yaml-cpp
     fmt::fmt-header-only
