@@ -80,10 +80,6 @@ class ShockerHub {
           "Reconnect failed, all queued shocks dropped.\nPress any key to "
           "retry...\n");
       emptyQueue();
-      MessageBoxA(
-          nullptr,
-          "Reconnect failed. All queued shocks dropped. Click OK to retry.",
-          "ShockerLink", MB_OK | MB_ICONWARNING);
     }
   }
 
@@ -93,8 +89,6 @@ class ShockerHub {
           "No shockers configured and none found automatically.\n"
           "Please set them up in config.yml\n"
           "The program will now exit...\n");
-      MessageBoxA(nullptr, "No shockers configured. Set them up in config.yml.",
-                  "ShockerLink", MB_OK | MB_ICONERROR);
       return false;
     }
 
@@ -173,10 +167,6 @@ class ShockerHub {
     logMsg(
         "Couldn't connect to PiShock HUB, check connection and press any key "
         "to retry...\n");
-    MessageBoxA(nullptr,
-                "Couldn't connect to PiShock HUB. Check connection then click "
-                "OK to retry.",
-                "ShockerLink", MB_OK | MB_ICONWARNING);
     return reconnectSerial();
   }
 
@@ -211,10 +201,6 @@ class ShockerHub {
     logMsg(
         "Couldn't connect to OpenShock HUB, check connection and press any key "
         "to retry...\n");
-    MessageBoxA(nullptr,
-                "Couldn't connect to OpenShock HUB. Check connection then "
-                "click OK to retry.",
-                "ShockerLink", MB_OK | MB_ICONWARNING);
     return reconnectSerial();
   }
 
