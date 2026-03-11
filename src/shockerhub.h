@@ -24,6 +24,7 @@
 class ShockerHub {
  public:
   ChatboxSender chatbox;
+  bool isConnected() { return workerThread.joinable(); }
 
   std::array<CurvePoint, 3> curvePoints = {
       {{20.0, 0.8}, {50.0, 0.5}, {80.0, 0.2}}};
@@ -32,6 +33,7 @@ class ShockerHub {
       : config(cfg), settings(set), chatbox(cfg.vrchatHost) {}
 
   bool connectSerial() {
+    logMsg("Attempting to connect to the shocker hub");
     if (config.serialPort != "") {
       bool opened =
           serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
@@ -81,6 +83,11 @@ class ShockerHub {
           "retry...\n");
       emptyQueue();
     }
+  }
+
+  bool tryReconnect() {
+    serial.closeDevice();
+    return connectSerial();
   }
 
   bool listShockers() {
@@ -135,7 +142,7 @@ class ShockerHub {
       serial.writeString("{\"cmd\": \"info\"}\n");
 
       bool found = false;
-      for (int attempt = 0; attempt < 40; attempt++) {
+      for (int attempt = 0; attempt < 20; attempt++) {
         char buf[1024] = {0};
         serial.readString(buf, '\n', 1024, 1000);
         std::string response(buf);
@@ -161,13 +168,13 @@ class ShockerHub {
         startWorkerThread();
         return true;
       }
+
       serial.closeDevice();
     }
 
     logMsg(
-        "Couldn't connect to PiShock HUB, check connection and press any key "
-        "to retry...\n");
-    return reconnectSerial();
+        "Couldn't connect to PiShock HUB, check connection and reconnect.\n");
+    return false;
   }
 
   bool scanForOpenshock() {
@@ -201,7 +208,7 @@ class ShockerHub {
     logMsg(
         "Couldn't connect to OpenShock HUB, check connection and press any key "
         "to retry...\n");
-    return reconnectSerial();
+    return true;
   }
 
   void startWorkerThread() {

@@ -466,6 +466,10 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
         hub.queueShockUpperHalf(config.shockStrength);
     }
 
+    if (!hub.isConnected()) {
+      if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
+    }
+
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() -
                          ImGui::GetFrameHeightWithSpacing() -
                          ImGui::GetStyle().WindowPadding.y);
