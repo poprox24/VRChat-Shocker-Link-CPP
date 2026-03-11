@@ -31,6 +31,8 @@ int main() {
 
   OscQueryServer oscQuery(config.oscPort, std::string(config.serviceName));
   oscQuery.setShockPath(config.shockParameter);
+  if (config.hasSecondShockParameter)
+    oscQuery.setSecondShockPath(config.secondShockParameter);
   if (!oscQuery.start()) {
     logMsg("Failed to start OSCQuery\n");
     hub.shutdown();
@@ -38,18 +40,22 @@ int main() {
   }
 
   std::thread oscBridge([&]() {
-  while (running) {
-    std::unique_lock<std::mutex> lock(oscQuery.shockMutex);
-    // Block until a shock arrives or running stops (check every 100ms max)
-    oscQuery.shockCV.wait_for(lock, std::chrono::milliseconds(100),
-                              [&] { return oscQuery.shockPending || !running; });
-    if (oscQuery.shockPending) {
-      oscQuery.shockPending = false;
-      lock.unlock();
-      hub.queueShock(config.shockStrength);
+    while (running) {
+      std::unique_lock<std::mutex> lock(oscQuery.shockMutex);
+      oscQuery.shockCV.wait_for(lock, std::chrono::milliseconds(100), [&] {
+        return oscQuery.shockPending || oscQuery.secondShockPending || !running;
+      });
+      if (oscQuery.shockPending) {
+        oscQuery.shockPending = false;
+        lock.unlock();
+        hub.queueShock(config.shockStrength);
+      } else if (oscQuery.secondShockPending) {
+        oscQuery.secondShockPending = false;
+        lock.unlock();
+        hub.queueShockUpperHalf(config.shockStrength);
+      }
     }
-  }
-});
+  });
 
   ui_run(config, settings, hub, settingsLocation);
   running = false;

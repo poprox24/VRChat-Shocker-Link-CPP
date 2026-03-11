@@ -76,6 +76,34 @@ static bool InitD3D(HWND hwnd) {
   return true;
 }
 
+// Save button icon
+static bool SaveButton(const char* id) {
+  ImVec2 size(16, 16);
+  ImGui::InvisibleButton(id, size);
+  bool clicked = ImGui::IsItemClicked();
+  bool hovered = ImGui::IsItemHovered();
+
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImVec2 p = ImGui::GetItemRectMin();
+  ImU32 col = hovered
+                  ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.f, 1.f, 1.f, 1.f))
+                  : ImGui::ColorConvertFloat4ToU32(
+                        ImGui::GetStyle().Colors[ImGuiCol_Text]);
+
+  // Floppy disk body
+  dl->AddRectFilled(p, {p.x + 14, p.y + 14}, col, 1.f);
+  // Inner label area (cutout)
+  dl->AddRectFilled({p.x + 2, p.y + 6}, {p.x + 12, p.y + 13},
+                    ImGui::ColorConvertFloat4ToU32(
+                        ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
+  // Shutter slot
+  dl->AddRectFilled({p.x + 4, p.y + 1}, {p.x + 10, p.y + 5},
+                    ImGui::ColorConvertFloat4ToU32(
+                        ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
+
+  return clicked;
+}
+
 // UI entry point
 inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
                    const std::string& settingsPath) {
@@ -91,6 +119,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
                  nullptr,
                  L"ShockerLink",
                  nullptr};
+  ImGui_ImplWin32_EnableDpiAwareness();
   RegisterClassExW(&wc);
   g_hwnd =
       CreateWindowW(wc.lpszClassName, L"ShockerLink", WS_OVERLAPPEDWINDOW, 100,
@@ -104,6 +133,12 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImPlot::CreateContext();
+
+  ImGuiIO& io = ImGui::GetIO();
+  float dpiScale = ImGui_ImplWin32_GetDpiScaleForHwnd(g_hwnd);
+  io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 18.0f);
+  ImFont* boldFont =
+      io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeuib.ttf", 18.0f);
 
   ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = config.insideCurveBg;
   ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = config.insideCurveBg;
@@ -243,8 +278,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
       }
 
       ImGui::SameLine();
-      std::string saveLabel = "S##" + std::to_string(i);
-      if (ImGui::SmallButton(saveLabel.c_str())) {
+      if (SaveButton(("##save" + std::to_string(i)).c_str())) {
         Preset p;
         p.name = label;
         p.minShockDuration = minDur;
@@ -259,8 +293,15 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (ImGui::Button("Test Shock", {-1, 0}))
+    if (ImGui::Button("Test Shock",
+                      {config.hasSecondShockParameter ? 85.f : -1.f, 0}))
       hub.queueShock(config.shockStrength);
+
+    if (config.hasSecondShockParameter) {
+      ImGui::SameLine();
+      if (ImGui::Button("Test 2nd", {-1, 0}))
+        hub.queueShockUpperHalf(config.shockStrength);
+    }
 
     ImGui::EndChild();
 
@@ -268,7 +309,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     ImGui::SameLine();
     ImGui::BeginChild("##plot", {0, -90}, false);
 
-    if (ImPlot::BeginPlot("Intensity Curve", {-1, -1})) {
+    if (ImPlot::BeginPlot(" ", {-1, -1})) {
       ImPlot::SetupAxes("Intensity (%)", "Weight", ImPlotAxisFlags_NoGridLines,
                         ImPlotAxisFlags_NoGridLines);
       ImPlot::SetupAxisLimits(ImAxis_X1, 0, 100, ImPlotCond_Always);
@@ -276,8 +317,23 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
       ImPlot::SetupLegend(ImPlotLocation_NorthEast, ImPlotLegendFlags_None);
       ImPlot::SetupFinish();
 
-      ImPlot::PushPlotClipRect();
       ImDrawList* dl = ImPlot::GetPlotDrawList();
+
+      const char* title = "Intensity Curve";
+      ImVec2 plot_pos = ImPlot::GetPlotPos();
+      ImVec2 plot_size = ImPlot::GetPlotSize();
+      ImVec2 text_size =
+          boldFont->CalcTextSizeA(boldFont->FontSize, FLT_MAX, 0.0f, title);
+
+      ImVec2 pos;
+      pos.x = plot_pos.x + (plot_size.x - text_size.x) * 0.5f;
+      pos.y = plot_pos.y - ImGui::GetTextLineHeight() - 4;
+      dl->AddText(boldFont, boldFont->FontSize, pos,
+                  ImGui::ColorConvertFloat4ToU32(
+                      ImGui::GetStyle().Colors[ImGuiCol_Text]),
+                  title);
+
+      ImPlot::PushPlotClipRect();
       ImVec2 pmin = ImPlot::PlotToPixels({0, 0});
       ImVec2 pmax = ImPlot::PlotToPixels({100, 1});
       dl->AddRectFilledMultiColor(

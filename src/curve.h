@@ -50,3 +50,32 @@ inline int sampleIntensity(std::array<CurvePoint, 3> pts) {
   }
   return (int)xs.back();
 }
+
+inline int sampleIntensityUpperHalf(std::array<CurvePoint, 3> pts) {
+  std::sort(pts.begin(), pts.end(),
+            [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+
+  auto curve = bezierInterpolate(pts[0], pts[1], pts[2]);
+
+  std::vector<double> xs, ys;
+  for (auto& p : curve) {
+    if (p.y <= 0.0) continue;
+    xs.push_back(std::clamp(p.x, 1.0, 100.0));
+    ys.push_back(p.y);
+  }
+
+  if (xs.empty()) return 75;
+
+  // Upper half by sorted-index
+  size_t start = xs.size() / 2;
+
+  double totalWeight = 0.0;
+  for (size_t i = start; i < ys.size(); i++) totalWeight += ys[i];
+  double r = ((double)rand() / RAND_MAX) * totalWeight;
+  double acc = 0.0;
+  for (size_t i = start; i < xs.size(); i++) {
+    acc += ys[i];
+    if (r <= acc) return (int)xs[i];
+  }
+  return (int)xs.back();
+}

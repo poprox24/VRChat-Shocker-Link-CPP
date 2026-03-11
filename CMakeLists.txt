@@ -63,7 +63,7 @@ add_executable(ShockerLink
     ${implot_SOURCE_DIR}/implot_items.cpp
 )
 
-set_target_properties(ShockerLink PROPERTIES WIN32_EXECUTABLE TRUE)
+# set_target_properties(ShockerLink PROPERTIES WIN32_EXECUTABLE TRUE)
 target_link_libraries(ShockerLink PUBLIC
     yaml-cpp::yaml-cpp
     fmt::fmt-header-only

@@ -181,6 +181,7 @@ class OscQueryServer {
   std::mutex shockMutex;
   std::condition_variable shockCV;
   bool shockPending = false;
+  bool secondShockPending = false;
 
   OscQueryServer(int oscPort, std::string serviceName)
       : oscPort_(oscPort),
@@ -190,6 +191,7 @@ class OscQueryServer {
         }) {}
 
   void setShockPath(std::string path) { shockPath_ = path; }
+  void setSecondShockPath(std::string path) { secondShockPath_ = path; }
 
   bool start() {
     httpServer_.Get(
@@ -227,6 +229,7 @@ class OscQueryServer {
   int httpPort_ = -1;
   std::string serviceName_;
   std::string shockPath_ = "/avatar/parameters/Shock";
+  std::string secondShockPath_;
 
   httplib::Server httpServer_;
   std::thread httpThread_;
@@ -247,16 +250,20 @@ class OscQueryServer {
 
     } else {
       std::string paramName = shockPath_.substr(shockPath_.rfind('/') + 1);
-      nlohmann::json response = {
-          {"FULL_PATH", "/"},
-          {"CONTENTS",
-           {{"avatar",
-             {{"FULL_PATH", "/avatar"},
-              {"CONTENTS",
-               {{"parameters",
-                 {{"FULL_PATH", "/avatar/parameters"},
-                  {"CONTENTS",
-                   {{paramName, {{"FULL_PATH", shockPath_}}}}}}}}}}}}}};
+      nlohmann::json contents = {{paramName, {{"FULL_PATH", shockPath_}}}};
+      if (!secondShockPath_.empty()) {
+        std::string p2 =
+            secondShockPath_.substr(secondShockPath_.rfind('/') + 1);
+        contents[p2] = {{"FULL_PATH", secondShockPath_}};
+      }
+      nlohmann::json response = {{"FULL_PATH", "/"},
+                                 {"CONTENTS",
+                                  {{"avatar",
+                                    {{"FULL_PATH", "/avatar"},
+                                     {"CONTENTS",
+                                      {{"parameters",
+                                        {{"FULL_PATH", "/avatar/parameters"},
+                                         {"CONTENTS", contents}}}}}}}}}};
       res.set_content(response.dump(), "application/json");
     }
   }

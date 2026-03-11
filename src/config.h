@@ -25,6 +25,8 @@ class Config {
   bool randomOrSeq;
   std::string serialPort;
 
+  bool hasSecondShockParameter = false;
+
   // Cooldown Config
   int baseCooldown;
   int maxCooldown;
@@ -76,6 +78,9 @@ class Config {
     }
     randomOrSeq = config["RANDOM_OR_SEQUENTIAL"].as<bool>(false);
     serialPort = config["SERIAL_PORT"].as<std::string>("");
+
+    hasSecondShockParameter =
+        !config["SECOND_SHOCK_PARAMETER"].as<std::string>("").empty();
 
     // Cooldown Config
     baseCooldown = config["BASE_COOLDOWN_S"].as<int>(2);

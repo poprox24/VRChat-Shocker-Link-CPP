@@ -49,7 +49,15 @@ class ShockerHub {
   void queueShock(int strength, int duration = -1) {
     {
       std::lock_guard<std::mutex> lock(queueMutex);
-      shockQueue.push({duration, strength});
+      shockQueue.push({duration, strength, false});
+    }
+    queueCV.notify_one();
+  }
+
+  void queueShockUpperHalf(int strength, int duration = -1) {
+    {
+      std::lock_guard<std::mutex> lock(queueMutex);
+      shockQueue.push({duration, strength, true});
     }
     queueCV.notify_one();
   }
@@ -93,6 +101,7 @@ class ShockerHub {
 
   void shutdown() {
     stopWorker = true;
+    queueCV.notify_one();
     if (workerThread.joinable()) {
       workerThread.join();
     }
@@ -107,7 +116,7 @@ class ShockerHub {
   std::vector<double> shockTimestamps;
   serialib serial;
 
-  std::queue<std::pair<std::optional<int>, int>> shockQueue;
+  std::queue<std::tuple<std::optional<int>, int, bool>> shockQueue;
   std::mutex queueMutex;
   std::condition_variable queueCV;
   std::thread workerThread;
@@ -245,8 +254,9 @@ class ShockerHub {
         }
       }
 
-      int durationMs = shockQueue.front().first.value_or(-1);
-      int strength = shockQueue.front().second;
+      int durationMs = std::get<0>(shockQueue.front()).value_or(-1);
+      int strength = std::get<1>(shockQueue.front());
+      bool upperHalf = std::get<2>(shockQueue.front());
       shockQueue.pop();
       lock.unlock();
 
@@ -268,7 +278,9 @@ class ShockerHub {
         durationMs = std::max(100, (int)(durDist(rng) * 1000));
       }
 
-      sendShock(durationMs, sampleIntensity(curvePoints), chosenShocker);
+      int intensity = upperHalf ? sampleIntensityUpperHalf(curvePoints)
+                                : sampleIntensity(curvePoints);
+      sendShock(durationMs, intensity, chosenShocker);
     }
   }
 
