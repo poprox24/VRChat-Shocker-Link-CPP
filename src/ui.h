@@ -286,7 +286,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   RegisterClassExW(&wc);
 
   g_hwnd =
-      CreateWindowW(wc.lpszClassName, L"ShockerLink", WS_OVERLAPPEDWINDOW, 100,
+      CreateWindowW(wc.lpszClassName, L"Shocker Link", WS_OVERLAPPEDWINDOW, 100,
                     100, 750, 520, nullptr, nullptr, wc.hInstance, nullptr);
 
   BOOL dark = TRUE;
