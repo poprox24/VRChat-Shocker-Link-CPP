@@ -7,6 +7,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
@@ -60,27 +61,22 @@ class OscListener {
   std::atomic<bool> running_{false};
   std::thread thread_;
 
-  // OSC strings are null-terminated and padded to the next 4-byte boundary
-  // e.g. "hi" is stored as: 'h' 'i' '\0' '\0'  (4 bytes total)
   static std::string readOscString(const uint8_t* data, size_t len,
                                    size_t& offset) {
     std::string result;
     size_t start = offset;
 
-    // Read until null terminator
     while (offset < len && data[offset] != 0) {
       result += (char)data[offset];
       offset++;
     }
 
-    // Skip to the next 4-byte boundary (past the null terminator)
     size_t lengthIncludingNull = (offset - start) + 1;
     offset = start + ((lengthIncludingNull + 3) & ~3);
 
     return result;
   }
 
-  // Parse one OSC message and fire the callback for each value inside it
   void parseMessage(const uint8_t* data, size_t len) {
     if (len < 8) return;
 
@@ -89,12 +85,9 @@ class OscListener {
     // First field is the OSC address/path (e.g. "/avatar/parameters/Shock")
     std::string path = readOscString(data, len, offset);
 
-    // Next field is the type tag string (e.g. ",f" for one float, ",T" for bool
-    // true) It must start with a comma
     if (offset >= len || data[offset] != ',') return;
     std::string typeTags = readOscString(data, len, offset);
 
-    // Each character after the comma is the type of one argument
     for (int i = 1; i < (int)typeTags.size(); i++) {
       char tag = typeTags[i];
 
@@ -135,13 +128,11 @@ class OscListener {
     }
   }
 
-  // Container that holds multiple OSC messages
   void parseBundle(const uint8_t* data, size_t len) {
     if (len < 16) return;
-    size_t offset = 16;  // skip "#bundle\0" (8 bytes) + timetag (8 bytes)
+    size_t offset = 16;
 
     while (offset + 4 <= len) {
-      // Each entry is prefixed with its size as a 4-byte int
       uint32_t messageSize =
           ((uint32_t)data[offset] << 24) | ((uint32_t)data[offset + 1] << 16) |
           ((uint32_t)data[offset + 2] << 8) | (uint32_t)data[offset + 3];
@@ -165,7 +156,6 @@ class OscListener {
     int srcLen = sizeof(src);
 
     while (running_) {
-      // Wait up to 200ms for a packet, then loop back to check running
       fd_set fds;
       FD_ZERO(&fds);
       FD_SET(sock_, &fds);
@@ -188,7 +178,9 @@ class OscListener {
 
 class OscQueryServer {
  public:
-  std::atomic<bool> shockPending = false;
+  std::mutex shockMutex;
+  std::condition_variable shockCV;
+  bool shockPending = false;
 
   OscQueryServer(int oscPort, std::string serviceName)
       : oscPort_(oscPort),
@@ -275,7 +267,11 @@ class OscQueryServer {
     lastValues_[path] = value;
 
     if (path == shockPath_ && value > 0.0f) {
-      shockPending = true;
+      {
+        std::lock_guard<std::mutex> lock(shockMutex);
+        shockPending = true;
+      }
+      shockCV.notify_one();
     }
   }
 };

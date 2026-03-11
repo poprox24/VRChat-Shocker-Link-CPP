@@ -47,11 +47,15 @@ class ShockerHub {
   }
 
   void queueShock(int strength, int duration = -1) {
-    std::lock_guard<std::mutex> lock(queueMutex);
-    shockQueue.push({duration, strength});
+    {
+      std::lock_guard<std::mutex> lock(queueMutex);
+      shockQueue.push({duration, strength});
+    }
+    queueCV.notify_one();
   }
 
   void emptyQueue() {
+    std::lock_guard<std::mutex> lock(queueMutex);
     decltype(shockQueue) emptyQ;
     shockQueue.swap(emptyQ);
   }
@@ -105,6 +109,7 @@ class ShockerHub {
 
   std::queue<std::pair<std::optional<int>, int>> shockQueue;
   std::mutex queueMutex;
+  std::condition_variable queueCV;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
 
@@ -210,62 +215,60 @@ class ShockerHub {
     while (!stopWorker) {
       std::unique_lock<std::mutex> lock(queueMutex);
 
-      if (!shockQueue.empty()) {
-        if (config.cooldownEnabled) {
-          double now = getCurrentTime();
-          int cooldownWindowS = config.cooldownWindowS;
-          // Remove older than cooldownWindowS seconds from shockTimestamps
-          shockTimestamps.erase(
-              std::remove_if(shockTimestamps.begin(), shockTimestamps.end(),
-                             [now, cooldownWindowS](double time) {
-                               return now - time > cooldownWindowS;
-                             }),
-              shockTimestamps.end());
-          int triggerCount = shockTimestamps.size();
-          double dynamicCooldown =
-              std::min((double)config.baseCooldown +
-                           (double)config.cooldownFactorS * triggerCount,
-                       (double)config.maxCooldown);
+      // Sleep until there's work or shutdown
+      queueCV.wait(lock, [this] { return !shockQueue.empty() || stopWorker; });
+      if (stopWorker) break;
 
-          // Check if still on cooldown
-          if (now - lastTriggerTime <= dynamicCooldown) {
-            logMsg("On cooldown: {:.1f}s\n",
-                   lastTriggerTime - now + dynamicCooldown);
-            shockQueue.pop();
-            lock.unlock();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;
-          }
+      if (config.cooldownEnabled) {
+        double now = getCurrentTime();
+        int cooldownWindowS = config.cooldownWindowS;
+        shockTimestamps.erase(
+            std::remove_if(shockTimestamps.begin(), shockTimestamps.end(),
+                           [now, cooldownWindowS](double t) {
+                             return now - t > cooldownWindowS;
+                           }),
+            shockTimestamps.end());
+
+        double dynamicCooldown = std::min(
+            (double)config.baseCooldown +
+                (double)config.cooldownFactorS * (int)shockTimestamps.size(),
+            (double)config.maxCooldown);
+
+        double remaining = dynamicCooldown - (now - lastTriggerTime);
+        if (remaining > 0) {
+          logMsg("On cooldown: {:.1f}s\n", remaining);
+          shockQueue.pop();
+          lock.unlock();
+          std::this_thread::sleep_for(
+              std::chrono::milliseconds((int)(remaining * 1000)));
+          continue;
         }
-        int durationMs = shockQueue.front().first.value_or(-1);
-        int strength = shockQueue.front().second;
-        shockQueue.pop();
-        lock.unlock();
-
-        // Pick which shocker to use (random or sequential)
-        std::string chosenShocker;
-        std::vector<std::string>& ids = config.ShockerIDs;
-        if (config.randomOrSeq) {
-          std::uniform_int_distribution<int> idxDist(0, (int)ids.size() - 1);
-          chosenShocker = ids[idxDist(rng)];
-        } else {
-          lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
-          chosenShocker = ids[lastShockerIndex];
-        }
-
-        if (durationMs == -1) {
-          std::uniform_real_distribution<float> durDist(
-              settings.minShockDuration,
-              std::nextafter(settings.maxShockDuration,
-                             std::numeric_limits<float>::infinity()));
-          durationMs = std::max(100, (int)(durDist(rng) * 1000));
-        }
-
-        sendShock(durationMs, sampleIntensity(curvePoints), chosenShocker);
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        continue;
       }
+
+      int durationMs = shockQueue.front().first.value_or(-1);
+      int strength = shockQueue.front().second;
+      shockQueue.pop();
       lock.unlock();
+
+      std::string chosenShocker;
+      std::vector<std::string>& ids = config.ShockerIDs;
+      if (config.randomOrSeq) {
+        std::uniform_int_distribution<int> idxDist(0, (int)ids.size() - 1);
+        chosenShocker = ids[idxDist(rng)];
+      } else {
+        lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
+        chosenShocker = ids[lastShockerIndex];
+      }
+
+      if (durationMs == -1) {
+        std::uniform_real_distribution<float> durDist(
+            settings.minShockDuration,
+            std::nextafter(settings.maxShockDuration,
+                           std::numeric_limits<float>::infinity()));
+        durationMs = std::max(100, (int)(durDist(rng) * 1000));
+      }
+
+      sendShock(durationMs, sampleIntensity(curvePoints), chosenShocker);
     }
   }
 
