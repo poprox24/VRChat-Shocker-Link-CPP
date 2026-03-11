@@ -85,6 +85,9 @@ VRCHAT_HOST: "127.0.0.1"
   ImVec4 gradientLeftColor;
   ImVec4 gradientRightColor;
 
+  // VRChat config
+  std::string vrchatHost;
+
   static const int baudRate = 115200;
   static const int oscPort = 39570;
   static constexpr std::string_view serviceName = "ShockerLink";
@@ -148,7 +151,8 @@ VRCHAT_HOST: "127.0.0.1"
     gradientRightColor =
         hexToImVec4(config["GRADIENT_RIGHT_COLOR"].as<std::string>("#6e173b"));
 
-    shockStrength = 20;
+    // VRChat Config
+    vrchatHost = config["VRCHAT_HOST"].as<std::string>("127.0.0.1");
   }
 
   void pushShockerId(std::string id) { ShockerIDs.push_back(id); }

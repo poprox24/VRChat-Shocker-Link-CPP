@@ -15,6 +15,7 @@
 #include <thread>
 #include <vector>
 
+#include "chatbox.h"
 #include "config.h"
 #include "curve.h"
 #include "logger.h"
@@ -22,10 +23,13 @@
 
 class ShockerHub {
  public:
+  ChatboxSender chatbox;
+
   std::array<CurvePoint, 3> curvePoints = {
       {{20.0, 0.8}, {50.0, 0.5}, {80.0, 0.2}}};
 
-  ShockerHub(Config& cfg, Settings& set) : config(cfg), settings(set) {}
+  ShockerHub(Config& cfg, Settings& set)
+      : config(cfg), settings(set), chatbox(cfg.vrchatHost) {}
 
   bool connectSerial() {
     if (config.serialPort != "") {
@@ -255,11 +259,14 @@ class ShockerHub {
 
         double remaining = dynamicCooldown - (now - lastTriggerTime);
         if (remaining > 0) {
-          logMsg("On cooldown: {:.1f}s\n", remaining);
+          std::string cooldownMsg =
+              fmt::format("On cooldown: {:.1f}s", remaining);
+          logMsg("{}\n", cooldownMsg);
+          chatbox.send(cooldownMsg);
           shockQueue.pop();
           lock.unlock();
           std::this_thread::sleep_for(
-              std::chrono::milliseconds((int)(remaining * 1000)));
+              std::chrono::milliseconds(static_cast<int>(remaining * 1000)));
           continue;
         }
       }
@@ -325,6 +332,12 @@ class ShockerHub {
     shockTimestamps.push_back(getCurrentTime());
     lastTriggerTime = getCurrentTime();
 
+    // \xe2\x9a\xa1 =⚡symbol
+    chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
+                             durationMs / 1000.0f));
+
+    shockTimestamps.push_back(getCurrentTime());
+    lastTriggerTime = getCurrentTime();
     logMsg("Sent shock: {}%, {:.1f}s\n", strength, (durationMs / 1000.0f));
   }
 };

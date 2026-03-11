@@ -187,30 +187,28 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
     std::string srcYml = folder + "config.yml";
     std::ifstream src(srcYml);
     if (src.is_open()) {
-      // Keys to drop entirely
       static const std::vector<std::string> dropKeys = {
           "OSC_LISTEN_PORT",
           "OSC_SEND_PORT",
           "test",
-          "OPENSHOCK_SHOCKER_ID",  // handled separately below
+          "OPENSHOCK_SHOCKER_ID",
       };
 
       std::string openshockId, pishockId;
       std::vector<std::string> lines;
       std::string line;
 
-      // First pass: collect lines + extract both ID values
       while (std::getline(src, line)) {
         auto keyOf = [&](const std::string& key) {
           return line.find(key + ":") == 0;
         };
         if (keyOf("OPENSHOCK_SHOCKER_ID")) {
           openshockId = line.substr(line.find(':') + 1);
-          continue;  // don't emit yet
+          continue;
         }
         if (keyOf("PISHOCK_SHOCKER_ID")) {
           pishockId = line.substr(line.find(':') + 1);
-          continue;  // don't emit yet
+          continue;
         }
         bool drop = false;
         for (auto& k : dropKeys)
@@ -237,9 +235,8 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
       std::ofstream dst("config.yml");
       for (auto& l : lines) {
         dst << l << '\n';
-        // Emit SHOCKER_IDS right after SERIAL_PORT line (keeps logical
-        // grouping)
-        if (l.find("SERIAL_PORT:") == 0)
+        // Emit SHOCKER_IDS right after SERIAL_PORT line
+        if (l.find("USE_PISHOCK:") == 0)
           dst << "SHOCKER_IDS: [" << resolvedId
               << "] # Shocker IDs, if you have multiple, split by comma (eg.: "
                  "[12345, 23456]), PiShock should find them "
