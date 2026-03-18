@@ -66,7 +66,7 @@ add_executable(ShockerLink WIN32
 
 set_target_properties(ShockerLink PROPERTIES
     WIN32_EXECUTABLE TRUE
-    OUTPUT_NAME "Shocker Link"
+    OUTPUT_NAME "Shocker_Link"
 )
 target_link_libraries(ShockerLink PUBLIC
     yaml-cpp::yaml-cpp

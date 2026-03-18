@@ -152,4 +152,4 @@ inline void applyAndRestart(HWND hwnd) {
   PostMessage(hwnd, WM_CLOSE, 0, 0);
 }
 
-}  // namespace Updater
+}
