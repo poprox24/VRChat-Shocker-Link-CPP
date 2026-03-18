@@ -483,7 +483,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
       bool cooldownActive = config.cooldownEnabled &&
                             hub.cooldownUntil.load() > hub.getCurrentTime();
       if (cooldownActive) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(60));  // Run at ~16.6fps
       } else {
         WaitMessage();
         continue;
