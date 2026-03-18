@@ -55,7 +55,7 @@ How to setup this project
 
 ### Prerequisites
 
-Make sure to download this program before you continue:
+Make sure you install this before you continue:
 * [.NET Framework](https://dotnet.microsoft.com/en-us/download/dotnet-framework)
 
 ### Installation
