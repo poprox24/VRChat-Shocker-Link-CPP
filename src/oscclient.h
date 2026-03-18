@@ -236,6 +236,9 @@ class OscQueryServer {
   OscListener oscListener_;
   std::unique_ptr<MdnsAdvertiser> mdns_;
 
+  std::mutex lastValuesMutex_;
+  std::unordered_map<std::string, float> lastValues_;
+
   // Remembers the last value for each OSC path so we can ignore duplicates
   std::unordered_map<std::string, float> lastValues_;
 
@@ -286,9 +289,12 @@ class OscQueryServer {
   }
 
   void onOscMessage(const std::string& path, float value) {
-    auto it = lastValues_.find(path);
-    if (it != lastValues_.end() && it->second == value) return;
-    lastValues_[path] = value;
+    {
+      std::lock_guard<std::mutex> lock(lastValuesMutex_);
+      auto it = lastValues_.find(path);
+      if (it != lastValues_.end() && it->second == value) return;
+      lastValues_[path] = value;
+    }
 
     if (value > 0.0f) {
       if (path == shockPath_) {

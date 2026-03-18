@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fmt/ranges.h>
 #include <serialib.h>
 
 #include <algorithm>
@@ -75,13 +76,14 @@ class ShockerHub {
   }
 
   bool reconnectSerial() {
+    int delay = 1000;
     while (true) {
       serial.closeDevice();
       if (connectSerial()) return true;
-      logMsg(
-          "Reconnect failed, all queued shocks dropped.\nPress any key to "
-          "retry...\n");
+      logMsg("Reconnect failed, retrying in {}s...", delay / 1000);
       emptyQueue();
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+      delay = std::min(delay * 2, 15000);
     }
   }
 
@@ -93,18 +95,11 @@ class ShockerHub {
   bool listShockers() {
     if (config.ShockerIDs.empty()) {
       logMsg(
-          "No shockers configured and none found automatically.\n"
-          "Please set them up in config.yml\n"
-          "The program will now exit...\n");
+          "No shockers configured and none found automatically.\nPlease set "
+          "them up in config.yml\nThe program will now exit...\n");
       return false;
     }
-
-    std::string ids = "";
-    for (int i = 0; i < (int)config.ShockerIDs.size(); i++) {
-      if (i > 0) ids += ", ";
-      ids += config.ShockerIDs[i];
-    }
-    logMsg("Shockers found: {}\n", ids);
+    logMsg("Shockers found: {}\n", fmt::join(config.ShockerIDs, ", "));
     return true;
   }
 
@@ -208,7 +203,7 @@ class ShockerHub {
     logMsg(
         "Couldn't connect to OpenShock HUB, check connection and press any key "
         "to retry...\n");
-    return true;
+    return false;
   }
 
   void startWorkerThread() {
@@ -235,6 +230,15 @@ class ShockerHub {
       queueCV.wait(lock, [this] { return !shockQueue.empty() || stopWorker; });
       if (stopWorker) break;
 
+      // Take item and release lock before doing any work
+      auto item = shockQueue.front();
+      shockQueue.pop();
+      lock.unlock();
+
+      int durationMs = std::get<0>(item).value_or(-1);
+      int strength = std::get<1>(item);
+      bool upperHalf = std::get<2>(item);
+
       if (config.cooldownEnabled) {
         double now = getCurrentTime();
         int cooldownWindowS = config.cooldownWindowS;
@@ -244,20 +248,16 @@ class ShockerHub {
                              return now - t > cooldownWindowS;
                            }),
             shockTimestamps.end());
-
         double dynamicCooldown = std::min(
             (double)config.baseCooldown +
                 (double)config.cooldownFactorS * (int)shockTimestamps.size(),
             (double)config.maxCooldown);
-
         double remaining = dynamicCooldown - (now - lastTriggerTime);
         if (remaining > 0) {
           std::string cooldownMsg =
               fmt::format("On cooldown: {:.1f}s", remaining);
           logMsg("{}\n", cooldownMsg);
           chatbox.send(cooldownMsg);
-          shockQueue.pop();
-          lock.unlock();
           continue;
         }
       }
@@ -327,8 +327,6 @@ class ShockerHub {
     chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
                              durationMs / 1000.0f));
 
-    shockTimestamps.push_back(getCurrentTime());
-    lastTriggerTime = getCurrentTime();
     logMsg("Sent shock: {}%, {:.1f}s\n", strength, (durationMs / 1000.0f));
   }
 };
