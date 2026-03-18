@@ -29,6 +29,7 @@ class Settings {
   float xViewMin;
   float xViewMax;
   std::vector<std::optional<Preset>> presets;
+  std::string lastSerialPort;
 
   int windowX = 100, windowY = 100;
   int windowW = 750, windowH = 520;
@@ -79,6 +80,8 @@ class Settings {
         windowY = j.value("windowY", 100);
         windowW = j.value("windowW", 750);
         windowH = j.value("windowH", 520);
+
+        lastSerialPort = j.value("lastSerialPort", "");
       }
     } catch (std::exception& e) {
       logMsg("Settings parse error: {}\n", e.what());
@@ -88,10 +91,14 @@ class Settings {
   void save(const std::string& path) {
     nlohmann::json j;
     j["defaultPreset"] = defaultPreset;
+
     j["windowX"] = windowX;
     j["windowY"] = windowY;
     j["windowW"] = windowW;
     j["windowH"] = windowH;
+
+    j["lastSerialPort"] = lastSerialPort;
+
     j["presets"] = nlohmann::json::array();
     for (auto& p : presets) {
       if (p.has_value()) {

@@ -40,7 +40,8 @@ class ShockerHub {
 
   bool connectSerial() {
     logMsg("Attempting to connect to the shocker hub");
-    if (config.serialPort != "") {
+
+    if (!config.serialPort.empty()) {
       bool opened =
           serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
       if (!opened) {
@@ -51,6 +52,17 @@ class ShockerHub {
       return true;
     }
 
+    if (!settings.lastSerialPort.empty()) {
+      bool opened = serial.openDevice(settings.lastSerialPort.c_str(),
+                                      config.baudRate) == 1;
+      if (opened) {
+        config.serialPort = settings.lastSerialPort;
+        startWorkerThread();
+        return true;
+      }
+    }
+
+    // Full scan
     if (config.usePishock) {
       return scanForPishock();
     } else {
@@ -213,14 +225,16 @@ class ShockerHub {
     }
 
     logMsg(
-        "Couldn't connect to OpenShock HUB, check connection and press any key "
+        "Couldn't connect to OpenShock HUB, check connection and press any "
+        "key "
         "to retry...\n");
     return false;
   }
 
   void startWorkerThread() {
+    settings.lastSerialPort = config.serialPort;
     if (!workerThread.joinable()) {
-      logMsg("Connected\n");
+      logMsg("Connected on {}\n", config.serialPort);
       workerThread = std::thread([this]() { workerLoop(); });
     }
   }
