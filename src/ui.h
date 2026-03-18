@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cmath>
+#include <thread>
 using namespace std::chrono;
 
 #include "config.h"
@@ -460,12 +461,33 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
 
   ImVec4& clear = config.backgroundColor;
 
+  bool firstFrameDone = false;
   MSG msg{};
   while (msg.message != WM_QUIT) {
     if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
       TranslateMessage(&msg);
       DispatchMessage(&msg);
       continue;
+    }
+
+    bool minimized = IsIconic(g_hwnd);
+
+    if (minimized) {
+      WaitMessage();
+      continue;
+    }
+
+    bool focused = GetForegroundWindow() == g_hwnd;
+
+    if (!focused && firstFrameDone) {
+      bool cooldownActive = config.cooldownEnabled &&
+                            hub.cooldownUntil.load() > hub.getCurrentTime();
+      if (cooldownActive) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      } else {
+        WaitMessage();
+        continue;
+      }
     }
 
     RECT wr;
@@ -805,7 +827,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     g_pd3dContext->OMSetRenderTargets(1, &g_mainRTV, nullptr);
     g_pd3dContext->ClearRenderTargetView(g_mainRTV, (float*)&clear);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-    g_pSwapChain->Present(1, 0);
+    g_pSwapChain->Present(focused ? 1 : 0, 0);
+    firstFrameDone = true;
   }
 
   // Cleanup
