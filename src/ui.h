@@ -473,6 +473,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     bool minimized = IsIconic(g_hwnd);
 
     if (minimized) {
+      // If minimized don't render
       WaitMessage();
       continue;
     }
@@ -486,10 +487,16 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
         std::this_thread::sleep_for(
             std::chrono::milliseconds(60));  // Run at ~16.6fps
       } else {
+        // If cooldown is not active no need to render, skip current render
+        // Under normal circumstances messages only go to logs during cooldown
+        // so there is no need to render
         WaitMessage();
         continue;
       }
-    }
+    }  // else {
+       //  issue, only updates on mouse movement
+       //  WaitMessage();  // Wait for any change before re-rendering if focused
+       // }
 
     RECT wr;
     if (GetWindowRect(g_hwnd, &wr)) {
@@ -518,14 +525,13 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     {
       ImVec2 p = ImGui::GetCursorScreenPos();
       float r = 5.f;
-      bool connected = hub.isConnected();
-      ImU32 col =
-          connected ? IM_COL32(60, 220, 80, 255) : IM_COL32(220, 60, 60, 255);
+      ImU32 col = hub.isConnected ? IM_COL32(60, 220, 80, 255)
+                                  : IM_COL32(220, 60, 60, 255);
       ImGui::GetWindowDrawList()->AddCircleFilled(
           {p.x + r, p.y + ImGui::GetTextLineHeight() * 0.5f}, r, col);
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() + r * 2 + 6);
-      ImGui::Text(connected ? "Connected" : "Disconnected");
-      if (!connected) {
+      ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
+      if (!hub.isConnected) {
         if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
       }
     }

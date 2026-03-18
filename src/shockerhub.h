@@ -30,7 +30,8 @@ class ShockerHub {
   std::atomic<double> activeCooldownDuration{0.0};
 
   ChatboxSender chatbox;
-  bool isConnected() { return workerThread.joinable(); }
+
+  bool isConnected = false;
 
   std::array<CurvePoint, 3> curvePoints = {
       {{20.0, 0.8}, {50.0, 0.5}, {80.0, 0.2}}};
@@ -45,11 +46,14 @@ class ShockerHub {
       bool opened =
           serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
       if (!opened) {
-        logMsg("Could not open port {}\n", config.serialPort);
-        return false;
+        logMsg(
+            "Could not open port saved in config: {}, trying last known "
+            "working port.\n",
+            config.serialPort);
+      } else {
+        startWorkerThread();
+        return true;
       }
-      startWorkerThread();
-      return true;
     }
 
     if (!settings.lastSerialPort.empty()) {
@@ -61,8 +65,7 @@ class ShockerHub {
         return true;
       }
     }
-
-    // Full scan
+    logMsg("Could not open last known working port, running a port scan");
     if (config.usePishock) {
       return scanForPishock();
     } else {
@@ -96,6 +99,7 @@ class ShockerHub {
     int delay = 1000;
     while (true) {
       serial.closeDevice();
+      isConnected = false;
       if (connectSerial()) return true;
       logMsg("Reconnect failed, retrying in {}s...", delay / 1000);
       emptyQueue();
@@ -225,14 +229,14 @@ class ShockerHub {
     }
 
     logMsg(
-        "Couldn't connect to OpenShock HUB, check connection and press any "
-        "key "
-        "to retry...\n");
+        "Couldn't connect to OpenShock HUB, check connection and press the "
+        "reconnect button.\n");
     return false;
   }
 
   void startWorkerThread() {
     settings.lastSerialPort = config.serialPort;
+    isConnected = true;
     if (!workerThread.joinable()) {
       logMsg("Connected on {}\n", config.serialPort);
       workerThread = std::thread([this]() { workerLoop(); });
