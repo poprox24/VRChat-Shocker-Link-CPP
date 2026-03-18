@@ -24,6 +24,11 @@
 
 class ShockerHub {
  public:
+  std::atomic<double> cooldownUntil{0.0};
+
+  std::atomic<double> lastTriggerTimeAtomic{0.0};
+  std::atomic<double> activeCooldownDuration{0.0};
+
   ChatboxSender chatbox;
   bool isConnected() { return workerThread.joinable(); }
 
@@ -89,6 +94,7 @@ class ShockerHub {
 
   bool tryReconnect() {
     serial.closeDevice();
+    config.serialPort = "";
     return connectSerial();
   }
 
@@ -110,6 +116,12 @@ class ShockerHub {
       workerThread.join();
     }
     serial.closeDevice();
+  }
+
+  double getCurrentTime() {
+    return std::chrono::duration<double>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
   }
 
  private:
@@ -213,12 +225,6 @@ class ShockerHub {
     }
   }
 
-  double getCurrentTime() {
-    return std::chrono::duration<double>(
-               std::chrono::steady_clock::now().time_since_epoch())
-        .count();
-  }
-
   void workerLoop() {
     std::mt19937 rng((unsigned)std::chrono::high_resolution_clock::now()
                          .time_since_epoch()
@@ -252,6 +258,7 @@ class ShockerHub {
                 (double)config.cooldownFactorS * (int)shockTimestamps.size(),
             (double)config.maxCooldown);
         double remaining = dynamicCooldown - (now - lastTriggerTime);
+        activeCooldownDuration.store(dynamicCooldown);
         if (remaining > 0) {
           std::string cooldownMsg =
               fmt::format("On cooldown: {:.1f}s", remaining);
@@ -315,6 +322,23 @@ class ShockerHub {
 
     shockTimestamps.push_back(getCurrentTime());
     lastTriggerTime = getCurrentTime();
+
+    if (config.cooldownEnabled) {
+      double now = lastTriggerTime;
+      int windowS = config.cooldownWindowS;
+      shockTimestamps.erase(
+          std::remove_if(
+              shockTimestamps.begin(), shockTimestamps.end(),
+              [now, windowS](double t) { return now - t > windowS; }),
+          shockTimestamps.end());
+      double dynamicCooldown = std::min(
+          (double)config.baseCooldown +
+              (double)config.cooldownFactorS * (int)shockTimestamps.size(),
+          (double)config.maxCooldown);
+      cooldownUntil.store(now + dynamicCooldown);
+    } else {
+      cooldownUntil.store(0.0);
+    }
 
     // \xe2\x9a\xa1 =⚡symbol
     chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,

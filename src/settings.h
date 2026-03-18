@@ -30,6 +30,9 @@ class Settings {
   float xViewMax;
   std::vector<std::optional<Preset>> presets;
 
+  int windowX = 100, windowY = 100;
+  int windowW = 750, windowH = 520;
+
   Settings(const std::string& path, Config& cfg)
       : config(cfg),
         presets(config.presetCount),
@@ -48,9 +51,11 @@ class Settings {
           if (item.is_null()) {
             presets[i] = std::nullopt;
           } else {
-            presets[i] = Preset{item["name"].get<std::string>(),
-                                item["minShockDuration"].get<float>(),
-                                item["maxShockDuration"].get<float>()};
+            presets[i] = Preset{
+                item["name"].get<std::string>(),
+                item["minShockDuration"].get<float>(),
+                item["maxShockDuration"].get<float>(),
+            };
             presets[i]->xViewMin = item.value("xViewMin", 0.f);
             presets[i]->xViewMax = item.value("xViewMax", 100.f);
             if (item.contains("curvePoints") &&
@@ -70,8 +75,10 @@ class Settings {
           minShockDuration = presets[defaultPreset]->minShockDuration;
           maxShockDuration = presets[defaultPreset]->maxShockDuration;
         }
-        xViewMin = j.value("xViewMin", 0.f);
-        xViewMax = j.value("xViewMax", 100.f);
+        windowX = j.value("windowX", 100);
+        windowY = j.value("windowY", 100);
+        windowW = j.value("windowW", 750);
+        windowH = j.value("windowH", 520);
       }
     } catch (std::exception& e) {
       logMsg("Settings parse error: {}\n", e.what());
@@ -81,8 +88,10 @@ class Settings {
   void save(const std::string& path) {
     nlohmann::json j;
     j["defaultPreset"] = defaultPreset;
-    j["xViewMin"] = xViewMin;
-    j["xViewMax"] = xViewMax;
+    j["windowX"] = windowX;
+    j["windowY"] = windowY;
+    j["windowW"] = windowW;
+    j["windowH"] = windowH;
     j["presets"] = nlohmann::json::array();
     for (auto& p : presets) {
       if (p.has_value()) {

@@ -380,8 +380,9 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   RegisterClassExW(&wc);
 
   g_hwnd =
-      CreateWindowW(wc.lpszClassName, kWindowTitle, WS_OVERLAPPEDWINDOW, 100,
-                    100, 750, 520, nullptr, nullptr, wc.hInstance, nullptr);
+      CreateWindowW(wc.lpszClassName, kWindowTitle, WS_OVERLAPPEDWINDOW,
+                    settings.windowX, settings.windowY, settings.windowW,
+                    settings.windowH, nullptr, nullptr, wc.hInstance, nullptr);
 
   BOOL dark = TRUE;
   DwmSetWindowAttribute(g_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark,
@@ -401,7 +402,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
 
   ImGuiIO& io = ImGui::GetIO();
 
-  // io.IniFilename = NULL;
+  io.IniFilename = nullptr;
 
   io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 18.0f);
   ImFont* boldFont =
@@ -481,23 +482,55 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
 
     // Left panel
     ImGui::BeginChild("##controls", {180, -90}, true);
+    // Connected Icon
+    ImGui::SetCursorPosY(ImGui::GetStyle().WindowPadding.y * 0.5f);
+
+    {
+      ImVec2 p = ImGui::GetCursorScreenPos();
+      float r = 5.f;
+      bool connected = hub.isConnected();
+      ImU32 col =
+          connected ? IM_COL32(60, 220, 80, 255) : IM_COL32(220, 60, 60, 255);
+      ImGui::GetWindowDrawList()->AddCircleFilled(
+          {p.x + r, p.y + ImGui::GetTextLineHeight() * 0.5f}, r, col);
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + r * 2 + 6);
+      ImGui::Text(connected ? "Connected" : "Disconnected");
+      if (!connected) {
+        if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
+      }
+    }
+
+    // Cooldown Bar
+    if (config.cooldownEnabled) {
+      double remaining =
+          std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
+      double maxCd = config.maxCooldown;
+      float fraction = (float)(remaining / maxCd);
+
+      ImVec2 p = ImGui::GetCursorScreenPos();
+      float w = ImGui::GetContentRegionAvail().x;
+      float h = 3.f;
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      dl->AddRectFilled(p, {p.x + w, p.y + h},
+                        ImGui::ColorConvertFloat4ToU32(
+                            ImGui::GetStyle().Colors[ImGuiCol_FrameBg]));
+      if (fraction > 0.f)
+        dl->AddRectFilled(p, {p.x + w * fraction, p.y + h},
+                          IM_COL32(220, 80, 80, 255));
+      ImGui::Dummy({w, h});
+    }
 
     ImGui::Spacing();
     ImGui::Text("Min Duration (s)");
-    ImGui::SliderFloat("##mind", &minDur, 0.1f, 5.f, "%.1f");
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-      settings.minShockDuration = minDur;
-    }
-
-    ImGui::Text("Max Duration (s)");
     ImGui::SliderFloat("##maxd", &maxDur, 0.1f, 5.f, "%.1f");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
       settings.maxShockDuration = maxDur;
     }
 
     ImGui::Spacing();
-    if (ImGui::Checkbox("Enable Cooldown", &cooldownEnabled))
+    if (ImGui::Checkbox("Enable Cooldown", &cooldownEnabled)) {
       config.cooldownEnabled = cooldownEnabled;
+    }
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -578,10 +611,6 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     if (config.hasSecondShockParameter) {
       ImGui::SameLine();
       if (ImGui::Button("Test 2nd", {-1, 0})) hub.queueShockUpperHalf();
-    }
-
-    if (!hub.isConnected()) {
-      if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
     }
 
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() -
@@ -763,13 +792,6 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     g_pd3dContext->ClearRenderTargetView(g_mainRTV, (float*)&clear);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     g_pSwapChain->Present(1, 0);
-
-    // Frame cap
-    auto elapsed = steady_clock::now() - frameStart;
-    auto target = microseconds(16667);  // ~60fps
-    if (elapsed < target) {
-      std::this_thread::sleep_for(target - elapsed);
-    }
   }
 
   // Cleanup
@@ -777,6 +799,14 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   settings.maxShockDuration = maxDur;
   settings.xViewMin = xViewMin;
   settings.xViewMax = xViewMax;
+
+  RECT wr;
+  if (GetWindowRect(g_hwnd, &wr)) {
+    settings.windowX = wr.left;
+    settings.windowY = wr.top;
+    settings.windowW = wr.right - wr.left;
+    settings.windowH = wr.bottom - wr.top;
+  }
 
   ImGui_ImplDX11_Shutdown();
   ImGui_ImplWin32_Shutdown();
