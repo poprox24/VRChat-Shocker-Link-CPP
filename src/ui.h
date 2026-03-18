@@ -479,10 +479,10 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     }
 
     bool focused = GetForegroundWindow() == g_hwnd;
+    bool cooldownActive = config.cooldownEnabled &&
+                          hub.cooldownUntil.load() > hub.getCurrentTime();
 
     if (!focused && firstFrameDone) {
-      bool cooldownActive = config.cooldownEnabled &&
-                            hub.cooldownUntil.load() > hub.getCurrentTime();
       if (cooldownActive) {
         std::this_thread::sleep_for(
             std::chrono::milliseconds(60));  // Run at ~16.6fps
@@ -493,10 +493,11 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
         WaitMessage();
         continue;
       }
-    }  // else {
-       //  issue, only updates on mouse movement
-       //  WaitMessage();  // Wait for any change before re-rendering if focused
-       // }
+    } else if (!cooldownActive ||
+               !hub.isConnected) {  // Render only if cooldown is there or hub
+                                    // disconnected for logging messages
+      WaitMessage();  // Wait for any change before re-rendering if focused
+    }
 
     RECT wr;
     if (GetWindowRect(g_hwnd, &wr)) {
