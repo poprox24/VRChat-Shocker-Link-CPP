@@ -30,7 +30,7 @@ class Settings {
   float xViewMax;
   std::vector<std::optional<Preset>> presets;
 
-  Settings(std::string path, Config& cfg)
+  Settings(const std::string& path, Config& cfg)
       : config(cfg),
         presets(config.presetCount),
         minShockDuration(1),

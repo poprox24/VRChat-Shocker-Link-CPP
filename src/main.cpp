@@ -26,7 +26,10 @@ int main() {
   std::signal(SIGINT, signalHandler);
 
   hub.connectSerial();
-  hub.listShockers();
+  if (!hub.listShockers()) {
+    hub.shutdown();
+    return 1;
+  }
 
   OscQueryServer oscQuery(config.oscPort, std::string(config.serviceName));
   oscQuery.setShockPath(config.shockParameter);

@@ -190,8 +190,8 @@ class OscQueryServer {
           onOscMessage(path, value);
         }) {}
 
-  void setShockPath(std::string path) { shockPath_ = path; }
-  void setSecondShockPath(std::string path) { secondShockPath_ = path; }
+  void setShockPath(const std::string& path) { shockPath_ = path; }
+  void setSecondShockPath(const std::string& path) { secondShockPath_ = path; }
 
   bool start() {
     httpServer_.Get(

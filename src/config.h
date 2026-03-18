@@ -153,5 +153,5 @@ VRCHAT_HOST: "127.0.0.1"
     vrchatHost = config["VRCHAT_HOST"].as<std::string>("127.0.0.1");
   }
 
-  void pushShockerId(std::string id) { ShockerIDs.push_back(id); }
+  void pushShockerId(const std::string& id) { ShockerIDs.push_back(id); }
 };
