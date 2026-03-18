@@ -462,11 +462,18 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
 
   MSG msg{};
   while (msg.message != WM_QUIT) {
-    auto frameStart = steady_clock::now();
     if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
       TranslateMessage(&msg);
       DispatchMessage(&msg);
       continue;
+    }
+
+    RECT wr;
+    if (GetWindowRect(g_hwnd, &wr)) {
+      settings.windowX = wr.left;
+      settings.windowY = wr.top;
+      settings.windowW = wr.right - wr.left;
+      settings.windowH = wr.bottom - wr.top;
     }
 
     ImGui_ImplDX11_NewFrame();
@@ -806,14 +813,6 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   settings.maxShockDuration = maxDur;
   settings.xViewMin = xViewMin;
   settings.xViewMax = xViewMax;
-
-  RECT wr;
-  if (GetWindowRect(g_hwnd, &wr)) {
-    settings.windowX = wr.left;
-    settings.windowY = wr.top;
-    settings.windowW = wr.right - wr.left;
-    settings.windowH = wr.bottom - wr.top;
-  }
 
   ImGui_ImplDX11_Shutdown();
   ImGui_ImplWin32_Shutdown();
