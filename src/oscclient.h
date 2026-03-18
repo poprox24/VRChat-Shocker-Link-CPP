@@ -183,7 +183,7 @@ class OscQueryServer {
   bool shockPending = false;
   bool secondShockPending = false;
 
-  OscQueryServer(int oscPort, std::string serviceName)
+  OscQueryServer(int oscPort, const std::string& serviceName)
       : oscPort_(oscPort),
         serviceName_(serviceName),
         oscListener_(oscPort, [this](const std::string& path, float value) {

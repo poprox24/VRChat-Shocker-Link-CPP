@@ -22,7 +22,6 @@ using namespace std::chrono;
 #include "logger.h"
 #include "settings.h"
 #include "shockerhub.h"
-#include "ui.h"
 #include "updater.h"
 
 static constexpr wchar_t kWindowTitle[] = L"Shocker Link v" APP_VERSION_W;

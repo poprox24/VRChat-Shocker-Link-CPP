@@ -25,11 +25,12 @@ inline std::vector<CurvePoint> bezierInterpolate(CurvePoint p0, CurvePoint p1,
   return out;
 }
 
-inline int sampleIntensity(std::array<CurvePoint, 3> pts) {
-  std::sort(pts.begin(), pts.end(),
+inline int sampleIntensity(std::array<CurvePoint, 3>& pts) {
+  auto sorted = pts;
+  std::sort(sorted.begin(), sorted.end(),
             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
 
-  auto curve = bezierInterpolate(pts[0], pts[1], pts[2]);
+  auto curve = bezierInterpolate(sorted[0], sorted[1], sorted[2]);
 
   std::vector<double> xs, ys;
   for (auto& p : curve) {
@@ -51,11 +52,12 @@ inline int sampleIntensity(std::array<CurvePoint, 3> pts) {
   return (int)xs.back();
 }
 
-inline int sampleIntensityUpperHalf(std::array<CurvePoint, 3> pts) {
-  std::sort(pts.begin(), pts.end(),
+inline int sampleIntensityUpperHalf(std::array<CurvePoint, 3>& pts) {
+  auto sorted = pts;
+  std::sort(sorted.begin(), sorted.end(),
             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
 
-  auto curve = bezierInterpolate(pts[0], pts[1], pts[2]);
+  auto curve = bezierInterpolate(sorted[0], sorted[1], sorted[2]);
 
   std::vector<double> xs, ys;
   for (auto& p : curve) {

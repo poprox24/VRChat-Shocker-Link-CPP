@@ -16,7 +16,7 @@
 
 class MdnsAdvertiser {
  public:
-  MdnsAdvertiser(std::string serviceName, int httpPort)
+  MdnsAdvertiser(const std::string& serviceName, int httpPort)
       : serviceName_(serviceName), httpPort_(httpPort) {}
 
   bool start() {
