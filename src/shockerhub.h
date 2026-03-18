@@ -40,15 +40,15 @@ class ShockerHub {
       : config(cfg), settings(set), chatbox(cfg.vrchatHost) {}
 
   bool connectSerial() {
-    logMsg("Attempting to connect to the shocker hub");
+    logMsg("[ShockerHub] Attempting to connect to the shocker hub");
 
     if (!config.serialPort.empty()) {
       bool opened =
           serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
       if (!opened) {
         logMsg(
-            "Could not open port saved in config: {}, trying last known "
-            "working port.\n",
+            "[ShockerHub] Could not open port saved in config: {}, trying last "
+            "known working port.\n",
             config.serialPort);
       } else {
         startWorkerThread();
@@ -65,7 +65,9 @@ class ShockerHub {
         return true;
       }
     }
-    logMsg("Could not open last known working port, running a port scan");
+    logMsg(
+        "[ShockerHub] Could not open last known working port, running a port "
+        "scan");
     if (config.usePishock) {
       return scanForPishock();
     } else {
@@ -101,7 +103,7 @@ class ShockerHub {
       serial.closeDevice();
       isConnected = false;
       if (connectSerial()) return true;
-      logMsg("Reconnect failed, retrying in {}s...", delay / 1000);
+      logMsg("[ShockerHub] Reconnect failed, retrying in {}s...", delay / 1000);
       emptyQueue();
       std::this_thread::sleep_for(std::chrono::milliseconds(delay));
       delay = std::min(delay * 2, 15000);
@@ -117,11 +119,13 @@ class ShockerHub {
   bool listShockers() {
     if (config.ShockerIDs.empty()) {
       logMsg(
-          "No shockers configured and none found automatically.\nPlease set "
-          "them up in config.yml\nThe program will now exit...\n");
+          "[ShockerHub] No shockers configured and none found "
+          "automatically.\nPlease set them up in config.yml\nThe program will "
+          "now exit...\n");
       return false;
     }
-    logMsg("Shockers found: {}\n", fmt::join(config.ShockerIDs, ", "));
+    logMsg("[ShockerHub] Shockers found: {}\n",
+           fmt::join(config.ShockerIDs, ", "));
     return true;
   }
 
@@ -196,7 +200,8 @@ class ShockerHub {
     }
 
     logMsg(
-        "Couldn't connect to PiShock HUB, check connection and reconnect.\n");
+        "[ShockerHub] Couldn't connect to PiShock HUB, check connection and "
+        "reconnect.\n");
     return false;
   }
 
@@ -229,8 +234,8 @@ class ShockerHub {
     }
 
     logMsg(
-        "Couldn't connect to OpenShock HUB, check connection and press the "
-        "reconnect button.\n");
+        "[ShockerHub] Couldn't connect to OpenShock HUB, check connection and "
+        "press the reconnect button.\n");
     return false;
   }
 
@@ -238,7 +243,7 @@ class ShockerHub {
     settings.lastSerialPort = config.serialPort;
     isConnected = true;
     if (!workerThread.joinable()) {
-      logMsg("Connected on {}\n", config.serialPort);
+      logMsg("[ShockerHub] Connected on {}\n", config.serialPort);
       workerThread = std::thread([this]() { workerLoop(); });
     }
   }
@@ -279,7 +284,7 @@ class ShockerHub {
         activeCooldownDuration.store(dynamicCooldown);
         if (remaining > 0) {
           std::string cooldownMsg =
-              fmt::format("On cooldown: {:.1f}s", remaining);
+              fmt::format("[ShockerHub] On cooldown: {:.1f}s", remaining);
           logMsg("{}\n", cooldownMsg);
           chatbox.send(cooldownMsg);
           continue;
@@ -332,7 +337,7 @@ class ShockerHub {
 
     int result = serial.writeString(command.c_str());
     if (result <= 0) {
-      logMsg("Serial write failed, reconnecting...\n");
+      logMsg("[ShockerHub] Serial write failed, reconnecting...\n");
       reconnectSerial();
       queueShock(durationMs);
       return;
@@ -362,6 +367,7 @@ class ShockerHub {
     chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
                              durationMs / 1000.0f));
 
-    logMsg("Sent shock: {}%, {:.1f}s\n", strength, (durationMs / 1000.0f));
+    logMsg("[ShockerHub] Sent shock: {}%, {:.1f}s\n", strength,
+           (durationMs / 1000.0f));
   }
 };
