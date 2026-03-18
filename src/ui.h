@@ -573,13 +573,12 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     ImGui::Spacing();
 
     if (ImGui::Button("Test Shock",
-                      {config.hasSecondShockParameter ? 85.f : -1.f, 0}))
-      hub.queueShock(config.shockStrength);
+                      {config.hasSecondShockParameter ? 77.5f : -1.f, 0}))
+      hub.queueShock();
 
     if (config.hasSecondShockParameter) {
       ImGui::SameLine();
-      if (ImGui::Button("Test 2nd", {-1, 0}))
-        hub.queueShockUpperHalf(config.shockStrength);
+      if (ImGui::Button("Test 2nd", {-1, 0})) hub.queueShockUpperHalf();
     }
 
     if (!hub.isConnected()) {

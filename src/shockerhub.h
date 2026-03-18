@@ -53,18 +53,18 @@ class ShockerHub {
     }
   }
 
-  void queueShock(int strength, int duration = -1) {
+  void queueShock(int duration = -1) {
     {
       std::lock_guard<std::mutex> lock(queueMutex);
-      shockQueue.push({duration, strength, false});
+      shockQueue.push({duration, false});
     }
     queueCV.notify_one();
   }
 
-  void queueShockUpperHalf(int strength, int duration = -1) {
+  void queueShockUpperHalf(int duration = -1) {
     {
       std::lock_guard<std::mutex> lock(queueMutex);
-      shockQueue.push({duration, strength, true});
+      shockQueue.push({duration, true});
     }
     queueCV.notify_one();
   }
@@ -120,7 +120,7 @@ class ShockerHub {
   std::vector<double> shockTimestamps;
   serialib serial;
 
-  std::queue<std::tuple<std::optional<int>, int, bool>> shockQueue;
+  std::queue<std::tuple<std::optional<int>, bool>> shockQueue;
   std::mutex queueMutex;
   std::condition_variable queueCV;
   std::thread workerThread;
@@ -236,8 +236,7 @@ class ShockerHub {
       lock.unlock();
 
       int durationMs = std::get<0>(item).value_or(-1);
-      int strength = std::get<1>(item);
-      bool upperHalf = std::get<2>(item);
+      bool upperHalf = std::get<1>(item);
 
       if (config.cooldownEnabled) {
         double now = getCurrentTime();
@@ -261,12 +260,6 @@ class ShockerHub {
           continue;
         }
       }
-
-      int durationMs = std::get<0>(shockQueue.front()).value_or(-1);
-      int strength = std::get<1>(shockQueue.front());
-      bool upperHalf = std::get<2>(shockQueue.front());
-      shockQueue.pop();
-      lock.unlock();
 
       std::string chosenShocker;
       std::vector<std::string>& ids = config.ShockerIDs;
@@ -292,7 +285,7 @@ class ShockerHub {
     }
   }
 
-  void sendShock(int durationMs, int strength, std::string shockerID) {
+  void sendShock(int durationMs, int strength, const std::string& shockerID) {
     std::string command;
 
     if (config.usePishock) {
@@ -316,7 +309,7 @@ class ShockerHub {
     if (result <= 0) {
       logMsg("Serial write failed, reconnecting...\n");
       reconnectSerial();
-      queueShock(strength, durationMs);
+      queueShock(durationMs);
       return;
     }
 

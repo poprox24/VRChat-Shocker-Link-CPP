@@ -23,7 +23,6 @@ inline std::atomic<bool> updateReady{false};
 inline std::string pendingExePath;
 
 namespace Updater {
-
 inline bool newerThan(const std::string& remote, const std::string& local) {
   auto parse = [](const std::string& v) {
     std::string s = (!v.empty() && v[0] == 'v') ? v.substr(1) : v;

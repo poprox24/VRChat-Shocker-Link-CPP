@@ -237,7 +237,6 @@ class OscQueryServer {
   std::unique_ptr<MdnsAdvertiser> mdns_;
 
   std::mutex lastValuesMutex_;
-  std::unordered_map<std::string, float> lastValues_;
 
   // Remembers the last value for each OSC path so we can ignore duplicates
   std::unordered_map<std::string, float> lastValues_;

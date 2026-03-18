@@ -78,7 +78,7 @@ class Settings {
     }
   }
 
-  void save(std::string path) {
+  void save(const std::string& path) {
     nlohmann::json j;
     j["defaultPreset"] = defaultPreset;
     j["xViewMin"] = xViewMin;

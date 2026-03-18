@@ -69,8 +69,6 @@ VRCHAT_HOST: "127.0.0.1"
   int cooldownWindowS;
   bool cooldownEnabled;
 
-  int shockStrength;
-
   // Style config
   int presetCount;
   float touchSelectThreshold;
@@ -92,7 +90,7 @@ VRCHAT_HOST: "127.0.0.1"
   static const int oscPort = 39570;
   static constexpr std::string_view serviceName = "ShockerLink";
 
-  Config(std::string path) {
+  Config(const std::string& path) {
     YAML::Node config;
 
     try {

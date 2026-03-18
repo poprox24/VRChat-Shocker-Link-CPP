@@ -47,11 +47,11 @@ int main() {
       if (oscQuery.shockPending) {
         oscQuery.shockPending = false;
         lock.unlock();
-        hub.queueShock(config.shockStrength);
+        hub.queueShock();
       } else if (oscQuery.secondShockPending) {
         oscQuery.secondShockPending = false;
         lock.unlock();
-        hub.queueShockUpperHalf(config.shockStrength);
+        hub.queueShockUpperHalf();
       }
     }
   });
