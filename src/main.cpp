@@ -58,8 +58,6 @@ int main() {
 
   Updater::checkAsync();
   ui_run(config, settings, hub, settingsLocation);
-
-  ui_run(config, settings, hub, settingsLocation);
   running = false;
   oscBridge.join();
   oscQuery.stop();
