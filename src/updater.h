@@ -134,7 +134,7 @@ inline void checkAsync() {
         return;
       }
 
-      logMsg("[Update] Ready — will restart shortly");
+      logMsg("[Update] Ready, will restart shortly");
       updateReady = true;
 
     } catch (std::exception& e) {
