@@ -25,7 +25,7 @@ using namespace std::chrono;
 #include "ui.h"
 #include "updater.h"
 
-static constexpr wchar_t kWindowTitle[] = L"Shocker Link v1.1.0";
+static constexpr wchar_t kWindowTitle[] = L"Shocker Link v" APP_VERSION_W;
 
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dContext = nullptr;

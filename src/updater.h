@@ -15,6 +15,10 @@
 
 #define APP_VERSION "1.1.0"
 
+#define WIDEN2(x) L##x
+#define WIDEN(x) WIDEN2(x)
+#define APP_VERSION_W WIDEN(APP_VERSION)
+
 inline std::atomic<bool> updateReady{false};
 inline std::string pendingExePath;
 
