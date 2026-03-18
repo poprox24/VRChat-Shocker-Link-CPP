@@ -13,7 +13,7 @@
 
 #pragma comment(lib, "wininet.lib")
 
-#define APP_VERSION "1.1.3"
+#define APP_VERSION "1.1.4"
 
 #define WIDEN2(x) L##x
 #define WIDEN(x) WIDEN2(x)
