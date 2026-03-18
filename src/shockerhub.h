@@ -264,11 +264,11 @@ class ShockerHub {
       std::string chosenShocker;
       std::vector<std::string>& ids = config.ShockerIDs;
       if (config.randomOrSeq) {
-        std::uniform_int_distribution<int> idxDist(0, (int)ids.size() - 1);
-        chosenShocker = ids[idxDist(rng)];
-      } else {
         lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
         chosenShocker = ids[lastShockerIndex];
+      } else {
+        std::uniform_int_distribution<int> idxDist(0, (int)ids.size() - 1);
+        chosenShocker = ids[idxDist(rng)];
       }
 
       if (durationMs == -1) {
