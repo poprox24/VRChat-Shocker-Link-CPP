@@ -17,11 +17,15 @@ using namespace std::chrono;
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
+#include "imgui_internal.h"
 #include "implot.h"
 #include "logger.h"
 #include "settings.h"
 #include "shockerhub.h"
 #include "ui.h"
+#include "updater.h"
+
+static constexpr wchar_t kWindowTitle[] = L"Shocker Link v1.1.0";
 
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dContext = nullptr;
@@ -112,7 +116,8 @@ static bool SaveButton(const char* id) {
 
 // Button to import old config from
 inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
-                               float& minDur, float& maxDur,
+                               float& minDur, float& maxDur, float& xViewMin,
+                               float& xViewMax,
                                const std::string& settingsPath) {
   // Folder picker
   char folderPath[MAX_PATH] = {};
@@ -144,6 +149,11 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
       if (j.contains("max_duration"))
         maxDur = settings.maxShockDuration = j["max_duration"].get<float>();
 
+      if (j.contains("ui_min_x"))
+        xViewMin = settings.xViewMin = j["ui_min_x"].get<float>();
+      if (j.contains("ui_max_x"))
+        xViewMax = settings.xViewMax = j["ui_max_x"].get<float>();
+
       auto& rawPresets = j["presets"];
       const nlohmann::json names =
           j.contains("preset_names") ? j["preset_names"] : nlohmann::json{};
@@ -161,6 +171,8 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
                      : ("Preset " + std::to_string(i + 1));
         p.minShockDuration = rp.value("min_duration", 1.0f);
         p.maxShockDuration = rp.value("max_duration", 2.0f);
+        p.xViewMin = rp.value("ui_min_x", 0.f);
+        p.xViewMax = rp.value("ui_max_x", 100.f);
         if (rp.contains("curve_points") && rp["curve_points"].size() == 3)
           for (int k = 0; k < 3; k++)
             p.curvePoints[k] = {rp["curve_points"][k][0].get<double>(),
@@ -176,6 +188,8 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
         minDur = settings.minShockDuration = dp->minShockDuration;
         maxDur = settings.maxShockDuration = dp->maxShockDuration;
         hub.curvePoints = dp->curvePoints;
+        xViewMin = settings.xViewMin = dp->xViewMin;
+        xViewMax = settings.xViewMax = dp->xViewMax;
       }
       logMsg("Imported curve_config.json");
     } else {
@@ -266,6 +280,87 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
   return true;
 }
 
+inline bool RangeSliderFloat(const char* id, float* vMin, float* vMax,
+                             float min, float max, float width = -1.f) {
+  ImGuiIO& io = ImGui::GetIO();
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImGuiStyle& style = ImGui::GetStyle();
+
+  if (width < 0) width = ImGui::GetContentRegionAvail().x;
+  float height = ImGui::GetFrameHeight();
+  ImVec2 pos = ImGui::GetCursorScreenPos();
+
+  ImGui::Dummy({width, height});
+  bool changed = false;
+
+  float trackY = pos.y + height * 0.5f;
+  float trackX0 = pos.x + height * 0.5f;
+  float trackX1 = pos.x + width - height * 0.5f;
+  float trackW = trackX1 - trackX0;
+  float hRadius = height * 0.5f;
+
+  auto valToX = [&](float v) {
+    return trackX0 + (v - min) / (max - min) * trackW;
+  };
+  auto xToVal = [&](float x) {
+    return std::clamp(min + (x - trackX0) / trackW * (max - min), min, max);
+  };
+
+  ImVec2 hMinPos = {valToX(*vMin), trackY};
+  ImVec2 hMaxPos = {valToX(*vMax), trackY};
+
+  static int dragging = 0;
+  ImVec2 mouse = io.MousePos;
+
+  auto inCircle = [&](ImVec2 c) {
+    float dx = mouse.x - c.x, dy = mouse.y - c.y;
+    return dx * dx + dy * dy <= hRadius * hRadius;
+  };
+
+  if (ImGui::IsMouseClicked(0) && dragging == 0) {
+    bool onMin = inCircle(hMinPos), onMax = inCircle(hMaxPos);
+    if (onMin && onMax)
+      dragging = (mouse.x < (hMinPos.x + hMaxPos.x) * 0.5f) ? 1 : 2;
+    else if (onMin)
+      dragging = 1;
+    else if (onMax)
+      dragging = 2;
+  }
+  if (!ImGui::IsMouseDown(0)) dragging = 0;
+
+  if (dragging == 1) {
+    *vMin = std::min(xToVal(mouse.x), *vMax - 1.f);
+    changed = true;
+  } else if (dragging == 2) {
+    *vMax = std::max(xToVal(mouse.x), *vMin + 1.f);
+    changed = true;
+  }
+
+  hMinPos = {valToX(*vMin), trackY};
+  hMaxPos = {valToX(*vMax), trackY};
+
+  bool hovMin = inCircle(hMinPos), hovMax = inCircle(hMaxPos);
+
+  ImU32 trackCol =
+      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_FrameBg]);
+  ImU32 fillCol =
+      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrab]);
+  ImU32 grabCol =
+      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrab]);
+  ImU32 grabActCol =
+      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrabActive]);
+
+  dl->AddRectFilled({trackX0, trackY - 3}, {trackX1, trackY + 3}, trackCol, 3);
+  dl->AddRectFilled({hMinPos.x, trackY - 3}, {hMaxPos.x, trackY + 3}, fillCol,
+                    3);
+  dl->AddCircleFilled(hMinPos, hRadius,
+                      (dragging == 1 || hovMin) ? grabActCol : grabCol, 12);
+  dl->AddCircleFilled(hMaxPos, hRadius,
+                      (dragging == 2 || hovMax) ? grabActCol : grabCol, 12);
+
+  return changed;
+}
+
 // UI entry point
 inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
                    const std::string& settingsPath) {
@@ -280,13 +375,13 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
                  nullptr,
                  nullptr,
                  nullptr,
-                 L"Shocker Link",
+                 L"ShockerLink",
                  hIcon};
   ImGui_ImplWin32_EnableDpiAwareness();
   RegisterClassExW(&wc);
 
   g_hwnd =
-      CreateWindowW(wc.lpszClassName, L"Shocker Link", WS_OVERLAPPEDWINDOW, 100,
+      CreateWindowW(wc.lpszClassName, kWindowTitle, WS_OVERLAPPEDWINDOW, 100,
                     100, 750, 520, nullptr, nullptr, wc.hInstance, nullptr);
 
   BOOL dark = TRUE;
@@ -306,7 +401,9 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   ImPlot::CreateContext();
 
   ImGuiIO& io = ImGui::GetIO();
-  float dpiScale = ImGui_ImplWin32_GetDpiScaleForHwnd(g_hwnd);
+
+  // io.IniFilename = NULL;
+
   io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 18.0f);
   ImFont* boldFont =
       io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeuib.ttf", 18.0f);
@@ -340,6 +437,9 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   float maxDur = (float)settings.maxShockDuration;
   bool cooldownEnabled = config.cooldownEnabled;
 
+  float xViewMin = settings.xViewMin;
+  float xViewMax = settings.xViewMax;
+
   // Apply default preset if set
   if (settings.defaultPreset >= 0 &&
       settings.defaultPreset < (int)settings.presets.size() &&
@@ -348,6 +448,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     minDur = p->minShockDuration;
     maxDur = p->maxShockDuration;
     hub.curvePoints = p->curvePoints;
+    xViewMin = p->xViewMin;
+    xViewMax = p->xViewMax;
   }
 
   std::array<CurvePoint, 3>& pts = hub.curvePoints;
@@ -423,6 +525,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
         settings.minShockDuration = minDur;
         settings.maxShockDuration = maxDur;
         hub.curvePoints = settings.presets[i]->curvePoints;
+        xViewMin = settings.presets[i]->xViewMin;
+        xViewMax = settings.presets[i]->xViewMax;
       }
       // Middle click - set default
       if (ImGui::IsItemClicked(ImGuiMouseButton_Middle)) {
@@ -457,6 +561,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
         p.minShockDuration = minDur;
         p.maxShockDuration = maxDur;
         p.curvePoints = hub.curvePoints;
+        p.xViewMin = xViewMin;
+        p.xViewMax = xViewMax;
         settings.presets[i] = p;
         settings.save(settingsPath);
       }
@@ -484,7 +590,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
                          ImGui::GetFrameHeightWithSpacing() -
                          ImGui::GetStyle().WindowPadding.y);
     if (ImGui::Button("Import Python cfg", {-1, 0}))
-      importPythonConfig(settings, hub, minDur, maxDur, settingsPath);
+      importPythonConfig(settings, hub, minDur, maxDur, xViewMin, xViewMax,
+                         settingsPath);
 
     ImGui::EndChild();
 
@@ -492,10 +599,14 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     ImGui::SameLine();
     ImGui::BeginChild("##plot", {0, -90}, false);
 
-    if (ImPlot::BeginPlot(" ", {-1, -1})) {
+    float sliderH = ImGui::GetFrameHeightWithSpacing() + 4;
+    ImVec2 savedPlotPos = {}, savedPlotSize = {};
+    ImVec2 plotFramePos = ImGui::GetCursorScreenPos();
+    float plotFrameWidth = ImGui::GetContentRegionAvail().x;
+    if (ImPlot::BeginPlot(" ", {-1, -sliderH})) {
       ImPlot::SetupAxes("Intensity (%)", "Weight", ImPlotAxisFlags_NoGridLines,
                         ImPlotAxisFlags_NoGridLines);
-      ImPlot::SetupAxisLimits(ImAxis_X1, 0, 100, ImPlotCond_Always);
+      ImPlot::SetupAxisLimits(ImAxis_X1, xViewMin, xViewMax, ImPlotCond_Always);
       ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 1, ImPlotCond_Always);
       ImPlot::SetupLegend(ImPlotLocation_NorthEast, ImPlotLegendFlags_None);
       ImPlot::SetupFinish();
@@ -524,6 +635,7 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
           ImGui::ColorConvertFloat4ToU32(config.gradientRightColor),
           ImGui::ColorConvertFloat4ToU32(config.gradientRightColor),
           ImGui::ColorConvertFloat4ToU32(config.gradientLeftColor));
+
       ImPlot::PopPlotClipRect();
 
       for (int i = 0; i < 3; i++) {
@@ -603,9 +715,32 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
 
         ImPlot::PopPlotClipRect();
       }
+      savedPlotPos = ImPlot::GetPlotPos();
+      savedPlotSize = ImPlot::GetPlotSize();
 
       ImPlot::EndPlot();
     }
+
+    ImVec2 sc = ImGui::GetCursorScreenPos();
+    float gap = ImGui::GetStyle().ItemSpacing.y;
+    float sliderRowH = ImGui::GetFrameHeight() + 4;
+    float border = 1.f;
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        {plotFramePos.x, sc.y - gap},
+        {plotFramePos.x + plotFrameWidth - border, sc.y + sliderRowH},
+        ImGui::ColorConvertFloat4ToU32(config.insideCurveBg));
+    ImGui::GetWindowDrawList()->AddText(
+        {plotFramePos.x + 6,
+         sc.y + (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f +
+             2},
+        ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_Text]),
+        "X Scale");
+    ImGui::SetCursorScreenPos({savedPlotPos.x, sc.y + 2});
+    RangeSliderFloat("##xrange", &xViewMin, &xViewMax, 0.f, 100.f,
+                     savedPlotSize.x);
+    ImGui::SetCursorScreenPos(
+        {plotFramePos.x + plotFrameWidth, sc.y + sliderRowH});
+
     ImGui::EndChild();
 
     // Log bar
@@ -621,6 +756,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     ImGui::EndChild();
 
     ImGui::End();
+
+    if (updateReady) Updater::applyAndRestart(g_hwnd);
 
     // Render
     ImGui::Render();
@@ -640,6 +777,8 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
   // Cleanup
   settings.minShockDuration = minDur;
   settings.maxShockDuration = maxDur;
+  settings.xViewMin = xViewMin;
+  settings.xViewMax = xViewMax;
 
   ImGui_ImplDX11_Shutdown();
   ImGui_ImplWin32_Shutdown();

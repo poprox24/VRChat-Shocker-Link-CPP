@@ -178,7 +178,7 @@ class ShockerHub {
   }
 
   bool scanForOpenshock() {
-    for (int i = 1; i <= 50; i++) {
+    for (int i = 1; i <= 24; i++) {
       config.serialPort = "COM" + std::to_string(i);
 
       bool opened =

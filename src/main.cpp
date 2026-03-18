@@ -9,6 +9,7 @@
 #include "settings.h"
 #include "shockerhub.h"
 #include "ui.h"
+#include "updater.h"
 
 std::string configLocation = "config.yml";
 std::string settingsLocation = "settings.json";
@@ -55,6 +56,9 @@ int main() {
     }
   });
 
+  Updater::checkAsync();
+  ui_run(config, settings, hub, settingsLocation);
+
   ui_run(config, settings, hub, settingsLocation);
   running = false;
   oscBridge.join();
@@ -65,7 +69,11 @@ int main() {
   if (shouldRestart) {
     char exePath[MAX_PATH] = {};
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-    ShellExecuteA(nullptr, "open", exePath, nullptr, nullptr, SW_SHOWNORMAL);
+    ShellExecuteA(
+        nullptr, "open", "cmd.exe",
+        ("/c timeout /t 1 /nobreak && \"" + std::string(exePath) + "\"")
+            .c_str(),
+        nullptr, SW_HIDE);
   }
   return 0;
 }
