@@ -138,6 +138,8 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
     std::ifstream f(folder + "curve_config.json");
     if (f.is_open()) {
       nlohmann::json j = nlohmann::json::parse(f);
+      const nlohmann::json names =
+          j.contains("preset_names") ? j["preset_names"] : nlohmann::json{};
 
       if (j.contains("curve_points") && j["curve_points"].size() == 3)
         for (int i = 0; i < 3; i++)
@@ -155,8 +157,6 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
         xViewMax = settings.xViewMax = j["ui_max_x"].get<float>();
 
       auto& rawPresets = j["presets"];
-      const nlohmann::json names =
-          j.contains("preset_names") ? j["preset_names"] : nlohmann::json{};
       for (int i = 0;
            i < (int)settings.presets.size() && i < (int)rawPresets.size();
            i++) {
