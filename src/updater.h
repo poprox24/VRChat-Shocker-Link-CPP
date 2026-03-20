@@ -102,13 +102,14 @@ inline void checkAsync() {
     try {
       auto j = nlohmann::json::parse(resp);
       std::string tag = j["tag_name"].get<std::string>();
-      std::string relName = j.value("name", "");
 
       if (!newerThan(tag, APP_VERSION)) {
         logMsg("[Update] Up to date ({})", APP_VERSION);
-        logMsg("[Update] Patch: {}", relName);
+        logMsg("[Update] Patch: {}", APP_RELEASE_NAME);
         return;
       }
+
+      std::string relName = j.value("name", "");
 
       logMsg("[Update] New version {} found, patch name: {}, downloading...",
              tag, relName);
