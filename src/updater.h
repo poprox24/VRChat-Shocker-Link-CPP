@@ -10,10 +10,9 @@
 #include <thread>
 
 #include "logger.h"
+#include "version.h"
 
 #pragma comment(lib, "wininet.lib")
-
-#define APP_VERSION "1.1.4"
 
 #define WIDEN2(x) L##x
 #define WIDEN(x) WIDEN2(x)

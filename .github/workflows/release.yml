@@ -1,0 +1,39 @@
+name: Build and Release
+
+on:
+  push:
+    branches: ["main"]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Extract version info
+      id: version
+      shell: bash
+      run: |
+        echo "VERSION=$(grep -oP '#define APP_VERSION "\K[^"]+' src/version.h)" >> $GITHUB_OUTPUT
+        echo "RELNAME=$(grep -oP '#define APP_RELEASE_NAME "\K[^"]+' src/version.h)" >> $GITHUB_OUTPUT
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{steps.version.outputs.VERSION}}
+        name: ${{steps.version.outputs.RELNAME}} v${{steps.version.outputs.VERSION}}
+        files: build/Release/*.exe
+        token: ${{secrets.GITHUB_TOKEN}}
