@@ -473,8 +473,11 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
   float stgMarkerSize = 140.f;
   float stgLineWidth = 3.f;
 
+  int baseClientW = (int)ImGui::GetIO().DisplaySize.x;
   // Style copies apply live on edit, so point directly at settings fields
   auto openSettingsModal = [&]() {
+    baseClientW = (int)ImGui::GetIO().DisplaySize.x;
+
     strncpy_s(stgShockParam, settings.shockParameter.c_str(),
               sizeof(stgShockParam) - 1);
     strncpy_s(stgSecondParam, settings.secondShockParameter.c_str(),
@@ -522,7 +525,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
   ImVec4& clear = settings.backgroundColor;
 
-  bool firstFrameDone = false;
+  bool forceFrame = true;
   MSG msg{};
   while (msg.message != WM_QUIT) {
     if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -542,10 +545,10 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     bool focused = GetForegroundWindow() == g_hwnd || showSettings;
     bool cooldownActive = settings.cooldownEnabled &&
                           hub.cooldownUntil.load() > hub.getCurrentTime();
-    bool needsAnimation = cooldownActive || !hub.isConnected || showSettings ||
-                          settingsAnim > 0.001f;
+    bool needsAnimation =
+        cooldownActive || !hub.isConnected || settingsAnim > 0.0f || forceFrame;
 
-    if (firstFrameDone) {
+    if (!forceFrame) {
       if (!needsAnimation && !focused) {
         // Fully idle -- nothing to animate and nobody watching
         MsgWaitForMultipleObjects(0, nullptr, FALSE, INFINITE, QS_ALLINPUT);
@@ -563,7 +566,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     if (GetWindowRect(g_hwnd, &wr)) {
       settings.windowX = wr.left;
       settings.windowY = wr.top;
-      if (settingsAnim < 0.01f) settings.windowW = wr.right - wr.left;
+      if (settingsAnim == 0.f) settings.windowW = wr.right - wr.left;
       settings.windowH = wr.bottom - wr.top;
     }
 
@@ -740,7 +743,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
     // Curve editor
     ImGui::SameLine();
-    float plotW = (settingsAnim > 0.001f) ? (settings.windowW - 196.f) : 0.f;
+    float plotW = settings.windowW - 220.f;
     ImGui::BeginChild("##plot", {plotW, -90}, false);
 
     float sliderH = ImGui::GetFrameHeightWithSpacing() + 4;
@@ -933,12 +936,14 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
     {
       float target = showSettings ? 1.f : 0.f;
+      float prevAnim = settingsAnim;
       settingsAnim +=
           (target - settingsAnim) * std::min(1.f, io.DeltaTime * 12.f);
       if (settingsAnim < 0.001f) settingsAnim = 0.f;
       SetWindowPos(g_hwnd, nullptr, settings.windowX, settings.windowY,
                    settings.windowW + (int)(settingsAnim * 550),
                    settings.windowH, SWP_NOZORDER | SWP_NOMOVE);
+      if (settingsAnim == 0.f && prevAnim > 0.f) forceFrame = true;
     }
 
     if (showSettings) {
@@ -1151,7 +1156,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     g_pd3dContext->OMSetRenderTargets(0, nullptr, nullptr);
     g_pSwapChain->Present(focused ? 1 : 0, 0);
-    firstFrameDone = true;
+    forceFrame = false;
   }
 
   // Cleanup
