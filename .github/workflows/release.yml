@@ -21,6 +21,7 @@ jobs:
       id: version
       shell: bash
       run: |
+        cat src/version.h
         echo "VERSION=$(grep -oP '#define APP_VERSION "\K[^"]+' src/version.h | tr -d '\r')" >> $GITHUB_OUTPUT
         echo "RELNAME=$(grep -oP '#define APP_RELEASE_NAME "\K[^"]+' src/version.h | tr -d '\r')" >> $GITHUB_OUTPUT
 
