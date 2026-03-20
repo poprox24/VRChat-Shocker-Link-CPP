@@ -3,12 +3,14 @@
 #include <fmt/base.h>
 #include <fmt/chrono.h>
 #include <fmt/format.h>
+#include <windows.h>
 
 #include <chrono>
 #include <deque>
 #include <fstream>
 #include <mutex>
 #include <string>
+extern HWND g_hwnd;
 
 struct Logger {
   static constexpr int MAX_LINES = 100;
@@ -33,6 +35,8 @@ struct Logger {
       logFile << stamped << '\n';
       logFile.flush();
     }
+    // Wake the UI to render
+    if (g_hwnd) PostMessage(g_hwnd, WM_NULL, 0, 0);
   }
 };
 

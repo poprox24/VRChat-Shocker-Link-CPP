@@ -481,22 +481,20 @@ inline void ui_run(Config& config, Settings& settings, ShockerHub& hub,
     bool focused = GetForegroundWindow() == g_hwnd;
     bool cooldownActive = config.cooldownEnabled &&
                           hub.cooldownUntil.load() > hub.getCurrentTime();
+    bool needsAnimation = cooldownActive || !hub.isConnected;
 
-    if (!focused && firstFrameDone) {
-      if (cooldownActive) {
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(60));  // Run at ~16.6fps
+    if (firstFrameDone) {
+      if (!needsAnimation && !focused) {
+        // Fully idle -- nothing to animate and nobody watching
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, INFINITE, QS_ALLINPUT);
+      } else if (!needsAnimation && focused) {
+        // Focused but static -- render on input only
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, INFINITE, QS_ALLINPUT);
       } else {
-        // If cooldown is not active no need to render, skip current render
-        // Under normal circumstances messages only go to logs during cooldown
-        // so there is no need to render
-        WaitMessage();
-        continue;
+        // Animation needed -- cap to target fps, wake early on input
+        int frameMs = focused ? (1000 / 60) : (1000 / 16);
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, frameMs, QS_ALLINPUT);
       }
-    } else if (!cooldownActive ||
-               !hub.isConnected) {  // Render only if cooldown is there or hub
-                                    // disconnected for logging messages
-      WaitMessage();  // Wait for any change before re-rendering if focused
     }
 
     RECT wr;
