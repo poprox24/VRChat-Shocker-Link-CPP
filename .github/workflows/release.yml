@@ -3,6 +3,11 @@ name: Build and Release
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - "README.md"
+      - "**.md"
+      - ".gitignore"
+      - "LICENSE"
 
 env:
   BUILD_TYPE: Release
