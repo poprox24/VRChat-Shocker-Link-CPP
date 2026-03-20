@@ -501,6 +501,19 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     stgLineWidth = settings.lineWidth;
   };
 
+  auto closeSettingsModal = [&]() {
+    Settings reverted(settingsPath);
+    settings.backgroundColor = reverted.backgroundColor;
+    settings.outsideCurveBg = reverted.outsideCurveBg;
+    settings.insideCurveBg = reverted.insideCurveBg;
+    settings.curveLineColor = reverted.curveLineColor;
+    settings.markerColor = reverted.markerColor;
+    settings.labelColor = reverted.labelColor;
+    settings.gradientLeftColor = reverted.gradientLeftColor;
+    settings.gradientRightColor = reverted.gradientRightColor;
+    showSettings = false;
+  };
+
   std::array<CurvePoint, 3>& pts = hub.curvePoints;
 
   // Curve cache
@@ -711,8 +724,16 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
                          ImGui::GetStyle().WindowPadding.y);
 
     if (ImGui::Button("Settings", {-1, 0})) {
-      openSettingsModal();
-      showSettings = true;
+      if (!showSettings) {
+        openSettingsModal();
+        showSettings = true;
+      } else {
+        closeSettingsModal();
+      }
+    }
+
+    if (showSettings) {
+      ImGui::SetItemTooltip("Will close settings without saving.");
     }
 
     ImGui::EndChild();
@@ -1114,18 +1135,11 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       }
       ImGui::SameLine();
       if (ImGui::Button("Cancel", {80, 0})) {
-        // Revert live style edits
-        Settings reverted(settingsPath);
-        settings.backgroundColor = reverted.backgroundColor;
-        settings.outsideCurveBg = reverted.outsideCurveBg;
-        settings.insideCurveBg = reverted.insideCurveBg;
-        settings.curveLineColor = reverted.curveLineColor;
-        settings.markerColor = reverted.markerColor;
-        settings.labelColor = reverted.labelColor;
-        settings.gradientLeftColor = reverted.gradientLeftColor;
-        settings.gradientRightColor = reverted.gradientRightColor;
-        showSettings = false;
+        closeSettingsModal();
       }
+      ImGui::SetItemTooltip(
+          "Will close settings without saving\nTheme settings will be "
+          "reverted");
 
       ImGui::End();
     }
