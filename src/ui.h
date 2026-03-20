@@ -198,81 +198,71 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
     logMsg("curve_settings.json import failed: {}", e.what());
   }
 
+  // --- Import config.yml ---
   // --- Import settings.yml ---
   try {
-    std::string srcYml = folder + "settings.yml";
-    std::ifstream src(srcYml);
-    if (src.is_open()) {
-      static const std::vector<std::string> dropKeys = {
-          "OSC_LISTEN_PORT",
-          "OSC_SEND_PORT",
-          "test",
-          "OPENSHOCK_SHOCKER_ID",
+    std::string srcYml = folder + "config.yml";
+    if (std::ifstream(srcYml).is_open()) {
+      YAML::Node c = YAML::LoadFile(srcYml);
+      settings.shockParameter = c["SHOCK_PARAMETER"].as<std::string>("Shock");
+      settings.secondShockParameter =
+          c["SECOND_SHOCK_PARAMETER"].as<std::string>("");
+      settings.usePishock = c["USE_PISHOCK"].as<bool>(false);
+      settings.randomOrSeq = c["RANDOM_OR_SEQUENTIAL"].as<bool>(false);
+      settings.serialPort = c["SERIAL_PORT"].as<std::string>("");
+      settings.baseCooldown = c["BASE_COOLDOWN_S"].as<int>(2);
+      settings.maxCooldown = c["MAX_COOLDOWN_S"].as<int>(6);
+      settings.cooldownFactor = c["COOLDOWN_FACTOR_S"].as<float>(0.4f);
+      settings.cooldownWindow = c["COOLDOWN_WINDOW_S"].as<int>(30);
+      settings.cooldownEnabled = c["COOLDOWN_ENABLED"].as<bool>(true);
+      settings.vrchatHost = c["VRCHAT_HOST"].as<std::string>("127.0.0.1");
+      settings.presetCount = c["PRESET_COUNT"].as<int>(3);
+      settings.touchSelectThreshold =
+          c["TOUCH_SELECT_THRESHOLD"].as<float>(8.f);
+      settings.touchMarkerSize = c["TOUCH_MARKER_SIZE"].as<float>(140.f);
+      settings.lineWidth = c["LINE_WIDTH"].as<float>(3.f);
+      auto hex = [](const std::string& h) {
+        unsigned r = 0, g = 0, b = 0;
+        sscanf_s(h.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
+        return ImVec4{r / 255.f, g / 255.f, b / 255.f, 1.f};
       };
+      settings.outsideCurveBg =
+          hex(c["OUTSIDE_CURVE_BG"].as<std::string>("#2A313D"));
+      settings.insideCurveBg =
+          hex(c["INSIDE_CURVE_BG"].as<std::string>("#2C3749"));
+      settings.backgroundColor =
+          hex(c["BACKGROUND_COLOR"].as<std::string>("#202630"));
+      settings.curveLineColor =
+          hex(c["CURVE_LINE_COLOR"].as<std::string>("#00C2FF"));
+      settings.markerColor = hex(c["MARKER_COLOR"].as<std::string>("#D88A91"));
+      settings.labelColor = hex(c["LABEL_COLOR"].as<std::string>("#E6EEF6"));
+      settings.gradientLeftColor =
+          hex(c["GRADIENT_LEFT_COLOR"].as<std::string>("#42953b"));
+      settings.gradientRightColor =
+          hex(c["GRADIENT_RIGHT_COLOR"].as<std::string>("#6e173b"));
 
-      std::string openshockId, pishockId;
-      std::vector<std::string> lines;
-      std::string line;
-
-      while (std::getline(src, line)) {
-        auto keyOf = [&](const std::string& key) {
-          return line.find(key + ":") == 0;
-        };
-        if (keyOf("OPENSHOCK_SHOCKER_ID")) {
-          openshockId = line.substr(line.find(':') + 1);
-          continue;
-        }
-        if (keyOf("PISHOCK_SHOCKER_ID")) {
-          pishockId = line.substr(line.find(':') + 1);
-          continue;
-        }
-        bool drop = false;
-        for (auto& k : dropKeys)
-          if (keyOf(k)) {
-            drop = true;
-            break;
-          }
-        if (!drop) lines.push_back(line);
+      // Handle both old single-ID keys and new array key
+      settings.shockerIDs.clear();
+      if (c["SHOCKER_IDS"]) {
+        for (auto id : c["SHOCKER_IDS"])
+          settings.shockerIDs.push_back(std::to_string(id.as<int>()));
+      } else {
+        // Old Python format: pishock wins if present
+        std::string id;
+        if (c["PISHOCK_SHOCKER_ID"])
+          id = c["PISHOCK_SHOCKER_ID"].as<std::string>("");
+        else if (c["OPENSHOCK_SHOCKER_ID"])
+          id = c["OPENSHOCK_SHOCKER_ID"].as<std::string>("");
+        if (!id.empty()) settings.shockerIDs.push_back(id);
       }
+      if (settings.shockerIDs.empty()) settings.shockerIDs = {"41838"};
 
-      // Resolve shocker ID: pishock wins if present
-      std::string resolvedId = pishockId.empty() ? openshockId : pishockId;
-      // Strip leading whitespace
-      auto start = resolvedId.find_first_not_of(" \t");
-      if (start != std::string::npos) resolvedId = resolvedId.substr(start);
-      // Strip inline comment
-      auto comment = resolvedId.find('#');
-      if (comment != std::string::npos)
-        resolvedId = resolvedId.substr(0, comment);
-      // Strip trailing whitespace
-      auto end = resolvedId.find_last_not_of(" \t");
-      if (end != std::string::npos) resolvedId = resolvedId.substr(0, end + 1);
-
-      std::ofstream dst("settings.yml");
-      for (auto& l : lines) {
-        dst << l << '\n';
-        // Emit SHOCKER_IDS right after SERIAL_PORT line
-        if (l.find("USE_PISHOCK:") == 0)
-          dst << "SHOCKER_IDS: [" << resolvedId
-              << "] # Shocker IDs, if you have multiple, split by comma (eg.: "
-                 "[12345, 23456]), PiShock should find them "
-                 "automatically(OpenShock doesn't save them on the hub)\n";
-      }
-      dst.close();
-      logMsg("Imported settings.yml, restarting in 5s...");
-
-      char exePath[MAX_PATH] = {};
-      GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-      std::thread([exePath, &hub]() {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-        shouldRestart = true;
-        PostMessage(g_hwnd, WM_CLOSE, 0, 0);
-      }).detach();
+      logMsg("Imported config.yml");
     } else {
-      logMsg("settings.yml not found in selected folder, skipping");
+      logMsg("config.yml not found in selected folder, skipping");
     }
   } catch (std::exception& e) {
-    logMsg("settings.yml import failed: {}", e.what());
+    logMsg("config.yml import failed: {}", e.what());
   }
 
   settings.save(settingsPath);
@@ -719,9 +709,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() -
                          ImGui::GetFrameHeightWithSpacing() -
                          ImGui::GetStyle().WindowPadding.y);
-    if (ImGui::Button("Import Python cfg", {-1, 0}))
-      importPythonConfig(settings, hub, minDur, maxDur, xViewMin, xViewMax,
-                         settingsPath);
+
     if (ImGui::Button("Settings", {-1, 0})) {
       openSettingsModal();
       showSettings = true;
@@ -942,15 +930,21 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
                        ImGuiWindowFlags_NoTitleBar);
 
       ImGui::BeginChild("##settingsscroll", {0, -40}, false);
+      ImGui::TextDisabled("(?) Hover over settings for details");
+      ImGui::Spacing();
 
       // OSC / Avatar
       ImGui::SeparatorText("OSC / Avatar");
-      ImGui::SetNextItemWidth(-1);
       ImGui::InputText("Shock Parameter##s", stgShockParam,
                        sizeof(stgShockParam));
-      ImGui::SetNextItemWidth(-1);
+      ImGui::SetItemTooltip(
+          "Input the parameter name you want to use for the shock (for example "
+          "for touches)\nThis is the parameter you set in unity");
       ImGui::InputText("Second Shock Parameter##s", stgSecondParam,
                        sizeof(stgSecondParam));
+      ImGui::SetItemTooltip(
+          "Optional second parameter for stronger shocks.\nTakes only the "
+          "second half of the curve into account (for example for slaps)");
       ImGui::TextDisabled("Changes here require a restart");
 
       ImGui::Spacing();
@@ -980,9 +974,16 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
       ImGui::InputText("Shocker IDs (#, #, ...)##s", stgShockerIDs,
                        sizeof(stgShockerIDs));
+      ImGui::SetItemTooltip(
+          "Shocker IDs as found on the PiShock or OpenShock website.\nSeparate "
+          "with comma");
       ImGui::Checkbox("Sequential shocker order (vs Random)", &stgRandomOrSeq);
+      ImGui::SetItemTooltip(
+          "If using multiple shockers, this option chooses between randomizing "
+          "or using them sequentially\nNo for random // Yes for sequential");
       ImGui::InputTextWithHint("Serial Port##s", "(blank = auto)",
                                stgSerialPort, sizeof(stgSerialPort));
+      ImGui::SetItemTooltip("Leave blank to auto-detect");
       ImGui::TextDisabled("Changes here require a restart");
 
       ImGui::Spacing();
@@ -990,54 +991,99 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       // Cooldown
       ImGui::SeparatorText("Cooldown");
       ImGui::SliderInt("Base Cooldown (s)##s", &stgBaseCooldown, 1, 15);
+      ImGui::SetItemTooltip(
+          "Starting cooldown after each shock.\nFormula: Base + Factor * "
+          "shocks_in_window");
       ImGui::SliderInt("Max Cooldown (s)##s", &stgMaxCooldown, 1, 30);
+      ImGui::SetItemTooltip(
+          "Cooldown is capped at this value regardless of shock count.");
       ImGui::SliderFloat("Cooldown Factor##s", &stgCooldownFactor, 0.f, 2.f,
                          "%.2f");
+      ImGui::SetItemTooltip(
+          "Added to cooldown per shock within the window.\nHigher = longer "
+          "cooldown after bursts.");
       ImGui::SliderInt("Cooldown Window (s)##s", &stgCooldownWindow, 5, 120);
+      ImGui::SetItemTooltip(
+          "How far back to count shocks for the factor.\nShocks older than "
+          "this are ignored.");
 
       ImGui::Spacing();
 
       // Notifications
       ImGui::SeparatorText("Notifications");
       ImGui::Checkbox("XSOverlay##s", &stgXsoverlay);
+      ImGui::SetItemTooltip(
+          "Sends a notification about the strength and duration as a "
+          "notification to your headset");
       ImGui::Checkbox("OVRToolkit##s", &stgOvrToolkit);
+      ImGui::SetItemTooltip(
+          "Sends a notification about the strength and duration as a "
+          "notification to your headset");
 
       ImGui::Spacing();
 
-      // Style (live preview)
+      // Style
       ImGui::SeparatorText("Style (live preview)");
-      ImGui::SliderInt("Preset Count##s", &stgPresetCount, 1, 8);
-      ImGui::SliderFloat("Touch Threshold##s", &stgTouchThreshold, 1.f, 30.f,
+      ImGui::SliderInt("Preset Count*##s", &stgPresetCount, 1, 8);
+      ImGui::SetItemTooltip("Amount of presets");
+      ImGui::SliderFloat("Marker Size*##s", &stgMarkerSize, 50.f, 300.f,
                          "%.0f");
-      ImGui::SliderFloat("Marker Size##s", &stgMarkerSize, 50.f, 300.f, "%.0f");
-      ImGui::SliderFloat("Curve Line Width##s", &stgLineWidth, 1.f, 6.f,
+      ImGui::SetItemTooltip("Size of points in the curve");
+      ImGui::SliderFloat("Curve Line Width*##s", &stgLineWidth, 1.f, 6.f,
                          "%.1f");
+      ImGui::SetItemTooltip("Width of the curve line");
 
-      // Color pickers — edit settings directly for live preview
+      // Color pickers -- edit settings directly for live preview
       ImGui::ColorEdit4("Background##s", (float*)&settings.backgroundColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("Main window background color.");
       ImGui::ColorEdit4("Outside Curve BG##s", (float*)&settings.outsideCurveBg,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("Area outside the plot bounds.");
       ImGui::ColorEdit4("Inside Curve BG##s", (float*)&settings.insideCurveBg,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("Plot background and X scale bar.");
       ImGui::ColorEdit4("Curve Line##s", (float*)&settings.curveLineColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("The bezier curve line.");
       ImGui::ColorEdit4("Markers##s", (float*)&settings.markerColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("The draggable curve control points.");
       ImGui::ColorEdit4("Labels##s", (float*)&settings.labelColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("All text labels and axis text.");
       ImGui::ColorEdit4("Gradient Left##s", (float*)&settings.gradientLeftColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip(
+          "Plot background gradient — left/low intensity side.");
       ImGui::ColorEdit4("Gradient Right##s",
                         (float*)&settings.gradientRightColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip(
+          "Plot background gradient — right/high intensity side.");
+
+      ImGui::TextDisabled("* - Restart required");
 
       ImGui::Spacing();
 
       // Network
       ImGui::SeparatorText("Network");
-      ImGui::SetNextItemWidth(-1);
       ImGui::InputText("VRChat Host##s", stgVrchatHost, sizeof(stgVrchatHost));
+      ImGui::SetItemTooltip(
+          "ImGui::SetItemTooltip("
+          ");");
+
+      ImGui::Spacing();
+      ImGui::Separator();
+
+      ImGui::Spacing();
+      if (ImGui::Button("Import Python cfg", {ImGui::CalcItemWidth(), 0}))
+        importPythonConfig(settings, hub, minDur, maxDur, xViewMin, xViewMax,
+                           settingsPath);
+      ImGui::SetItemTooltip("Select the folder of your python installation.");
+      ImGui::SameLine();
+      ImGui::Text("Import old python config");
+      ImGui::Spacing();
 
       ImGui::EndChild();
 

@@ -4,6 +4,7 @@
 #include <csignal>
 
 #include "logger.h"
+#include "migration.h"
 #include "oscclient.h"
 #include "settings.h"
 #include "shockerhub.h"
@@ -18,6 +19,9 @@ void signalHandler(int) { running = false; }
 
 int main() {
   Settings settings(settingsLocation);
+
+  migrateConfigYmlIfPresent(settings, settingsLocation);
+
   ShockerHub hub(settings);
 
   std::signal(SIGINT, signalHandler);
