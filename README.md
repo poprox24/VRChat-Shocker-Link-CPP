@@ -10,7 +10,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP">
-    <img width="734" height="509" alt="image" src="https://github.com/user-attachments/assets/a71f35ad-3b22-41b8-96df-14e0667362ff" />
+    <img width="800" height="509" alt="image" src="https://github.com/user-attachments/assets/b086ab48-a850-4690-89a6-2835ce2ef992" />
   </a>
 
 <h3 align="center">VRChat Shocker Link</h3>
@@ -62,18 +62,17 @@ Make sure you install this before you continue:
 
 1. Go to [releases](https://github.com/poprox24/VRChat-Shocker-Link-CPP/releases/latest)
 2. Download Shocker_Link.exe and put it into any folder on your computer
-3. Run the program to generate config files and close the program
-4. Open config.yml
-5. Change the SHOCK_PARAMETER to the parameter you created on your VRChat avatar and set USE_PISHOCK to false, if using a OpenShock device
-  - If using an OpenShock Hub, add your shockers at the SHOCKER_IDS in config.yml to the one you set on the website
-6. Run Shocker_Link.exe again
+3. Run the program
+4. Open settings (bottom left)
+5. Change the `Shock Parameter` to the parameter you set on your VRChat avatar and set `OpenShock/PiShock` depending on your use case
+  - If using an OpenShock Hub, add your shockers to the `Shocker IDs` in settings, they cannot be read automatically from the hub
+6. Click on Save(or Save & Restart if needed)
 
 ### Usage
 
 1. Most stuff is self explanatory
 2. The PiShock/OpenShock hub needs to be connected to the PC, this program uses serial for low latency
-3. You can right click to manually input a number in the curve
-4. Presets:
+3. Presets:
 - Left click to load
 - Right click to rename
 - Middle click to default
