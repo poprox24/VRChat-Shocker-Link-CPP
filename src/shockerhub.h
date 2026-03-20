@@ -20,6 +20,7 @@
 #include "config.h"
 #include "curve.h"
 #include "logger.h"
+#include "notifications.h"
 #include "settings.h"
 
 class ShockerHub {
@@ -366,6 +367,12 @@ class ShockerHub {
     // \xe2\x9a\xa1 =⚡symbol
     chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
                              durationMs / 1000.0f));
+    std::string notifMsg =
+        fmt::format("{}% | {:.1f}s", strength, durationMs / 1000.0f);
+    if (config.xsoverlayNotifications)
+      Notifications::sendXSOverlay("⚡ Shock", notifMsg);
+    if (config.ovrToolkitNotifications)
+      Notifications::sendOVRToolkit("⚡ Shock", notifMsg);
 
     logMsg("[ShockerHub] Sent shock: {}%, {:.1f}s\n", strength,
            (durationMs / 1000.0f));
