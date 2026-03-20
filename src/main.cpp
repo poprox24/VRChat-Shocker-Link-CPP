@@ -3,15 +3,14 @@
 #include <atomic>
 #include <csignal>
 
-#include "config.h"
 #include "logger.h"
+#include "migration.h"
 #include "oscclient.h"
 #include "settings.h"
 #include "shockerhub.h"
 #include "ui.h"
 #include "updater.h"
 
-std::string configLocation = "config.yml";
 std::string settingsLocation = "settings.json";
 std::atomic<bool> running = true;
 std::atomic<bool> shouldRestart = false;
@@ -19,9 +18,11 @@ std::atomic<bool> shouldRestart = false;
 void signalHandler(int) { running = false; }
 
 int main() {
-  Config config(configLocation);
-  Settings settings(settingsLocation, config);
-  ShockerHub hub(config, settings);
+  Settings settings(settingsLocation);
+
+  migrateConfigYmlIfPresent(settings, settingsLocation);
+
+  ShockerHub hub(settings);
 
   std::signal(SIGINT, signalHandler);
 
@@ -31,10 +32,12 @@ int main() {
     return 1;
   }
 
-  OscQueryServer oscQuery(config.oscPort, std::string(config.serviceName));
-  oscQuery.setShockPath(config.shockParameter);
-  if (config.hasSecondShockParameter)
-    oscQuery.setSecondShockPath(config.secondShockParameter);
+  OscQueryServer oscQuery(Settings::oscPort,
+                          std::string(Settings::serviceName));
+  oscQuery.setShockPath("/avatar/parameters/" + settings.shockParameter);
+  if (!settings.secondShockParameter.empty())
+    oscQuery.setSecondShockPath("/avatar/parameters/" +
+                                settings.secondShockParameter);
   if (!oscQuery.start()) {
     logMsg("Failed to start OSCQuery\n");
     hub.shutdown();
@@ -60,7 +63,7 @@ int main() {
   });
 
   Updater::checkAsync();
-  ui_run(config, settings, hub, settingsLocation);
+  ui_run(settings, hub, settingsLocation);
   running = false;
   oscBridge.join();
   oscQuery.stop();

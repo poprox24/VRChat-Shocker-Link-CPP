@@ -17,7 +17,6 @@
 #include <vector>
 
 #include "chatbox.h"
-#include "config.h"
 #include "curve.h"
 #include "logger.h"
 #include "notifications.h"
@@ -37,20 +36,20 @@ class ShockerHub {
   std::array<CurvePoint, 3> curvePoints = {
       {{20.0, 0.8}, {50.0, 0.5}, {80.0, 0.2}}};
 
-  ShockerHub(Config& cfg, Settings& set)
-      : config(cfg), settings(set), chatbox(cfg.vrchatHost) {}
+  ShockerHub(Settings& set) : settings(set), chatbox(set.vrchatHost) {}
 
   bool connectSerial() {
     logMsg("[ShockerHub] Attempting to connect to the shocker hub");
 
-    if (!config.serialPort.empty()) {
-      bool opened =
-          serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
+    if (!settings.serialPort.empty()) {
+      bool opened = serial.openDevice(settings.serialPort.c_str(),
+                                      settings.baudRate) == 1;
       if (!opened) {
         logMsg(
-            "[ShockerHub] Could not open port saved in config: {}, trying last "
+            "[ShockerHub] Could not open port saved in settings: {}, trying "
+            "last "
             "known working port.\n",
-            config.serialPort);
+            settings.serialPort);
       } else {
         startWorkerThread();
         return true;
@@ -59,9 +58,9 @@ class ShockerHub {
 
     if (!settings.lastSerialPort.empty()) {
       bool opened = serial.openDevice(settings.lastSerialPort.c_str(),
-                                      config.baudRate) == 1;
+                                      settings.baudRate) == 1;
       if (opened) {
-        config.serialPort = settings.lastSerialPort;
+        settings.serialPort = settings.lastSerialPort;
         startWorkerThread();
         return true;
       }
@@ -69,7 +68,7 @@ class ShockerHub {
     logMsg(
         "[ShockerHub] Could not open last known working port, running a port "
         "scan");
-    if (config.usePishock) {
+    if (settings.usePishock) {
       return scanForPishock();
     } else {
       return scanForOpenshock();
@@ -113,20 +112,21 @@ class ShockerHub {
 
   bool tryReconnect() {
     serial.closeDevice();
-    config.serialPort = "";
+    settings.serialPort = "";
     return connectSerial();
   }
 
   bool listShockers() {
-    if (config.ShockerIDs.empty()) {
+    if (settings.shockerIDs.empty()) {
       logMsg(
           "[ShockerHub] No shockers configured and none found "
-          "automatically.\nPlease set them up in config.yml\nThe program will "
+          "automatically.\nPlease set them up in settings.\nThe program "
+          "will "
           "now exit...\n");
       return false;
     }
     logMsg("[ShockerHub] Shockers found: {}\n",
-           fmt::join(config.ShockerIDs, ", "));
+           fmt::join(settings.shockerIDs, ", "));
     return true;
   }
 
@@ -146,7 +146,6 @@ class ShockerHub {
   }
 
  private:
-  Config& config;
   Settings& settings;
   int lastShockerIndex = -1;
   double lastTriggerTime = 0.0;
@@ -161,10 +160,10 @@ class ShockerHub {
 
   bool scanForPishock() {
     for (int i = 1; i <= 50; i++) {
-      config.serialPort = "COM" + std::to_string(i);
+      settings.serialPort = "COM" + std::to_string(i);
 
-      bool opened =
-          serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
+      bool opened = serial.openDevice(settings.serialPort.c_str(),
+                                      settings.baudRate) == 1;
       if (!opened) continue;
 
       serial.writeString("{\"cmd\": \"info\"}\n");
@@ -178,13 +177,13 @@ class ShockerHub {
         if (response.starts_with("TERMINALINFO: ") &&
             response.find("pishock") != std::string::npos) {
           found = true;
-          if (config.ShockerIDs.empty()) {
+          if (settings.shockerIDs.empty()) {
             std::string jsonStr =
                 response.substr(14);  // strip "TERMINALINFO: "
             auto json = nlohmann::json::parse(jsonStr, nullptr, false);
             if (!json.is_discarded() && json.contains("shockers")) {
               for (auto& s : json["shockers"]) {
-                config.pushShockerId(std::to_string(s["id"].get<int>()));
+                settings.pushShockerId(std::to_string(s["id"].get<int>()));
               }
             }
           }
@@ -208,10 +207,10 @@ class ShockerHub {
 
   bool scanForOpenshock() {
     for (int i = 1; i <= 24; i++) {
-      config.serialPort = "COM" + std::to_string(i);
+      settings.serialPort = "COM" + std::to_string(i);
 
-      bool opened =
-          serial.openDevice(config.serialPort.c_str(), config.baudRate) == 1;
+      bool opened = serial.openDevice(settings.serialPort.c_str(),
+                                      settings.baudRate) == 1;
       if (!opened) continue;
 
       serial.writeString("domain\n");
@@ -241,10 +240,10 @@ class ShockerHub {
   }
 
   void startWorkerThread() {
-    settings.lastSerialPort = config.serialPort;
+    settings.lastSerialPort = settings.serialPort;
     isConnected = true;
     if (!workerThread.joinable()) {
-      logMsg("[ShockerHub] Connected on {}\n", config.serialPort);
+      logMsg("[ShockerHub] Connected on {}\n", settings.serialPort);
       workerThread = std::thread([this]() { workerLoop(); });
     }
   }
@@ -268,9 +267,9 @@ class ShockerHub {
       int durationMs = std::get<0>(item).value_or(-1);
       bool upperHalf = std::get<1>(item);
 
-      if (config.cooldownEnabled) {
+      if (settings.cooldownEnabled) {
         double now = getCurrentTime();
-        int cooldownWindowS = config.cooldownWindowS;
+        int cooldownWindowS = settings.cooldownWindow;
         shockTimestamps.erase(
             std::remove_if(shockTimestamps.begin(), shockTimestamps.end(),
                            [now, cooldownWindowS](double t) {
@@ -278,9 +277,9 @@ class ShockerHub {
                            }),
             shockTimestamps.end());
         double dynamicCooldown = std::min(
-            (double)config.baseCooldown +
-                (double)config.cooldownFactorS * (int)shockTimestamps.size(),
-            (double)config.maxCooldown);
+            (double)settings.baseCooldown +
+                (double)settings.cooldownFactor * (int)shockTimestamps.size(),
+            (double)settings.maxCooldown);
         double remaining = dynamicCooldown - (now - lastTriggerTime);
         activeCooldownDuration.store(dynamicCooldown);
         if (remaining > 0) {
@@ -293,8 +292,8 @@ class ShockerHub {
       }
 
       std::string chosenShocker;
-      std::vector<std::string>& ids = config.ShockerIDs;
-      if (config.randomOrSeq) {
+      std::vector<std::string>& ids = settings.shockerIDs;
+      if (settings.randomOrSeq) {
         lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
         chosenShocker = ids[lastShockerIndex];
       } else {
@@ -319,7 +318,7 @@ class ShockerHub {
   void sendShock(int durationMs, int strength, const std::string& shockerID) {
     std::string command;
 
-    if (config.usePishock) {
+    if (settings.usePishock) {
       nlohmann::json payload = {{"cmd", "operate"},
                                 {"value",
                                  {{"id", std::stoi(shockerID)},
@@ -347,18 +346,18 @@ class ShockerHub {
     shockTimestamps.push_back(getCurrentTime());
     lastTriggerTime = getCurrentTime();
 
-    if (config.cooldownEnabled) {
+    if (settings.cooldownEnabled) {
       double now = lastTriggerTime;
-      int windowS = config.cooldownWindowS;
+      int windowS = settings.cooldownWindow;
       shockTimestamps.erase(
           std::remove_if(
               shockTimestamps.begin(), shockTimestamps.end(),
               [now, windowS](double t) { return now - t > windowS; }),
           shockTimestamps.end());
       double dynamicCooldown = std::min(
-          (double)config.baseCooldown +
-              (double)config.cooldownFactorS * (int)shockTimestamps.size(),
-          (double)config.maxCooldown);
+          (double)settings.baseCooldown +
+              (double)settings.cooldownFactor * (int)shockTimestamps.size(),
+          (double)settings.maxCooldown);
       cooldownUntil.store(now + dynamicCooldown);
     } else {
       cooldownUntil.store(0.0);
@@ -369,9 +368,9 @@ class ShockerHub {
                              durationMs / 1000.0f));
     std::string notifMsg =
         fmt::format("{}% | {:.1f}s", strength, durationMs / 1000.0f);
-    if (config.xsoverlayNotifications)
+    if (settings.xsoverlayNotifications)
       Notifications::sendXSOverlay("⚡ Shock", notifMsg);
-    if (config.ovrToolkitNotifications)
+    if (settings.ovrToolkitNotifications)
       Notifications::sendOVRToolkit("⚡ Shock", notifMsg);
 
     logMsg("[ShockerHub] Sent shock: {}%, {:.1f}s\n", strength,
