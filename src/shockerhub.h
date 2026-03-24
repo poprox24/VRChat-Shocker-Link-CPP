@@ -33,6 +33,8 @@ class ShockerHub {
 
   bool isConnected = false;
 
+  std::mutex queueMutex;
+
   std::array<CurvePoint, 3> curvePoints = {
       {{20.0, 0.8}, {50.0, 0.5}, {80.0, 0.2}}};
 
@@ -153,7 +155,6 @@ class ShockerHub {
   serialib serial;
 
   std::queue<std::tuple<std::optional<int>, bool>> shockQueue;
-  std::mutex queueMutex;
   std::condition_variable queueCV;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
