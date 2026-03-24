@@ -207,7 +207,6 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
   }
 
   // --- Import config.yml ---
-  // --- Import settings.yml ---
   try {
     std::string srcYml = folder + "config.yml";
     if (std::ifstream(srcYml).is_open()) {
