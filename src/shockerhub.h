@@ -2,6 +2,7 @@
 
 #include <fmt/ranges.h>
 #include <serialib.h>
+#include <wininet.h>
 
 #include <algorithm>
 #include <chrono>
@@ -21,6 +22,9 @@
 #include "logger.h"
 #include "notifications.h"
 #include "settings.h"
+#include "version.h"
+
+#pragma comment(lib, "wininet.lib")
 
 class ShockerHub {
  public:
@@ -42,6 +46,14 @@ class ShockerHub {
   ShockerHub(Settings& set) : settings(set), chatbox(set.vrchatHost) {}
 
   bool connectSerial() {
+    // In API mode there's no serial connection to establish
+    if (!settings.useSerial) {
+      isConnected = true;
+      logMsg("[ShockerHub] API mode - skipping serial connection");
+      startWorkerThread();
+      return true;
+    }
+
     logMsg("[ShockerHub] Attempting to connect to the shocker hub");
 
     if (!settings.serialPort.empty()) {
@@ -101,6 +113,7 @@ class ShockerHub {
   }
 
   bool reconnectSerial() {
+    if (!settings.useSerial) return true;
     int delay = 1000;
     while (true) {
       serial.closeDevice();
@@ -114,6 +127,7 @@ class ShockerHub {
   }
 
   bool tryReconnect() {
+    if (!settings.useSerial) return true;
     serial.closeDevice();
     settings.serialPort = "";
     return connectSerial();
@@ -166,6 +180,69 @@ class ShockerHub {
   std::condition_variable queueCV;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
+
+  static std::string postJson(
+      const std::string& url, const std::string& body,
+      const std::vector<std::string>& extraHeaders = {}) {
+    HINTERNET hNet =
+        InternetOpenA("ShockerLink/" APP_VERSION, 0, nullptr, nullptr, 0);
+    if (!hNet) return "";
+
+    URL_COMPONENTSA uc{};
+    uc.dwStructSize = sizeof(uc);
+    char host[256] = {}, path[512] = {};
+    uc.lpszHostName = host;
+    uc.dwHostNameLength = sizeof(host);
+    uc.lpszUrlPath = path;
+    uc.dwUrlPathLength = sizeof(path);
+    if (!InternetCrackUrlA(url.c_str(), 0, 0, &uc)) {
+      InternetCloseHandle(hNet);
+      return "";
+    }
+
+    HINTERNET hConn = InternetConnectA(hNet, host, uc.nPort, nullptr, nullptr,
+                                       INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) {
+      InternetCloseHandle(hNet);
+      return "";
+    }
+
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
+    if (uc.nScheme == INTERNET_SCHEME_HTTPS) flags |= INTERNET_FLAG_SECURE;
+
+    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", path, nullptr, nullptr,
+                                      nullptr, flags, 0);
+    if (!hReq) {
+      InternetCloseHandle(hConn);
+      InternetCloseHandle(hNet);
+      return "";
+    }
+
+    DWORD timeout = 5000;
+    InternetSetOption(hReq, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout,
+                      sizeof(timeout));
+    InternetSetOption(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout,
+                      sizeof(timeout));
+
+    std::string headers = "Content-Type: application/json\r\n";
+    for (auto& h : extraHeaders) headers += h + "\r\n";
+
+    HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(),
+                     (LPVOID)body.c_str(), (DWORD)body.size());
+
+    std::string result;
+    char buf[4096];
+    DWORD read;
+    while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &read) && read > 0) {
+      buf[read] = 0;
+      result += buf;
+    }
+
+    InternetCloseHandle(hReq);
+    InternetCloseHandle(hConn);
+    InternetCloseHandle(hNet);
+    return result;
+  }
 
   bool scanForPishock() {
     for (int i = 1; i <= 50; i++) {
@@ -252,7 +329,8 @@ class ShockerHub {
     settings.lastSerialPort = settings.serialPort;
     isConnected = true;
     if (!workerThread.joinable()) {
-      logMsg("[ShockerHub] Connected on {}\n", settings.serialPort);
+      if (settings.useSerial)
+        logMsg("[ShockerHub] Connected on {}\n", settings.serialPort);
       workerThread = std::thread([this]() { workerLoop(); });
     }
   }
@@ -334,11 +412,58 @@ class ShockerHub {
     }
   }
 
+  // Routes to serial or API depending on settings.useSerial
   void sendShock(int durationMs, int strength, const std::string& shockerID,
                  bool vibrate) {
-    std::string command;
+    if (settings.useSerial)
+      sendShockSerial(durationMs, strength, shockerID, vibrate);
+    else
+      sendShockApi(durationMs, strength, shockerID, vibrate);
+  }
 
+  // Called after a shock is successfully sent (serial or API)
+  void afterShockSent(int durationMs, int strength, const std::string& opType) {
+    shockTimestamps.push_back(getCurrentTime());
+    lastTriggerTime = getCurrentTime();
+
+    if (settings.cooldownEnabled) {
+      double now = lastTriggerTime;
+      int windowS = settings.cooldownWindow;
+      shockTimestamps.erase(
+          std::remove_if(
+              shockTimestamps.begin(), shockTimestamps.end(),
+              [now, windowS](double t) { return now - t > windowS; }),
+          shockTimestamps.end());
+      double dynamicCooldown = std::min(
+          (double)settings.baseCooldown +
+              (double)settings.cooldownFactor * (int)shockTimestamps.size(),
+          (double)settings.maxCooldown);
+      cooldownUntil.store(now + dynamicCooldown);
+    } else {
+      cooldownUntil.store(0.0);
+    }
+
+    // \xe2\x9a\xa1 = ⚡ symbol
+    chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
+                             durationMs / 1000.0f));
+    std::string notifMsg =
+        fmt::format("{}% | {:.1f}s", strength, durationMs / 1000.0f);
+    if (settings.notificationsEnabled) {
+      if (!settings.notifUseOvrToolkit)
+        Notifications::sendXSOverlay("⚡ Shock", notifMsg);
+      else
+        Notifications::sendOVRToolkit("⚡ Shock", notifMsg);
+    }
+
+    logMsg("[ShockerHub] Sent {}: {}%, {:.1f}s\n", opType, strength,
+           durationMs / 1000.0f);
+  }
+
+  void sendShockSerial(int durationMs, int strength,
+                       const std::string& shockerID, bool vibrate) {
+    std::string command;
     std::string opType = vibrate ? "vibrate" : "shock";
+
     if (settings.usePishock) {
       nlohmann::json payload = {{"cmd", "operate"},
                                 {"value",
@@ -364,37 +489,73 @@ class ShockerHub {
       return;
     }
 
-    shockTimestamps.push_back(getCurrentTime());
-    lastTriggerTime = getCurrentTime();
+    afterShockSent(durationMs, strength, opType);
+  }
 
-    if (settings.cooldownEnabled) {
-      double now = lastTriggerTime;
-      int windowS = settings.cooldownWindow;
-      shockTimestamps.erase(
-          std::remove_if(
-              shockTimestamps.begin(), shockTimestamps.end(),
-              [now, windowS](double t) { return now - t > windowS; }),
-          shockTimestamps.end());
-      double dynamicCooldown = std::min(
-          (double)settings.baseCooldown +
-              (double)settings.cooldownFactor * (int)shockTimestamps.size(),
-          (double)settings.maxCooldown);
-      cooldownUntil.store(now + dynamicCooldown);
-    } else {
-      cooldownUntil.store(0.0);
+  void sendShockApi(int durationMs, int strength, const std::string& shockerID,
+                    bool vibrate) {
+    std::string opType = vibrate ? "vibrate" : "shock";
+
+    try {
+      if (settings.usePishock) {
+        // PiShock API: duration in whole seconds, clamped 1–15
+        int durationSec = std::clamp((durationMs + 500) / 1000, 1, 15);
+        nlohmann::json payload = {
+            {"Username", settings.pishockUsername},
+            {"Apikey", settings.pishockApiKey},
+            {"Code", shockerID},
+            {"Name", "ShockerLink"},
+            {"Op", vibrate ? 1 : 0},  // 0=shock, 1=vibrate, 2=beep
+            {"Duration", durationSec},
+            {"Intensity", strength}};
+
+        auto resp =
+            postJson("https://ps.pishock.com/api/apioperate", payload.dump());
+        if (resp.empty()) {
+          logMsg("[ShockerHub] PiShock API: no response (check credentials)\n");
+          return;
+        }
+        // PiShock returns plain text like "Operation Succeeded." or an error
+        if (resp.find("Succeeded") == std::string::npos &&
+            resp.find("200") == std::string::npos) {
+          logMsg("[ShockerHub] PiShock API error: {}\n", resp);
+          return;
+        }
+
+      } else {
+        // OpenShock API: POST /2/shockers/control
+        std::string type = vibrate ? "Vibrate" : "Shock";
+        nlohmann::json shockEntry = {{"id", shockerID},
+                                     {"type", type},
+                                     {"intensity", strength},
+                                     {"duration", durationMs},
+                                     {"exclusive", true}};
+        nlohmann::json payload = {
+            {"shocks", nlohmann::json::array({shockEntry})},
+            {"customName", "ShockerLink"}};
+
+        std::string serverUrl = settings.openshockServerUrl;
+        // Strip any protocol prefix the user may have entered
+        if (serverUrl.starts_with("https://"))
+          serverUrl = serverUrl.substr(8);
+        else if (serverUrl.starts_with("http://"))
+          serverUrl = serverUrl.substr(7);
+
+        auto resp = postJson("https://" + serverUrl + "/2/shockers/control",
+                             payload.dump(),
+                             {"Authorization: " + settings.openshockApiToken});
+        if (resp.empty()) {
+          logMsg(
+              "[ShockerHub] OpenShock API: no response (check token / "
+              "server)\n");
+          return;
+        }
+      }
+    } catch (std::exception& e) {
+      logMsg("[ShockerHub] API send error: {}\n", e.what());
+      return;
     }
 
-    // \xe2\x9a\xa1 =⚡symbol
-    chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
-                             durationMs / 1000.0f));
-    std::string notifMsg =
-        fmt::format("{}% | {:.1f}s", strength, durationMs / 1000.0f);
-    if (settings.xsoverlayNotifications)
-      Notifications::sendXSOverlay("⚡ Shock", notifMsg);
-    if (settings.ovrToolkitNotifications)
-      Notifications::sendOVRToolkit("⚡ Shock", notifMsg);
-
-    logMsg("[ShockerHub] Sent {}: {}%, {:.1f}s\n", opType, strength,
-           durationMs / 1000.0f);
+    afterShockSent(durationMs, strength, opType);
   }
 };

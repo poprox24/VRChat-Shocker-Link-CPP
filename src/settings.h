@@ -43,6 +43,15 @@ class Settings {
   bool randomOrSeq = false;
   std::string serialPort = "";
 
+  // Connection Mode
+  bool useSerial = true;
+  // PiShock API credentials
+  std::string pishockUsername = "";
+  std::string pishockApiKey = "";
+  // OpenShock API credentials
+  std::string openshockApiToken = "";
+  std::string openshockServerUrl = "api.shocklink.net";
+
   // Cooldown Config
   int baseCooldown = 2;
   int maxCooldown = 6;
@@ -55,8 +64,8 @@ class Settings {
   int hotkeyMods = 0;  // Alt = 1, Control = 2, Shift = 4
 
   // Notification Config
-  bool xsoverlayNotifications = false;
-  bool ovrToolkitNotifications = false;
+  bool notificationsEnabled = false;
+  bool notifUseOvrToolkit = false;  // false = XSOverlay, true = OVRToolkit
 
   // Style Config
   int presetCount = 3;
@@ -106,6 +115,13 @@ class Settings {
       randomOrSeq = j.value("randomOrSeq", false);
       serialPort = j.value("serialPort", "");
 
+      // Connection Mode
+      useSerial = j.value("useSerial", true);
+      pishockUsername = j.value("pishockUsername", "");
+      pishockApiKey = j.value("pishockApiKey", "");
+      openshockApiToken = j.value("openshockApiToken", "");
+      openshockServerUrl = j.value("openshockServerUrl", "api.shocklink.net");
+
       // Cooldown Config
       baseCooldown = j.value("baseCooldown", 2);
       maxCooldown = j.value("maxCooldown", 6);
@@ -117,9 +133,13 @@ class Settings {
       hotkeyVk = j.value("hotkeyVk", VK_F9);
       hotkeyMods = j.value("hotkeyMods", 0);
 
-      // Notification Config
-      xsoverlayNotifications = j.value("xsoverlayNotifications", false);
-      ovrToolkitNotifications = j.value("ovrToolkitNotifications", false);
+      // Notification Config (migrate if old values are present)
+      {
+        bool oldXs = j.value("xsoverlayNotifications", false);
+        bool oldOvr = j.value("ovrToolkitNotifications", false);
+        notificationsEnabled = j.value("notificationsEnabled", oldXs || oldOvr);
+        notifUseOvrToolkit = j.value("notifUseOvrToolkit", oldOvr);
+      }
 
       // Style Config
       presetCount = j.value("presetCount", 3);
@@ -199,6 +219,12 @@ class Settings {
     j["randomOrSeq"] = randomOrSeq;
     j["serialPort"] = serialPort;
 
+    j["useSerial"] = useSerial;
+    j["pishockUsername"] = pishockUsername;
+    j["pishockApiKey"] = pishockApiKey;
+    j["openshockApiToken"] = openshockApiToken;
+    j["openshockServerUrl"] = openshockServerUrl;
+
     j["baseCooldown"] = baseCooldown;
     j["maxCooldown"] = maxCooldown;
     j["cooldownFactor"] = cooldownFactor;
@@ -208,8 +234,8 @@ class Settings {
     j["hotkeyVk"] = hotkeyVk;
     j["hotkeyMods"] = hotkeyMods;
 
-    j["xsoverlayNotifications"] = xsoverlayNotifications;
-    j["ovrToolkitNotifications"] = ovrToolkitNotifications;
+    j["notificationsEnabled"] = notificationsEnabled;
+    j["notifUseOvrToolkit"] = notifUseOvrToolkit;
 
     j["presetCount"] = presetCount;
     j["touchSelectThreshold"] = touchSelectThreshold;

@@ -72,8 +72,13 @@ struct AppState {
   int stgMaxCooldown = 6;
   float stgCooldownFactor = 0.4f;
   int stgCooldownWindow = 30;
-  bool stgXsoverlay = false;
-  bool stgOvrToolkit = false;
+  bool stgNotifEnabled = false;
+  bool stgNotifUseOvr = false;
+  bool stgUseSerial = true;
+  std::string stgPishockUser;
+  std::string stgPishockKey;
+  std::string stgOpenshockToken;
+  std::string stgOpenshockServer;
   int stgPresetCount = 3;
   float stgTouchThreshold = 8.f;
 
@@ -93,8 +98,13 @@ struct AppState {
            stgMaxCooldown == other.stgMaxCooldown &&
            stgCooldownFactor == other.stgCooldownFactor &&
            stgCooldownWindow == other.stgCooldownWindow &&
-           stgXsoverlay == other.stgXsoverlay &&
-           stgOvrToolkit == other.stgOvrToolkit &&
+           stgNotifEnabled == other.stgNotifEnabled &&
+           stgNotifUseOvr == other.stgNotifUseOvr &&
+           stgUseSerial == other.stgUseSerial &&
+           stgPishockUser == other.stgPishockUser &&
+           stgPishockKey == other.stgPishockKey &&
+           stgOpenshockToken == other.stgOpenshockToken &&
+           stgOpenshockServer == other.stgOpenshockServer &&
            stgPresetCount == other.stgPresetCount &&
            stgTouchThreshold == other.stgTouchThreshold;
   }
@@ -124,8 +134,13 @@ struct UiContext {
   int& stgMaxCooldown;
   float& stgCooldownFactor;
   int& stgCooldownWindow;
-  bool& stgXsoverlay;
-  bool& stgOvrToolkit;
+  bool& stgNotifEnabled;
+  bool& stgNotifUseOvr;
+  bool& stgUseSerial;
+  char (&stgPishockUser)[128];
+  char (&stgPishockKey)[128];
+  char (&stgOpenshockToken)[256];
+  char (&stgOpenshockServer)[128];
   int& stgPresetCount;
   float& stgTouchThreshold;
 };
@@ -151,8 +166,13 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.stgMaxCooldown = ui.stgMaxCooldown;
   st.stgCooldownFactor = ui.stgCooldownFactor;
   st.stgCooldownWindow = ui.stgCooldownWindow;
-  st.stgXsoverlay = ui.stgXsoverlay;
-  st.stgOvrToolkit = ui.stgOvrToolkit;
+  st.stgNotifEnabled = ui.stgNotifEnabled;
+  st.stgNotifUseOvr = ui.stgNotifUseOvr;
+  st.stgUseSerial = ui.stgUseSerial;
+  st.stgPishockUser = ui.stgPishockUser;
+  st.stgPishockKey = ui.stgPishockKey;
+  st.stgOpenshockToken = ui.stgOpenshockToken;
+  st.stgOpenshockServer = ui.stgOpenshockServer;
   st.stgPresetCount = ui.stgPresetCount;
   st.stgTouchThreshold = ui.stgTouchThreshold;
 
@@ -186,8 +206,13 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.stgMaxCooldown = st.stgMaxCooldown;
   ui.stgCooldownFactor = st.stgCooldownFactor;
   ui.stgCooldownWindow = st.stgCooldownWindow;
-  ui.stgXsoverlay = st.stgXsoverlay;
-  ui.stgOvrToolkit = st.stgOvrToolkit;
+  ui.stgNotifEnabled = st.stgNotifEnabled;
+  ui.stgNotifUseOvr = st.stgNotifUseOvr;
+  ui.stgUseSerial = st.stgUseSerial;
+  strncpy_s(ui.stgPishockUser, st.stgPishockUser.c_str(), _TRUNCATE);
+  strncpy_s(ui.stgPishockKey, st.stgPishockKey.c_str(), _TRUNCATE);
+  strncpy_s(ui.stgOpenshockToken, st.stgOpenshockToken.c_str(), _TRUNCATE);
+  strncpy_s(ui.stgOpenshockServer, st.stgOpenshockServer.c_str(), _TRUNCATE);
   ui.stgPresetCount = st.stgPresetCount;
   ui.stgTouchThreshold = st.stgTouchThreshold;
 }
@@ -452,6 +477,12 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
         if (!id.empty()) settings.shockerIDs.push_back(id);
       }
       if (settings.shockerIDs.empty()) settings.shockerIDs = {"41838"};
+
+      // Migrate old notification booleans
+      bool oldXs = c["XSOVERLAY_NOTIFICATIONS"].as<bool>(false);
+      bool oldOvr = c["OVRTOOLKIT_NOTIFICATIONS"].as<bool>(false);
+      settings.notificationsEnabled = oldXs || oldOvr;
+      settings.notifUseOvrToolkit = oldOvr;
 
       logMsg("Imported config.yml");
     } else {
@@ -720,8 +751,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   int stgMaxCooldown = 6;
   float stgCooldownFactor = 0.4f;
   int stgCooldownWindow = 30;
-  bool stgXsoverlay = false;
-  bool stgOvrToolkit = false;
+  bool stgNotifEnabled = false;
+  bool stgNotifUseOvr = false;
+  bool stgUseSerial = true;
+  char stgPishockUser[128] = {};
+  char stgPishockKey[128] = {};
+  char stgOpenshockToken[256] = {};
+  char stgOpenshockServer[128] = {};
   int stgPresetCount = 3;
   float stgTouchThreshold = 8.f;
 
@@ -743,8 +779,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                stgMaxCooldown,
                stgCooldownFactor,
                stgCooldownWindow,
-               stgXsoverlay,
-               stgOvrToolkit,
+               stgNotifEnabled,
+               stgNotifUseOvr,
+               stgUseSerial,
+               stgPishockUser,
+               stgPishockKey,
+               stgOpenshockToken,
+               stgOpenshockServer,
                stgPresetCount,
                stgTouchThreshold};
 
@@ -773,8 +814,17 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     stgMaxCooldown = settings.maxCooldown;
     stgCooldownFactor = settings.cooldownFactor;
     stgCooldownWindow = settings.cooldownWindow;
-    stgXsoverlay = settings.xsoverlayNotifications;
-    stgOvrToolkit = settings.ovrToolkitNotifications;
+    stgNotifEnabled = settings.notificationsEnabled;
+    stgNotifUseOvr = settings.notifUseOvrToolkit;
+    stgUseSerial = settings.useSerial;
+    strncpy_s(stgPishockUser, settings.pishockUsername.c_str(),
+              sizeof(stgPishockUser) - 1);
+    strncpy_s(stgPishockKey, settings.pishockApiKey.c_str(),
+              sizeof(stgPishockKey) - 1);
+    strncpy_s(stgOpenshockToken, settings.openshockApiToken.c_str(),
+              sizeof(stgOpenshockToken) - 1);
+    strncpy_s(stgOpenshockServer, settings.openshockServerUrl.c_str(),
+              sizeof(stgOpenshockServer) - 1);
     stgPresetCount = settings.presetCount;
     stgTouchThreshold = settings.touchSelectThreshold;
   };
@@ -1208,8 +1258,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.maxCooldown = stgMaxCooldown;
       settings.cooldownFactor = stgCooldownFactor;
       settings.cooldownWindow = stgCooldownWindow;
-      settings.xsoverlayNotifications = stgXsoverlay;
-      settings.ovrToolkitNotifications = stgOvrToolkit;
+      settings.notificationsEnabled = stgNotifEnabled;
+      settings.notifUseOvrToolkit = stgNotifUseOvr;
+      settings.useSerial = stgUseSerial;
+      settings.pishockUsername = stgPishockUser;
+      settings.pishockApiKey = stgPishockKey;
+      settings.openshockApiToken = stgOpenshockToken;
+      settings.openshockServerUrl = stgOpenshockServer;
       settings.presetCount = stgPresetCount;
       settings.touchSelectThreshold = stgTouchThreshold;
       {
@@ -1270,7 +1325,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       // Hardware
       ImGui::SeparatorText("Hardware");
-      // Pishock/OpenShock Toggle
+
+      // Backend toggle: OpenShock | PiShock
       if (!stgUsePishock)
         ImGui::PushStyleColor(ImGuiCol_Button,
                               ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
@@ -1286,23 +1342,97 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       else
         ImGui::PushStyleColor(ImGuiCol_Button,
                               ImGui::GetStyle().Colors[ImGuiCol_Button]);
-      if (ImGui::Button("PiShock", {100, 0})) stgUsePishock = true;
+      if (ImGui::Button("PiShock##hw", {100, 0})) stgUsePishock = true;
       ImGui::PopStyleColor();
       ImGui::SameLine();
       ImGui::Text("Backend/Hub");
 
-      ImGui::InputText("Shocker IDs (#, #, ...)##s", stgShockerIDs,
-                       sizeof(stgShockerIDs));
-      ImGui::SetItemTooltip(
-          "Shocker IDs as found on the PiShock or OpenShock website.\nSeparate "
-          "with comma");
-      ImGui::Checkbox("Sequential shocker order (vs Random)", &stgRandomOrSeq);
-      ImGui::SetItemTooltip(
-          "If using multiple shockers, this option chooses between randomizing "
-          "or using them sequentially\nNo for random // Yes for sequential");
-      ImGui::InputTextWithHint("Serial Port##s", "(blank = auto)",
-                               stgSerialPort, sizeof(stgSerialPort));
-      ImGui::SetItemTooltip("Leave blank to auto-detect");
+      ImGui::Spacing();
+
+      // Connection mode toggle: Serial | API
+      if (stgUseSerial)
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+      else
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
+      if (ImGui::Button("Serial##cm", {100, 0})) stgUseSerial = true;
+      ImGui::PopStyleColor();
+      ImGui::SameLine(0, 0);
+      if (!stgUseSerial)
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+      else
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
+      if (ImGui::Button("API##cm", {100, 0})) stgUseSerial = false;
+      ImGui::PopStyleColor();
+      ImGui::SameLine();
+      ImGui::Text("Connection Mode");
+
+      ImGui::Spacing();
+
+      if (stgUseSerial) {
+        // Serial mode fields
+        // Shocker IDs label stays the same for serial
+        ImGui::InputTextWithHint("Serial Port##s", "(blank = auto)",
+                                 stgSerialPort, sizeof(stgSerialPort));
+        ImGui::SetItemTooltip("Leave blank to auto-detect");
+        ImGui::InputText("Shocker IDs (#, #, ...)##s", stgShockerIDs,
+                         sizeof(stgShockerIDs));
+        ImGui::SetItemTooltip(
+            "Shocker IDs as found on the PiShock or OpenShock website.\n"
+            "Separate with comma");
+        ImGui::Checkbox("Sequential shocker order (vs Random)",
+                        &stgRandomOrSeq);
+        ImGui::SetItemTooltip(
+            "If using multiple shockers, this option chooses between "
+            "randomizing or using them sequentially\n"
+            "No for random // Yes for sequential");
+
+      } else {
+        // API mode fields
+        if (stgUsePishock) {
+          // PiShock API
+          ImGui::InputText("Username##psa", stgPishockUser,
+                           sizeof(stgPishockUser));
+          ImGui::SetItemTooltip("Your PiShock account username");
+          ImGui::InputText("API Key##psk", stgPishockKey, sizeof(stgPishockKey),
+                           ImGuiInputTextFlags_Password);
+          ImGui::SetItemTooltip(
+              "Your PiShock API key (from Account > API Access)");
+          ImGui::InputText("Share Codes (code, code, ...)##ps", stgShockerIDs,
+                           sizeof(stgShockerIDs));
+          ImGui::SetItemTooltip(
+              "Share code(s) for each shocker, comma-separated.\n"
+              "Found on the PiShock website under your shocker.");
+        } else {
+          // OpenShock API
+          ImGui::InputText("API Token##ost", stgOpenshockToken,
+                           sizeof(stgOpenshockToken),
+                           ImGuiInputTextFlags_Password);
+          ImGui::SetItemTooltip(
+              "Your OpenShock API token.\n"
+              "Create one at your OpenShock dashboard under API Tokens.");
+          ImGui::InputText("Server URL##oss", stgOpenshockServer,
+                           sizeof(stgOpenshockServer));
+          ImGui::SetItemTooltip(
+              "OpenShock server hostname (without https://).\n"
+              "Default: api.shocklink.net");
+          ImGui::InputText("Shocker IDs (uuid, uuid, ...)##os", stgShockerIDs,
+                           sizeof(stgShockerIDs));
+          ImGui::SetItemTooltip(
+              "Shocker UUID(s) from your OpenShock dashboard, "
+              "comma-separated.");
+        }
+        ImGui::Checkbox("Sequential shocker order (vs Random)",
+                        &stgRandomOrSeq);
+        ImGui::SetItemTooltip(
+            "If using multiple shockers, this option chooses between "
+            "randomizing or using them sequentially\n"
+            "No for random // Yes for sequential");
+      }
+
       ImGui::TextDisabled("Changes here require a restart");
 
       ImGui::Spacing();
@@ -1330,14 +1460,31 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       // Notifications
       ImGui::SeparatorText("Notifications");
-      ImGui::Checkbox("XSOverlay##s", &stgXsoverlay);
+      ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
       ImGui::SetItemTooltip(
-          "Sends a notification about the strength and duration as a "
-          "notification to your headset");
-      ImGui::Checkbox("OVRToolkit##s", &stgOvrToolkit);
-      ImGui::SetItemTooltip(
-          "Sends a notification about the strength and duration as a "
-          "notification to your headset");
+          "Send a VR notification showing shock strength and duration");
+      if (stgNotifEnabled) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("Provider:");
+        ImGui::SameLine();
+        if (!stgNotifUseOvr)
+          ImGui::PushStyleColor(
+              ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+        else
+          ImGui::PushStyleColor(ImGuiCol_Button,
+                                ImGui::GetStyle().Colors[ImGuiCol_Button]);
+        if (ImGui::Button("XSOverlay##np", {90, 0})) stgNotifUseOvr = false;
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0, 0);
+        if (stgNotifUseOvr)
+          ImGui::PushStyleColor(
+              ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+        else
+          ImGui::PushStyleColor(ImGuiCol_Button,
+                                ImGui::GetStyle().Colors[ImGuiCol_Button]);
+        if (ImGui::Button("OVRToolkit##np", {90, 0})) stgNotifUseOvr = true;
+        ImGui::PopStyleColor();
+      }
 
       ImGui::Spacing();
 
@@ -1486,7 +1633,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                           settings.randomOrSeq != stgRandomOrSeq ||
                           settings.vrchatHost != stgVrchatHost ||
                           settings.presetCount != stgPresetCount ||
-                          currentIDs != stgShockerIDs;
+                          currentIDs != stgShockerIDs ||
+                          settings.useSerial != stgUseSerial ||
+                          settings.pishockUsername != stgPishockUser ||
+                          settings.pishockApiKey != stgPishockKey ||
+                          settings.openshockApiToken != stgOpenshockToken ||
+                          settings.openshockServerUrl != stgOpenshockServer;
 
       if (needsRestart) {
         if (ImGui::Button("Save & Restart", {150, 0})) {

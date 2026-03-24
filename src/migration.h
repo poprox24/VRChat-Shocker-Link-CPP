@@ -25,8 +25,13 @@ inline void migrateConfigYmlIfPresent(Settings& s,
     s.cooldownFactor = c["COOLDOWN_FACTOR_S"].as<float>(0.4f);
     s.cooldownWindow = c["COOLDOWN_WINDOW_S"].as<int>(30);
     s.cooldownEnabled = c["COOLDOWN_ENABLED"].as<bool>(true);
-    s.xsoverlayNotifications = c["XSOVERLAY_NOTIFICATIONS"].as<bool>(false);
-    s.ovrToolkitNotifications = c["OVRTOOLKIT_NOTIFICATIONS"].as<bool>(false);
+
+    // Migrate old separate notification booleans to the new unified fields
+    bool oldXs = c["XSOVERLAY_NOTIFICATIONS"].as<bool>(false);
+    bool oldOvr = c["OVRTOOLKIT_NOTIFICATIONS"].as<bool>(false);
+    s.notificationsEnabled = oldXs || oldOvr;
+    s.notifUseOvrToolkit = oldOvr;
+
     s.presetCount = c["PRESET_COUNT"].as<int>(3);
     s.touchSelectThreshold = c["TOUCH_SELECT_THRESHOLD"].as<float>(8.f);
     s.touchMarkerSize = c["TOUCH_MARKER_SIZE"].as<float>(140.f);
