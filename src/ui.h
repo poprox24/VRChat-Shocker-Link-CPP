@@ -1211,7 +1211,9 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       if (ImGui::Button("Import Python cfg", {ImGui::CalcItemWidth(), 0}))
         importPythonConfig(settings, hub, minDur, maxDur, xViewMin, xViewMax,
                            settingsPath);
-      ImGui::SetItemTooltip("Select the folder of your python installation.");
+      ImGui::SetItemTooltip(
+          "Select the folder of your python installation.\nUseless for most, "
+          "imports config from the old python build.");
       ImGui::SameLine();
       ImGui::Text("Import old python config");
       ImGui::Spacing();
