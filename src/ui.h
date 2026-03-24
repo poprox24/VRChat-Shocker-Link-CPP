@@ -1107,7 +1107,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
         settings.hotkeyMods = 0;
         UnregisterHotKey(g_hwnd, 1);
       }
-      ImGui::SetItemTooltip("Clear the button(disables hotkey)");
+      ImGui::SetItemTooltip("Clear the button (disables hotkey)");
 
       if (capturingHotkey) {
         int mods = 0;
