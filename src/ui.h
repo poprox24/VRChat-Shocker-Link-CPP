@@ -1166,6 +1166,25 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
                          "%.1f");
       ImGui::SetItemTooltip("Width of the curve line");
 
+      // Increase luminance to make the color pickers always visible
+      auto liftMinLum = [](ImVec4 c, float minLum) {
+        float lum = c.x * 0.299f + c.y * 0.587f + c.z * 0.114f;
+        if (lum < minLum) {
+          float scale = minLum / (lum + 1e-5f);
+          c.x *= scale;
+          c.y *= scale;
+          c.z *= scale;
+        }
+        return ImVec4(std::min(c.x, 1.0f), std::min(c.y, 1.0f),
+                      std::min(c.z, 1.0f), c.w);
+      };
+
+      ImVec4 base = liftMinLum(settings.accentColor, 0.35f);
+
+      ImGui::PushStyleColor(
+          ImGuiCol_FrameBg,
+          ImVec4(base.x * 1.25f, base.y * 1.25f, base.z * 1.25f, 1.0f));
+
       // Color pickers -- edit settings directly for live preview
       ImGui::ColorEdit4("Background##s", (float*)&settings.backgroundColor,
                         ImGuiColorEditFlags_NoInputs);
@@ -1196,6 +1215,8 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
           "Plot background gradient — right/high intensity side.");
 
       ImGui::TextDisabled("* - Restart required");
+
+      ImGui::PopStyleColor(1);
 
       ImGui::Spacing();
 
