@@ -525,7 +525,6 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
   bool stgOvrToolkit = false;
   int stgPresetCount = 3;
   float stgTouchThreshold = 8.f;
-  float stgMarkerSize = 140.f;
   float stgLineWidth = 3.f;
 
   int baseClientW = (int)ImGui::GetIO().DisplaySize.x;
@@ -555,8 +554,6 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     stgOvrToolkit = settings.ovrToolkitNotifications;
     stgPresetCount = settings.presetCount;
     stgTouchThreshold = settings.touchSelectThreshold;
-    stgMarkerSize = settings.touchMarkerSize;
-    stgLineWidth = settings.lineWidth;
   };
 
   auto closeSettingsModal = [&]() {
@@ -982,8 +979,6 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       settings.ovrToolkitNotifications = stgOvrToolkit;
       settings.presetCount = stgPresetCount;
       settings.touchSelectThreshold = stgTouchThreshold;
-      settings.touchMarkerSize = stgMarkerSize;
-      settings.lineWidth = stgLineWidth;
       {
         std::lock_guard<std::mutex> lock(hub.queueMutex);
         settings.shockerIDs.clear();
@@ -1164,10 +1159,10 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       ImGui::SeparatorText("Style (live preview)");
       ImGui::SliderInt("Preset Count*##s", &stgPresetCount, 1, 8);
       ImGui::SetItemTooltip("Amount of presets");
-      ImGui::SliderFloat("Marker Size*##s", &stgMarkerSize, 50.f, 300.f,
-                         "%.0f");
+      ImGui::SliderFloat("Marker Size##s", &settings.touchMarkerSize, 50.f,
+                         300.f, "%.0f");
       ImGui::SetItemTooltip("Size of points in the curve");
-      ImGui::SliderFloat("Curve Line Width*##s", &stgLineWidth, 1.f, 6.f,
+      ImGui::SliderFloat("Curve Line Width##s", &settings.lineWidth, 1.f, 6.f,
                          "%.1f");
       ImGui::SetItemTooltip("Width of the curve line");
 
