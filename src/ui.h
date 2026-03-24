@@ -32,6 +32,8 @@ static IDXGISwapChain* g_pSwapChain = nullptr;
 static ID3D11RenderTargetView* g_mainRTV = nullptr;
 static HWND g_hwnd = nullptr;
 
+static ShockerHub* g_hub = nullptr;
+
 extern std::atomic<bool> shouldRestart;
 
 static void CreateRTV() {
@@ -51,6 +53,12 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM,
                                                              LPARAM);
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+  if (msg == WM_HOTKEY && wp == 1) {
+    if (g_hub) {
+      g_hub->shocksDisabled = true;
+      logMsg("[Hotkey] Shocks disabled until restart.");
+    }
+  }
   if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp)) return true;
   if (msg == WM_SIZE && g_pSwapChain) {
     CleanupRTV();
@@ -362,6 +370,25 @@ inline void applyTheme(Settings& settings) {
   ImPlot::GetStyle().Colors[ImPlotCol_LegendText] = settings.labelColor;
 }
 
+static void RegisterAppHotkey(const Settings& settings) {
+  UnregisterHotKey(g_hwnd, 1);
+  if (settings.hotkeyVk != 0)
+    RegisterHotKey(g_hwnd, 1, settings.hotkeyMods | MOD_NOREPEAT,
+                   settings.hotkeyVk);
+}
+
+inline std::string keyNameFromVk(int vk, int mods) {
+  std::string s;
+  if (mods & MOD_CONTROL) s += "Ctrl+";
+  if (mods & MOD_ALT) s += "Alt+";
+  if (mods & MOD_SHIFT) s += "Shift+";
+  char buf[32] = {};
+  UINT sc = MapVirtualKeyA(vk, MAPVK_VK_TO_VSC);
+  GetKeyNameTextA(sc << 16, buf, sizeof(buf));
+  s += buf[0] ? buf : "?";
+  return s;
+}
+
 // UI entry point
 inline void ui_run(Settings& settings, ShockerHub& hub,
                    const std::string& settingsPath) {
@@ -386,6 +413,8 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
                     settings.windowX, settings.windowY, settings.windowW,
                     settings.windowH, nullptr, nullptr, wc.hInstance, nullptr);
 
+  g_hub = &hub;
+
   BOOL dark = TRUE;
   DwmSetWindowAttribute(g_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark,
                         sizeof(dark));
@@ -397,6 +426,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
   ShowWindow(g_hwnd, SW_SHOWDEFAULT);
   UpdateWindow(g_hwnd);
+  RegisterAppHotkey(settings);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -516,6 +546,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     settings.gradientRightColor = reverted.gradientRightColor;
     showSettings = false;
   };
+  bool capturingHotkey = false;
 
   std::array<CurvePoint, 3>& pts = hub.curvePoints;
 
@@ -595,7 +626,11 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       ImGui::GetWindowDrawList()->AddCircleFilled(
           {p.x + r, p.y + ImGui::GetTextLineHeight() * 0.5f}, r, col);
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() + r * 2 + 6);
-      ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
+      if (!hub.shocksDisabled) {
+        ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
+      } else {
+        ImGui::TextColored({1.f, 0.3f, 0.3f, 1.f}, "SHOCKS DISABLED");
+      }
       if (!hub.isConnected) {
         if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
       }
@@ -1053,6 +1088,53 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
       ImGui::Spacing();
 
+      // Panic button
+      ImGui::SeparatorText("Hotkey");
+      ImGui::TextDisabled("Panic button:");
+      ImGui::SameLine();
+
+      std::string keyLabel =
+          capturingHotkey
+              ? "Press any key..."
+              : (settings.hotkeyVk
+                     ? keyNameFromVk(settings.hotkeyVk, settings.hotkeyMods)
+                     : "None");
+      if (ImGui::Button(keyLabel.c_str(), {160, 0})) capturingHotkey = true;
+      ImGui::SetItemTooltip("Hotkey to disable shocks\nWorks anywhere");
+      ImGui::SameLine();
+      if (ImGui::Button("Clear##hk")) {
+        settings.hotkeyVk = 0;
+        settings.hotkeyMods = 0;
+        UnregisterHotKey(g_hwnd, 1);
+      }
+
+      if (capturingHotkey) {
+        int mods = 0;
+        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) mods |= MOD_CONTROL;
+        if (GetAsyncKeyState(VK_MENU) & 0x8000) mods |= MOD_ALT;
+        if (GetAsyncKeyState(VK_SHIFT) & 0x8000) mods |= MOD_SHIFT;
+
+        for (int vk = VK_F1; vk <= VK_F24; vk++) {
+          if (GetAsyncKeyState(vk) & 0x8000) {
+            settings.hotkeyVk = vk;
+            settings.hotkeyMods = mods;
+            capturingHotkey = false;
+            RegisterAppHotkey(settings);
+            break;
+          }
+        }
+        for (int vk = 0x30; vk <= 0x5A; vk++) {
+          if (GetAsyncKeyState(vk) & 0x8000) {
+            settings.hotkeyVk = vk;
+            settings.hotkeyMods = mods;
+            capturingHotkey = false;
+            RegisterAppHotkey(settings);
+            break;
+          }
+        }
+        if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) capturingHotkey = false;
+      }
+
       // Style
       ImGui::SeparatorText("Style (live preview)");
       ImGui::SliderInt("Preset Count*##s", &stgPresetCount, 1, 8);
@@ -1132,12 +1214,14 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       if (needsRestart) {
         if (ImGui::Button("Save & Restart", {150, 0})) {
           commitAll();
+          RegisterAppHotkey(settings);
           shouldRestart = true;
           PostMessage(g_hwnd, WM_CLOSE, 0, 0);
         }
       } else {
         if (ImGui::Button("Save", {80, 0})) {
           commitAll();
+          RegisterAppHotkey(settings);
           showSettings = false;
         }
       }

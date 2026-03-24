@@ -32,6 +32,7 @@ class ShockerHub {
   ChatboxSender chatbox;
 
   bool isConnected = false;
+  std::atomic<bool> shocksDisabled{false};
 
   std::mutex queueMutex;
 
@@ -265,6 +266,11 @@ class ShockerHub {
       auto item = shockQueue.front();
       shockQueue.pop();
       lock.unlock();
+
+      if (shocksDisabled) {
+        logMsg("[ShockerHub] Shocks disabled, ignoring\n");
+        continue;
+      }
 
       int durationMs = std::get<0>(item).value_or(-1);
       bool upperHalf = std::get<1>(item);

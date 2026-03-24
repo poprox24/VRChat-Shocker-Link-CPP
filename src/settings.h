@@ -50,6 +50,10 @@ class Settings {
   int cooldownWindow = 30;
   bool cooldownEnabled = true;
 
+  // Panic hotkey
+  int hotkeyVk = VK_F9;
+  int hotkeyMods = 0;  // Alt = 1, Control = 2, Shift = 4
+
   // Notification Config
   bool xsoverlayNotifications = false;
   bool ovrToolkitNotifications = false;
@@ -71,7 +75,7 @@ class Settings {
   // VRChat Config
   std::string vrchatHost = "127.0.0.1";
 
-  // Constants (were static in Config)
+  // Constants
   static constexpr int baudRate = 115200;
   static constexpr int oscPort = 39570;
   static constexpr std::string_view serviceName = "ShockerLink";
@@ -108,6 +112,10 @@ class Settings {
       cooldownFactor = j.value("cooldownFactor", 0.4f);
       cooldownWindow = j.value("cooldownWindow", 30);
       cooldownEnabled = j.value("cooldownEnabled", true);
+
+      // Panic hotkey
+      hotkeyVk = j.value("hotkeyVk", VK_F9);
+      hotkeyMods = j.value("hotkeyMods", 0);
 
       // Notification Config
       xsoverlayNotifications = j.value("xsoverlayNotifications", false);
@@ -192,6 +200,10 @@ class Settings {
     j["cooldownFactor"] = cooldownFactor;
     j["cooldownWindow"] = cooldownWindow;
     j["cooldownEnabled"] = cooldownEnabled;
+
+    // Panic Hotkey
+    j["hotkeyVk"] = hotkeyVk;
+    j["hotkeyMods"] = hotkeyMods;
 
     // Notification Config
     j["xsoverlayNotifications"] = xsoverlayNotifications;
