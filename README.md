@@ -4,8 +4,6 @@
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 
-
-
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
@@ -22,12 +20,10 @@
     <br />
     <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues/new?labels=bug">Report Bug or Request Feature</a>
 
-
 https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
+
   </p>
 </div>
-
-
 
 <!-- TABLE OF CONTENTS -->
 <details>
@@ -47,8 +43,8 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
   </ol>
 </details>
 
-
 <!-- GETTING STARTED -->
+
 ## Getting Started
 
 How to setup this project
@@ -56,7 +52,8 @@ How to setup this project
 ### Prerequisites
 
 Make sure you install this before you continue:
-* [.NET Framework](https://dotnet.microsoft.com/en-us/download/dotnet-framework)
+
+- [.NET Framework](https://dotnet.microsoft.com/en-us/download/dotnet-framework)
 
 ### Installation
 
@@ -65,7 +62,9 @@ Make sure you install this before you continue:
 3. Run the program
 4. Open settings (bottom left)
 5. Change the `Shock Parameter` to the parameter you set on your VRChat avatar and set `OpenShock/PiShock` depending on your use case
-  - If using an OpenShock Hub, add your shockers to the `Shocker IDs` in settings, they cannot be read automatically from the hub
+
+- If using an OpenShock Hub, add your shockers to the `Shocker IDs` in settings, they cannot be read automatically from the hub
+
 6. Click on Save(or Save & Restart if needed)
 
 ### Usage
@@ -73,6 +72,7 @@ Make sure you install this before you continue:
 1. Most stuff is self explanatory
 2. The PiShock/OpenShock hub needs to be connected to the PC, this program uses serial for low latency
 3. Presets:
+
 - Left click to load
 - Right click to rename
 - Middle click to default
@@ -80,15 +80,15 @@ Make sure you install this before you continue:
 <br />
 
 <!-- ROADMAP -->
+
 ## Roadmap
 
-- [ ] Undo/Redo Support
+- [x] Undo/Redo Support
 
 See the [open issues](https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues) for a full list of proposed features (and known issues).
 
-
-
 <!-- CONTRIBUTING -->
+
 ## Contributing
 
 If you have a suggestion that would make this tool better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
@@ -100,8 +100,6 @@ Don't forget to give the project a star! Thanks again!
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-
-
 ### Top contributors:
 
 <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP/graphs/contributors">
@@ -111,13 +109,13 @@ Don't forget to give the project a star! Thanks again!
 <br />
 
 <!-- LICENSE -->
+
 ## License
 
 Distributed under the DWYW License. See `LICENSE.txt` for more information.
 
-
-
 <!-- CONTACT -->
+
 ## Contact
 
 Poprox24 - [@poprox422](https://twitter.com/poprox422) - poprox24.roxy@gmail.com
@@ -125,7 +123,6 @@ Poprox24 - [@poprox422](https://twitter.com/poprox422) - poprox24.roxy@gmail.com
 Project Link: [VRChat-Shocker-Link-CPP](https://github.com/poprox24/VRChat-Shocker-Link-CPP)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 
 [contributors-shield]: https://img.shields.io/github/contributors/poprox24/VRChat-Shocker-Link-CPP.svg?style=for-the-badge
 [contributors-url]: https://github.com/poprox24/VRChat-Shocker-Link-CPP/graphs/contributors
@@ -138,4 +135,3 @@ Project Link: [VRChat-Shocker-Link-CPP](https://github.com/poprox24/VRChat-Shock
 [license-shield]: https://img.shields.io/github/license/poprox24/VRChat-Shocker-Link-CPP.svg?style=for-the-badge
 [license-url]: https://github.com/poprox24/VRChat-Shocker-Link-CPP/blob/master/LICENSE
 [product-screenshot]: images/screenshot.png
-

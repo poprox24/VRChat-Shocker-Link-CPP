@@ -63,7 +63,7 @@ int main() {
   });
 
   Updater::checkAsync();
-  ui_run(settings, hub, settingsLocation);
+  runUI(settings, hub, settingsLocation);
   running = false;
   oscBridge.join();
   oscQuery.stop();

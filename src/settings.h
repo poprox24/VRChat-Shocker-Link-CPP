@@ -176,6 +176,12 @@ class Settings {
   }
 
   void save(const std::string& path) {
+    std::ofstream file(path);
+    file << toJson().dump(2);
+    logMsg("Settings saved");
+  }
+
+  nlohmann::json toJson() const {
     nlohmann::json j;
 
     j["windowX"] = windowX;
@@ -186,7 +192,6 @@ class Settings {
     j["defaultPreset"] = defaultPreset;
     j["lastSerialPort"] = lastSerialPort;
 
-    // Serial Config
     j["shockParameter"] = shockParameter;
     j["secondShockParameter"] = secondShockParameter;
     j["usePishock"] = usePishock;
@@ -194,22 +199,18 @@ class Settings {
     j["randomOrSeq"] = randomOrSeq;
     j["serialPort"] = serialPort;
 
-    // Cooldown Config
     j["baseCooldown"] = baseCooldown;
     j["maxCooldown"] = maxCooldown;
     j["cooldownFactor"] = cooldownFactor;
     j["cooldownWindow"] = cooldownWindow;
     j["cooldownEnabled"] = cooldownEnabled;
 
-    // Panic Hotkey
     j["hotkeyVk"] = hotkeyVk;
     j["hotkeyMods"] = hotkeyMods;
 
-    // Notification Config
     j["xsoverlayNotifications"] = xsoverlayNotifications;
     j["ovrToolkitNotifications"] = ovrToolkitNotifications;
 
-    // Style Config
     j["presetCount"] = presetCount;
     j["touchSelectThreshold"] = touchSelectThreshold;
     j["touchMarkerSize"] = touchMarkerSize;
@@ -223,10 +224,8 @@ class Settings {
     j["gradientLeftColor"] = saveColor(gradientLeftColor);
     j["gradientRightColor"] = saveColor(gradientRightColor);
 
-    // VRChat Config
     j["vrchatHost"] = vrchatHost;
 
-    // Presets
     j["presets"] = nlohmann::json::array();
     for (auto& p : presets) {
       if (!p.has_value()) {
@@ -245,10 +244,14 @@ class Settings {
       });
     }
 
-    std::ofstream file(path);
-    file << j.dump(2);
-    logMsg("Settings saved");
+    return j;
   }
+
+  bool operator==(const Settings& other) const {
+    return toJson() == other.toJson();
+  }
+
+  bool operator!=(const Settings& other) const { return !(*this == other); }
 
  private:
   static nlohmann::json saveColor(const ImVec4& c) {

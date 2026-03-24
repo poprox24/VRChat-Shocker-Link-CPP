@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cmath>
+#include <deque>
 #include <thread>
 using namespace std::chrono;
 
@@ -36,17 +37,212 @@ static ShockerHub* g_hub = nullptr;
 
 extern std::atomic<bool> shouldRestart;
 
-static void CreateRTV() {
+static constexpr size_t kMaxUndoRedoStates = 128;
+
+static void createRenderTargetView() {
   ID3D11Texture2D* buf = nullptr;
   g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&buf));
   g_pd3dDevice->CreateRenderTargetView(buf, nullptr, &g_mainRTV);
   buf->Release();
 }
-static void CleanupRTV() {
+static void destroyRenderTargetView() {
   if (g_mainRTV) {
     g_mainRTV->Release();
     g_mainRTV = nullptr;
   }
+}
+
+struct AppState {
+  Settings settings;
+  std::array<CurvePoint, 3> curvePoints;
+  float minDur = 0.f;
+  float maxDur = 0.f;
+  float xViewMin = 0.f;
+  float xViewMax = 0.f;
+  bool cooldownEnabled = false;
+
+  std::string stgShockParam;
+  std::string stgSecondParam;
+  std::string stgShockerIDs;
+  std::string stgSerialPort;
+  std::string stgVrchatHost;
+  bool stgUsePishock = false;
+  bool stgRandomOrSeq = false;
+  int stgBaseCooldown = 2;
+  int stgMaxCooldown = 6;
+  float stgCooldownFactor = 0.4f;
+  int stgCooldownWindow = 30;
+  bool stgXsoverlay = false;
+  bool stgOvrToolkit = false;
+  int stgPresetCount = 3;
+  float stgTouchThreshold = 8.f;
+  float stgLineWidth = 3.f;
+
+  bool operator==(const AppState& other) const {
+    return settings == other.settings && curvePoints == other.curvePoints &&
+           minDur == other.minDur && maxDur == other.maxDur &&
+           xViewMin == other.xViewMin && xViewMax == other.xViewMax &&
+           cooldownEnabled == other.cooldownEnabled &&
+           stgShockParam == other.stgShockParam &&
+           stgSecondParam == other.stgSecondParam &&
+           stgShockerIDs == other.stgShockerIDs &&
+           stgSerialPort == other.stgSerialPort &&
+           stgVrchatHost == other.stgVrchatHost &&
+           stgUsePishock == other.stgUsePishock &&
+           stgRandomOrSeq == other.stgRandomOrSeq &&
+           stgBaseCooldown == other.stgBaseCooldown &&
+           stgMaxCooldown == other.stgMaxCooldown &&
+           stgCooldownFactor == other.stgCooldownFactor &&
+           stgCooldownWindow == other.stgCooldownWindow &&
+           stgXsoverlay == other.stgXsoverlay &&
+           stgOvrToolkit == other.stgOvrToolkit &&
+           stgPresetCount == other.stgPresetCount &&
+           stgTouchThreshold == other.stgTouchThreshold &&
+           stgLineWidth == other.stgLineWidth;
+  }
+
+  bool operator!=(const AppState& other) const { return !(*this == other); }
+};
+
+struct UiContext {
+  Settings& settings;
+  ShockerHub& hub;
+
+  float& minDur;
+  float& maxDur;
+  float& xViewMin;
+  float& xViewMax;
+  bool& cooldownEnabled;
+
+  char (&stgShockParam)[64];
+  char (&stgSecondParam)[64];
+  char (&stgShockerIDs)[256];
+  char (&stgSerialPort)[64];
+  char (&stgVrchatHost)[64];
+
+  bool& stgUsePishock;
+  bool& stgRandomOrSeq;
+  int& stgBaseCooldown;
+  int& stgMaxCooldown;
+  float& stgCooldownFactor;
+  int& stgCooldownWindow;
+  bool& stgXsoverlay;
+  bool& stgOvrToolkit;
+  int& stgPresetCount;
+  float& stgTouchThreshold;
+  float& stgLineWidth;
+};
+
+static AppState snapshotAppState(const UiContext& ui) {
+  AppState st;
+  st.settings = ui.settings;
+  st.curvePoints = ui.hub.curvePoints;
+  st.minDur = ui.minDur;
+  st.maxDur = ui.maxDur;
+  st.xViewMin = ui.xViewMin;
+  st.xViewMax = ui.xViewMax;
+  st.cooldownEnabled = ui.cooldownEnabled;
+
+  st.stgShockParam = ui.stgShockParam;
+  st.stgSecondParam = ui.stgSecondParam;
+  st.stgShockerIDs = ui.stgShockerIDs;
+  st.stgSerialPort = ui.stgSerialPort;
+  st.stgVrchatHost = ui.stgVrchatHost;
+  st.stgUsePishock = ui.stgUsePishock;
+  st.stgRandomOrSeq = ui.stgRandomOrSeq;
+  st.stgBaseCooldown = ui.stgBaseCooldown;
+  st.stgMaxCooldown = ui.stgMaxCooldown;
+  st.stgCooldownFactor = ui.stgCooldownFactor;
+  st.stgCooldownWindow = ui.stgCooldownWindow;
+  st.stgXsoverlay = ui.stgXsoverlay;
+  st.stgOvrToolkit = ui.stgOvrToolkit;
+  st.stgPresetCount = ui.stgPresetCount;
+  st.stgTouchThreshold = ui.stgTouchThreshold;
+  st.stgLineWidth = ui.stgLineWidth;
+
+  return st;
+}
+
+static void restoreAppState(const AppState& st, UiContext& ui) {
+  ui.settings = st.settings;
+  ui.hub.curvePoints = st.curvePoints;
+  ui.minDur = st.minDur;
+  ui.maxDur = st.maxDur;
+  ui.xViewMin = st.xViewMin;
+  ui.xViewMax = st.xViewMax;
+  ui.cooldownEnabled = st.cooldownEnabled;
+
+  ui.settings.minShockDuration = ui.minDur;
+  ui.settings.maxShockDuration = ui.maxDur;
+  ui.settings.xViewMin = ui.xViewMin;
+  ui.settings.xViewMax = ui.xViewMax;
+  ui.settings.cooldownEnabled = ui.cooldownEnabled;
+
+  strncpy_s(ui.stgShockParam, st.stgShockParam.c_str(), _TRUNCATE);
+  strncpy_s(ui.stgSecondParam, st.stgSecondParam.c_str(), _TRUNCATE);
+  strncpy_s(ui.stgShockerIDs, st.stgShockerIDs.c_str(), _TRUNCATE);
+  strncpy_s(ui.stgSerialPort, st.stgSerialPort.c_str(), _TRUNCATE);
+  strncpy_s(ui.stgVrchatHost, st.stgVrchatHost.c_str(), _TRUNCATE);
+
+  ui.stgUsePishock = st.stgUsePishock;
+  ui.stgRandomOrSeq = st.stgRandomOrSeq;
+  ui.stgBaseCooldown = st.stgBaseCooldown;
+  ui.stgMaxCooldown = st.stgMaxCooldown;
+  ui.stgCooldownFactor = st.stgCooldownFactor;
+  ui.stgCooldownWindow = st.stgCooldownWindow;
+  ui.stgXsoverlay = st.stgXsoverlay;
+  ui.stgOvrToolkit = st.stgOvrToolkit;
+  ui.stgPresetCount = st.stgPresetCount;
+  ui.stgTouchThreshold = st.stgTouchThreshold;
+  ui.stgLineWidth = st.stgLineWidth;
+}
+
+static void pushUndoSnapshot(std::deque<AppState>& undoStack,
+                             std::deque<AppState>& redoStack,
+                             const AppState& state, bool isPerformingUndoRedo) {
+  if (isPerformingUndoRedo) return;
+  if (!undoStack.empty() && undoStack.back() == state) return;
+
+  undoStack.push_back(state);
+  if (undoStack.size() > kMaxUndoRedoStates) undoStack.pop_front();
+
+  redoStack.clear();
+}
+
+static bool hasUndo(const std::deque<AppState>& undoStack) {
+  return !undoStack.empty();
+}
+
+static bool hasRedo(const std::deque<AppState>& redoStack) {
+  return !redoStack.empty();
+}
+
+static void performUndoRedo(bool is_undo, std::deque<AppState>& undoStack,
+                            std::deque<AppState>& redoStack, UiContext& ui,
+                            bool& isPerformingUndoRedo) {
+  if (is_undo && undoStack.empty()) return;
+  if (!is_undo && redoStack.empty()) return;
+
+  isPerformingUndoRedo = true;
+  AppState current = snapshotAppState(ui);
+
+  if (is_undo) {
+    redoStack.push_back(current);
+    if (redoStack.size() > kMaxUndoRedoStates) redoStack.pop_front();
+
+    AppState previous = undoStack.back();
+    undoStack.pop_back();
+    restoreAppState(previous, ui);
+  } else {
+    undoStack.push_back(current);
+    if (undoStack.size() > kMaxUndoRedoStates) undoStack.pop_front();
+
+    AppState next = redoStack.back();
+    redoStack.pop_back();
+    restoreAppState(next, ui);
+  }
+
+  isPerformingUndoRedo = false;
 }
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM,
@@ -61,10 +257,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   }
   if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp)) return true;
   if (msg == WM_SIZE && g_pSwapChain) {
-    CleanupRTV();
+    destroyRenderTargetView();
     g_pSwapChain->ResizeBuffers(0, (UINT)LOWORD(lp), (UINT)HIWORD(lp),
                                 DXGI_FORMAT_UNKNOWN, 0);
-    CreateRTV();
+    createRenderTargetView();
   }
   if (msg == WM_DESTROY) {
     PostQuitMessage(0);
@@ -73,7 +269,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-static bool InitD3D(HWND hwnd) {
+static bool initializeD3D11(HWND hwnd) {
   DXGI_SWAP_CHAIN_DESC sd{};
   sd.BufferCount = 2;
   sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -89,12 +285,12 @@ static bool InitD3D(HWND hwnd) {
       D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &fl,
       &g_pd3dContext);
   if (FAILED(hr)) return false;
-  CreateRTV();
+  createRenderTargetView();
   return true;
 }
 
 // Save button icon
-static bool SaveButton(const char* id) {
+static bool drawSaveIconButton(const char* id) {
   ImVec2 size(16, 16);
   ImGui::InvisibleButton(id, size);
   bool clicked = ImGui::IsItemClicked();
@@ -122,10 +318,10 @@ static bool SaveButton(const char* id) {
 }
 
 // Button to import old config from
-inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
-                               float& minDur, float& maxDur, float& xViewMin,
-                               float& xViewMax,
-                               const std::string& settingsPath) {
+inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
+                                     float& minDur, float& maxDur,
+                                     float& xViewMin, float& xViewMax,
+                                     const std::string& settingsPath) {
   // Folder picker
   char folderPath[MAX_PATH] = {};
   BROWSEINFOA bi{};
@@ -274,8 +470,8 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
   return true;
 }
 
-inline bool RangeSliderFloat(const char* id, float* vMin, float* vMax,
-                             float min, float max, float width = -1.f) {
+inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
+                                 float min, float max, float width = -1.f) {
   ImGuiIO& io = ImGui::GetIO();
   ImDrawList* dl = ImGui::GetWindowDrawList();
   ImGuiStyle& style = ImGui::GetStyle();
@@ -355,7 +551,7 @@ inline bool RangeSliderFloat(const char* id, float* vMin, float* vMax,
   return changed;
 }
 
-inline void applyTheme(Settings& settings) {
+inline void applyUiTheme(Settings& settings) {
   ImGuiStyle& style = ImGui::GetStyle();
   style.Colors[ImGuiCol_WindowBg] = settings.backgroundColor;
   style.Colors[ImGuiCol_ChildBg] = settings.backgroundColor;
@@ -394,14 +590,14 @@ inline void applyTheme(Settings& settings) {
       ImVec4(bgColor.x, bgColor.y, bgColor.z, 0.84f);
 }
 
-static void RegisterAppHotkey(const Settings& settings) {
+static void registerPanicHotkey(const Settings& settings) {
   UnregisterHotKey(g_hwnd, 1);
   if (settings.hotkeyVk != 0)
     RegisterHotKey(g_hwnd, 1, settings.hotkeyMods | MOD_NOREPEAT,
                    settings.hotkeyVk);
 }
 
-inline std::string keyNameFromVk(int vk, int mods) {
+inline std::string formatKeyNameFromVk(int vk, int mods) {
   std::string s;
   if (mods & MOD_CONTROL) s += "Ctrl+";
   if (mods & MOD_ALT) s += "Alt+";
@@ -414,8 +610,8 @@ inline std::string keyNameFromVk(int vk, int mods) {
 }
 
 // UI entry point
-inline void ui_run(Settings& settings, ShockerHub& hub,
-                   const std::string& settingsPath) {
+inline void runUI(Settings& settings, ShockerHub& hub,
+                  const std::string& settingsPath) {
   HICON hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(1));
   WNDCLASSEXW wc{sizeof(wc),
                  CS_CLASSDC,
@@ -446,11 +642,11 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
   SendMessage(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
   SendMessage(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
 
-  if (!InitD3D(g_hwnd)) return;
+  if (!initializeD3D11(g_hwnd)) return;
 
   ShowWindow(g_hwnd, SW_SHOWDEFAULT);
   UpdateWindow(g_hwnd);
-  RegisterAppHotkey(settings);
+  registerPanicHotkey(settings);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -474,7 +670,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
   ImPlot::GetStyle().LegendSpacing = ImVec2(6, 4);
 
   ImGui::StyleColorsDark();
-  applyTheme(settings);
+  applyUiTheme(settings);
 
   // Apply background colors
   ImGuiStyle& style = ImGui::GetStyle();
@@ -492,6 +688,14 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
   float xViewMin = settings.xViewMin;
   float xViewMax = settings.xViewMax;
+
+  std::deque<AppState> undoStack;
+  std::deque<AppState> redoStack;
+  bool isPerformingUndoRedo = false;
+
+  bool ctrlZPrev = false;
+  bool ctrlYPrev = false;
+  bool stateChangedPreviousFrame = false;
 
   // Apply default preset if set
   if (settings.defaultPreset >= 0 &&
@@ -526,6 +730,32 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
   int stgPresetCount = 3;
   float stgTouchThreshold = 8.f;
   float stgLineWidth = 3.f;
+
+  UiContext ui{settings,
+               hub,
+               minDur,
+               maxDur,
+               xViewMin,
+               xViewMax,
+               cooldownEnabled,
+               stgShockParam,
+               stgSecondParam,
+               stgShockerIDs,
+               stgSerialPort,
+               stgVrchatHost,
+               stgUsePishock,
+               stgRandomOrSeq,
+               stgBaseCooldown,
+               stgMaxCooldown,
+               stgCooldownFactor,
+               stgCooldownWindow,
+               stgXsoverlay,
+               stgOvrToolkit,
+               stgPresetCount,
+               stgTouchThreshold,
+               stgLineWidth};
+
+  AppState lastCommittedState = snapshotAppState(ui);
 
   int baseClientW = (int)ImGui::GetIO().DisplaySize.x;
   // Style copies apply live on edit, so point directly at settings fields
@@ -627,7 +857,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    applyTheme(settings);
+    applyUiTheme(settings);
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("##root", nullptr,
@@ -752,7 +982,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       ImGui::SameLine();
       ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
                            (ImGui::GetFrameHeight() - 16.f) * 0.5f);
-      if (SaveButton(("##save" + std::to_string(i)).c_str())) {
+      if (drawSaveIconButton(("##save" + std::to_string(i)).c_str())) {
         Preset p;
         p.name = label;
         p.minShockDuration = minDur;
@@ -941,8 +1171,8 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
         ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_Text]),
         "X Scale");
     ImGui::SetCursorScreenPos({savedPlotPos.x, sc.y + 2});
-    RangeSliderFloat("##xrange", &xViewMin, &xViewMax, 0.f, 100.f,
-                     savedPlotSize.x);
+    drawRangeSliderFloat("##xrange", &xViewMin, &xViewMax, 0.f, 100.f,
+                         savedPlotSize.x);
     ImGui::SetCursorScreenPos(
         {plotFramePos.x + plotFrameWidth, sc.y + sliderRowH});
 
@@ -1015,7 +1245,8 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
                        ImGuiWindowFlags_NoTitleBar);
 
       ImGui::BeginChild("##settingsscroll", {0, -40}, false);
-      ImGui::TextDisabled("(?) Hover over settings for details");
+      ImGui::TextDisabled(
+          "(?) Hover over settings for details | CTRL+Z/CTRL+Y to Undo/Redo");
       ImGui::Spacing();
 
       // OSC / Avatar
@@ -1115,9 +1346,9 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       std::string keyLabel =
           capturingHotkey
               ? "Press any key..."
-              : (settings.hotkeyVk
-                     ? keyNameFromVk(settings.hotkeyVk, settings.hotkeyMods)
-                     : "None");
+              : (settings.hotkeyVk ? formatKeyNameFromVk(settings.hotkeyVk,
+                                                         settings.hotkeyMods)
+                                   : "None");
       if (ImGui::Button(keyLabel.c_str(), {160, 0})) capturingHotkey = true;
       ImGui::SetItemTooltip("Hotkey to disable shocks\nWorks anywhere");
       ImGui::SameLine();
@@ -1139,7 +1370,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
             settings.hotkeyVk = vk;
             settings.hotkeyMods = mods;
             capturingHotkey = false;
-            RegisterAppHotkey(settings);
+            registerPanicHotkey(settings);
             break;
           }
         }
@@ -1148,7 +1379,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
             settings.hotkeyVk = vk;
             settings.hotkeyMods = mods;
             capturingHotkey = false;
-            RegisterAppHotkey(settings);
+            registerPanicHotkey(settings);
             break;
           }
         }
@@ -1230,8 +1461,8 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
       ImGui::Spacing();
       if (ImGui::Button("Import Python cfg", {ImGui::CalcItemWidth(), 0}))
-        importPythonConfig(settings, hub, minDur, maxDur, xViewMin, xViewMax,
-                           settingsPath);
+        importLegacyPythonConfig(settings, hub, minDur, maxDur, xViewMin,
+                                 xViewMax, settingsPath);
       ImGui::SetItemTooltip(
           "Select the folder of your python installation.\nUseless for most, "
           "imports config from the old python build.");
@@ -1257,14 +1488,14 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       if (needsRestart) {
         if (ImGui::Button("Save & Restart", {150, 0})) {
           commitAll();
-          RegisterAppHotkey(settings);
+          registerPanicHotkey(settings);
           shouldRestart = true;
           PostMessage(g_hwnd, WM_CLOSE, 0, 0);
         }
       } else {
         if (ImGui::Button("Save", {80, 0})) {
           commitAll();
-          RegisterAppHotkey(settings);
+          registerPanicHotkey(settings);
           showSettings = false;
         }
       }
@@ -1278,6 +1509,40 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
       ImGui::End();
     }
+
+    const bool editingText = io.WantTextInput;
+    bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    bool zDown = (GetAsyncKeyState('Z') & 0x8000) != 0;
+    bool yDown = (GetAsyncKeyState('Y') & 0x8000) != 0;
+    bool didUndoRedo = false;
+
+    if (!editingText) {
+      if (ctrlDown && zDown && !ctrlZPrev) {
+        performUndoRedo(true, undoStack, redoStack, ui, isPerformingUndoRedo);
+        didUndoRedo = true;
+      }
+      if (ctrlDown && yDown && !ctrlYPrev) {
+        performUndoRedo(false, undoStack, redoStack, ui, isPerformingUndoRedo);
+        didUndoRedo = true;
+      }
+    }
+    ctrlZPrev = ctrlDown && zDown;
+    ctrlYPrev = ctrlDown && yDown;
+
+    AppState currentState = snapshotAppState(ui);
+
+    bool isEditingThisFrame = ImGui::IsAnyItemActive() || io.WantTextInput;
+
+    if (!didUndoRedo) {
+      if (isEditingThisFrame && !stateChangedPreviousFrame) {
+        pushUndoSnapshot(undoStack, redoStack, lastCommittedState, false);
+      }
+      lastCommittedState = currentState;
+    } else {
+      lastCommittedState = currentState;
+    }
+
+    stateChangedPreviousFrame = isEditingThisFrame;
 
     // Render
     ImGui::Render();
@@ -1299,7 +1564,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
   ImGui_ImplWin32_Shutdown();
   ImPlot::DestroyContext();
   ImGui::DestroyContext();
-  CleanupRTV();
+  destroyRenderTargetView();
   if (g_pSwapChain) g_pSwapChain->Release();
   if (g_pd3dContext) g_pd3dContext->Release();
   if (g_pd3dDevice) g_pd3dDevice->Release();
