@@ -29,7 +29,9 @@ class ChatboxSender {
 
   ~ChatboxSender() {
     clearGeneration_++;
-    if (sock_ != INVALID_SOCKET) closesocket(sock_);
+    SOCKET s = sock_;
+    sock_ = INVALID_SOCKET;
+    if (s != INVALID_SOCKET) closesocket(s);
   }
 
   void send(const std::string& message, bool clearAfter = true) {

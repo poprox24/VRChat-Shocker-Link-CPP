@@ -292,7 +292,11 @@ class ShockerHub {
       }
 
       std::string chosenShocker;
-      std::vector<std::string>& ids = settings.shockerIDs;
+      std::vector<std::string> ids;
+      {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        ids = settings.shockerIDs;
+      }
       if (settings.randomOrSeq) {
         lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
         chosenShocker = ids[lastShockerIndex];

@@ -923,13 +923,16 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       settings.touchSelectThreshold = stgTouchThreshold;
       settings.touchMarkerSize = stgMarkerSize;
       settings.lineWidth = stgLineWidth;
-      settings.shockerIDs.clear();
-      std::istringstream ss(stgShockerIDs);
-      std::string tok;
-      while (std::getline(ss, tok, ',')) {
-        auto s = tok.find_first_not_of(" \t");
-        if (s != std::string::npos)
-          settings.shockerIDs.push_back(tok.substr(s));
+      {
+        std::lock_guard<std::mutex> lock(hub.queueMutex);
+        settings.shockerIDs.clear();
+        std::istringstream ss(stgShockerIDs);
+        std::string tok;
+        while (std::getline(ss, tok, ',')) {
+          auto s = tok.find_first_not_of(" \t");
+          if (s != std::string::npos)
+            settings.shockerIDs.push_back(tok.substr(s));
+        }
       }
       settings.save(settingsPath);
     };
