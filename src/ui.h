@@ -235,9 +235,7 @@ inline bool importPythonConfig(Settings& settings, ShockerHub& hub,
         return ImVec4{r / 255.f, g / 255.f, b / 255.f, 1.f};
       };
       settings.outsideCurveBg =
-          hex(c["OUTSIDE_CURVE_BG"].as<std::string>("#2A313D"));
-      settings.insideCurveBg =
-          hex(c["INSIDE_CURVE_BG"].as<std::string>("#2C3749"));
+          hex(c["outside_CURVE_BG"].as<std::string>("#2C3749"));
       settings.backgroundColor =
           hex(c["BACKGROUND_COLOR"].as<std::string>("#202630"));
       settings.curveLineColor =
@@ -364,8 +362,8 @@ inline void applyTheme(Settings& settings) {
   style.Colors[ImGuiCol_ChildBg] = settings.backgroundColor;
   style.Colors[ImGuiCol_Text] = settings.labelColor;
 
-  ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = settings.insideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = settings.insideCurveBg;
+  ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = settings.outsideCurveBg;
+  ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = settings.outsideCurveBg;
   ImPlot::GetStyle().Colors[ImPlotCol_AxisText] = settings.labelColor;
   ImPlot::GetStyle().Colors[ImPlotCol_LegendText] = settings.labelColor;
 }
@@ -538,7 +536,6 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     Settings reverted(settingsPath);
     settings.backgroundColor = reverted.backgroundColor;
     settings.outsideCurveBg = reverted.outsideCurveBg;
-    settings.insideCurveBg = reverted.insideCurveBg;
     settings.curveLineColor = reverted.curveLineColor;
     settings.markerColor = reverted.markerColor;
     settings.labelColor = reverted.labelColor;
@@ -912,7 +909,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     ImGui::GetWindowDrawList()->AddRectFilled(
         {plotFramePos.x, sc.y - gap},
         {plotFramePos.x + plotFrameWidth - border, sc.y + sliderRowH},
-        ImGui::ColorConvertFloat4ToU32(settings.insideCurveBg));
+        ImGui::ColorConvertFloat4ToU32(settings.outsideCurveBg));
     ImGui::GetWindowDrawList()->AddText(
         {plotFramePos.x + 6,
          sc.y + (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f +
@@ -1153,10 +1150,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       ImGui::SetItemTooltip("Main window background color.");
       ImGui::ColorEdit4("Outside Curve BG##s", (float*)&settings.outsideCurveBg,
                         ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip("Area outside the plot bounds.");
-      ImGui::ColorEdit4("Inside Curve BG##s", (float*)&settings.insideCurveBg,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip("Plot background and X scale bar.");
+      ImGui::SetItemTooltip("Area outside of the curve/plot UI.");
       ImGui::ColorEdit4("Curve Line##s", (float*)&settings.curveLineColor,
                         ImGuiColorEditFlags_NoInputs);
       ImGui::SetItemTooltip("The bezier curve line.");

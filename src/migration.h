@@ -36,8 +36,8 @@ inline void migrateConfigYmlIfPresent(Settings& s,
       sscanf_s(h.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
       return ImVec4{r / 255.f, g / 255.f, b / 255.f, 1.f};
     };
-    s.outsideCurveBg = hex(c["OUTSIDE_CURVE_BG"].as<std::string>("#2A313D"));
-    s.insideCurveBg = hex(c["INSIDE_CURVE_BG"].as<std::string>("#2C3749"));
+    s.outsideCurveBg = hex(c["inside_CURVE_BG"].as<std::string>(
+        "#2C3749"));  // outside curve was replaced with inside curve bg
     s.backgroundColor = hex(c["BACKGROUND_COLOR"].as<std::string>("#202630"));
     s.curveLineColor = hex(c["CURVE_LINE_COLOR"].as<std::string>("#00C2FF"));
     s.markerColor = hex(c["MARKER_COLOR"].as<std::string>("#D88A91"));

@@ -63,8 +63,7 @@ class Settings {
   float touchSelectThreshold = 8.f;
   float touchMarkerSize = 140.f;
   float lineWidth = 3.f;
-  ImVec4 outsideCurveBg = {0.165f, 0.192f, 0.239f, 1.f};
-  ImVec4 insideCurveBg = {0.173f, 0.216f, 0.286f, 1.f};
+  ImVec4 outsideCurveBg = {0.173f, 0.216f, 0.286f, 1.f};
   ImVec4 backgroundColor = {0.125f, 0.149f, 0.188f, 1.f};
   ImVec4 curveLineColor = {0.f, 0.761f, 1.f, 1.f};
   ImVec4 markerColor = {0.847f, 0.541f, 0.569f, 1.f};
@@ -127,7 +126,6 @@ class Settings {
       touchMarkerSize = j.value("touchMarkerSize", 140.f);
       lineWidth = j.value("lineWidth", 3.f);
       outsideCurveBg = loadColor(j, "outsideCurveBg", outsideCurveBg);
-      insideCurveBg = loadColor(j, "insideCurveBg", insideCurveBg);
       backgroundColor = loadColor(j, "backgroundColor", backgroundColor);
       curveLineColor = loadColor(j, "curveLineColor", curveLineColor);
       markerColor = loadColor(j, "markerColor", markerColor);
@@ -215,7 +213,6 @@ class Settings {
     j["touchMarkerSize"] = touchMarkerSize;
     j["lineWidth"] = lineWidth;
     j["outsideCurveBg"] = saveColor(outsideCurveBg);
-    j["insideCurveBg"] = saveColor(insideCurveBg);
     j["backgroundColor"] = saveColor(backgroundColor);
     j["curveLineColor"] = saveColor(curveLineColor);
     j["markerColor"] = saveColor(markerColor);
