@@ -76,7 +76,6 @@ struct AppState {
   bool stgOvrToolkit = false;
   int stgPresetCount = 3;
   float stgTouchThreshold = 8.f;
-  float stgLineWidth = 3.f;
 
   bool operator==(const AppState& other) const {
     return settings == other.settings && curvePoints == other.curvePoints &&
@@ -97,8 +96,7 @@ struct AppState {
            stgXsoverlay == other.stgXsoverlay &&
            stgOvrToolkit == other.stgOvrToolkit &&
            stgPresetCount == other.stgPresetCount &&
-           stgTouchThreshold == other.stgTouchThreshold &&
-           stgLineWidth == other.stgLineWidth;
+           stgTouchThreshold == other.stgTouchThreshold;
   }
 
   bool operator!=(const AppState& other) const { return !(*this == other); }
@@ -130,7 +128,6 @@ struct UiContext {
   bool& stgOvrToolkit;
   int& stgPresetCount;
   float& stgTouchThreshold;
-  float& stgLineWidth;
 };
 
 static AppState snapshotAppState(const UiContext& ui) {
@@ -158,7 +155,6 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.stgOvrToolkit = ui.stgOvrToolkit;
   st.stgPresetCount = ui.stgPresetCount;
   st.stgTouchThreshold = ui.stgTouchThreshold;
-  st.stgLineWidth = ui.stgLineWidth;
 
   return st;
 }
@@ -194,7 +190,6 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.stgOvrToolkit = st.stgOvrToolkit;
   ui.stgPresetCount = st.stgPresetCount;
   ui.stgTouchThreshold = st.stgTouchThreshold;
-  ui.stgLineWidth = st.stgLineWidth;
 }
 
 static void pushUndoSnapshot(std::deque<AppState>& undoStack,
@@ -252,7 +247,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   if (msg == WM_HOTKEY && wp == 1) {
     if (g_hub) {
       g_hub->shocksDisabled = true;
-      logMsg("[Hotkey] Shocks disabled until restart.");
+      logMsg("[Hotkey] Shocks disabled.");
     }
   }
   if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp)) return true;
@@ -499,7 +494,7 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
   ImVec2 hMinPos = {valToX(*vMin), trackY};
   ImVec2 hMaxPos = {valToX(*vMax), trackY};
 
-  static int dragging = 0;
+  int dragging = 0;
   ImVec2 mouse = io.MousePos;
 
   auto inCircle = [&](ImVec2 c) {
@@ -729,7 +724,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool stgOvrToolkit = false;
   int stgPresetCount = 3;
   float stgTouchThreshold = 8.f;
-  float stgLineWidth = 3.f;
 
   UiContext ui{settings,
                hub,
@@ -752,8 +746,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                stgXsoverlay,
                stgOvrToolkit,
                stgPresetCount,
-               stgTouchThreshold,
-               stgLineWidth};
+               stgTouchThreshold};
 
   AppState lastCommittedState = snapshotAppState(ui);
 
@@ -865,8 +858,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                      ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
+    // Compute panel width from font size so it scales with DPI
+    float fontSize = ImGui::GetFontSize();
+    float panelW = fontSize * 10.f;
+
     // Left panel
-    ImGui::BeginChild("##controls", {180, -90}, true);
+    ImGui::BeginChild("##controls", {panelW, -90}, true);
     // Connected Icon
     ImGui::SetCursorPosY(ImGui::GetStyle().WindowPadding.y * 0.5f);
 
@@ -885,6 +882,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       if (!hub.isConnected) {
         if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
+      }
+      if (hub.shocksDisabled) {
+        if (ImGui::Button("Enable Shocks", {-1, 0})) hub.enableShocks();
       }
     }
 
@@ -941,7 +941,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (isDefault)
         ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.54f, 0.34f, 1.f});
 
-      ImGui::Button(label.c_str(), {130, 0});
+      ImGui::Button(label.c_str(), {panelW - fontSize * 2.5f, 0});
+      ImGui::SetItemTooltip(
+          "LClick - Load\nMClick - Startup default\nRClick - Rename");
 
       if (isDefault) ImGui::PopStyleColor();
 
@@ -1032,8 +1034,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     // Curve editor
     ImGui::SameLine();
-    float plotW = settings.windowW - 220.f;
-    ImGui::BeginChild("##plot", {plotW, -90}, false);
+    // We are not using GetContentRegionAvail() otherwise the sliding animation
+    // for the settings menu breaks
+    ImGui::BeginChild("##plot", {settings.windowW - 220.f, -90}, false);
 
     float sliderH = ImGui::GetFrameHeightWithSpacing() + 4;
     ImVec2 savedPlotPos = {}, savedPlotSize = {};

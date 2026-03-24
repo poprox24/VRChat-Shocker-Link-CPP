@@ -133,6 +133,12 @@ class ShockerHub {
     return true;
   }
 
+  void enableShocks() {
+    shocksDisabled = false;
+    logMsg("[ShockerHub] Shocks re-enabled");
+    return;
+  }
+
   void shutdown() {
     stopWorker = true;
     queueCV.notify_one();
