@@ -71,7 +71,8 @@ Make sure you install this before you continue:
 
 1. Most stuff is self explanatory
 2. The PiShock/OpenShock hub needs to be connected to the PC, this program uses serial for low latency
-3. Presets:
+3. All inputs have Undo/Redo support using CTRL+Z/CTRL+Y
+4. Presets:
 
 - Left click to load
 - Right click to rename
