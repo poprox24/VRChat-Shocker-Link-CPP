@@ -1095,9 +1095,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       // Network
       ImGui::SeparatorText("Network");
       ImGui::InputText("VRChat Host##s", stgVrchatHost, sizeof(stgVrchatHost));
-      ImGui::SetItemTooltip(
-          "ImGui::SetItemTooltip("
-          ");");
+      ImGui::SetItemTooltip("Usually doesn't need a change.");
 
       ImGui::Spacing();
       ImGui::Separator();
