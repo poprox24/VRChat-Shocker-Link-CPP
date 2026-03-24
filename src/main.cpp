@@ -27,10 +27,15 @@ int main() {
 
   std::signal(SIGINT, signalHandler);
 
-  std::future<void> piShockFuture;
-  if (!settings.useSerial && settings.usePishock) {
-    piShockFuture =
-        std::async(std::launch::async, [&hub] { hub.resolvePiShockApi(); });
+  std::future<void> shockFuture;
+  if (!settings.useSerial) {
+    if (settings.usePishock) {
+      shockFuture =
+          std::async(std::launch::async, [&hub] { hub.resolvePiShockApi(); });
+    } else if (settings.shockerIDs.empty()) {
+      shockFuture =
+          std::async(std::launch::async, [&hub] { hub.resolveOpenShockApi(); });
+    }
   }
   hub.connectSerial();
   if (!hub.listShockers()) {

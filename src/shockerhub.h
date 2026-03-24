@@ -169,6 +169,42 @@ class ShockerHub {
         .count();
   }
 
+  bool resolveOpenShockApi() {
+    std::string serverUrl = settings.openshockServerUrl;
+    if (serverUrl.starts_with("https://"))
+      serverUrl = serverUrl.substr(8);
+    else if (serverUrl.starts_with("http://"))
+      serverUrl = serverUrl.substr(7);
+
+    if (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
+
+    std::string url = "https://" + serverUrl + "/1/shockers";
+    auto resp =
+        httpGet(url, {"Open-Shock-Token: " + settings.openshockApiToken});
+    if (resp.empty()) {
+      logMsg("[OpenShock] GET /1/shockers failed (check token / server)\n");
+      return false;
+    }
+    auto j = nlohmann::json::parse(resp, nullptr, false);
+    if (j.is_discarded() || !j.contains("data") || !j["data"].is_array()) {
+      logMsg("[OpenShock] GET /1/shockers parse failed: {}\n",
+             resp.substr(0, 200));
+      return false;
+    }
+
+    if (settings.shockerIDs.empty()) {
+      for (auto& s : j["data"]) {
+        if (s.contains("id"))
+          settings.pushShockerId(s["id"].get<std::string>());
+      }
+      logMsg("[OpenShock] Auto-populated {} shocker ID(s): {}\n",
+             settings.shockerIDs.size(), fmt::join(settings.shockerIDs, ", "));
+    }
+
+    logMsg("[OpenShock] Resolved {} shocker(s)\n", j["data"].size());
+    return true;
+  }
+
   bool resolvePiShockApi() {
     // 1. Get userId
     std::string authUrl =
@@ -252,15 +288,20 @@ class ShockerHub {
       pishockShockerToClient_;  // shockerId -> clientId
   bool pishockResolved_ = false;
 
-  static std::string httpGet(const std::string& url) {
+  static std::string httpGet(
+      const std::string& url,
+      const std::vector<std::string>& extraHeaders = {}) {
     HINTERNET hNet =
         InternetOpenA("ShockerLink/" APP_VERSION, 0, nullptr, nullptr, 0);
     if (!hNet) return "";
-    HINTERNET hUrl =
-        InternetOpenUrlA(hNet, url.c_str(), nullptr, 0,
-                         INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD |
-                             INTERNET_FLAG_NO_CACHE_WRITE,
-                         0);
+    std::string hdrs;
+    for (auto& h : extraHeaders) hdrs += h + "\r\n";
+    HINTERNET hUrl = InternetOpenUrlA(
+        hNet, url.c_str(), hdrs.empty() ? nullptr : hdrs.c_str(),
+        hdrs.empty() ? 0 : (DWORD)hdrs.size(),
+        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD |
+            INTERNET_FLAG_NO_CACHE_WRITE,
+        0);
     if (!hUrl) {
       InternetCloseHandle(hNet);
       return "";
@@ -749,6 +790,13 @@ class ShockerHub {
 
       } else {
         // OpenShock API v2
+        if (settings.shockerIDs.empty()) {
+          if (!resolveOpenShockApi()) {
+            logMsg("[ShockerHub] OpenShock shocker resolution failed\n");
+            return;
+          }
+        }
+
         std::string type = vibrate ? "Vibrate" : "Shock";
         nlohmann::json shockEntry = {{"id", shockerID},
                                      {"type", type},
