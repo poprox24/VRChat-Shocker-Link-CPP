@@ -713,13 +713,15 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     ImGui::Spacing();
 
     if (ImGui::Button(
-            "Test Shock",
+            "Test vibrate",
             {!settings.secondShockParameter.empty() ? 77.5f : -1.f, 0}))
-      hub.queueShock();
+      hub.queueShock(-1, true);
+    ImGui::SetItemTooltip("Test first parameter\nSends a vibration command");
 
     if (!settings.secondShockParameter.empty()) {
       ImGui::SameLine();
-      if (ImGui::Button("Test 2nd", {-1, 0})) hub.queueShockUpperHalf();
+      if (ImGui::Button("Test 2nd", {-1, 0})) hub.queueShockUpperHalf(-1, true);
+      ImGui::SetItemTooltip("Test second parameter\nSends a vibration command");
     }
 
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() -

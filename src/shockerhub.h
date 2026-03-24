@@ -77,18 +77,18 @@ class ShockerHub {
     }
   }
 
-  void queueShock(int duration = -1) {
+  void queueShock(int duration = -1, bool vibrate = false) {
     {
       std::lock_guard<std::mutex> lock(queueMutex);
-      shockQueue.push({duration, false});
+      shockQueue.push({duration, false, vibrate});
     }
     queueCV.notify_one();
   }
 
-  void queueShockUpperHalf(int duration = -1) {
+  void queueShockUpperHalf(int duration = -1, bool vibrate = false) {
     {
       std::lock_guard<std::mutex> lock(queueMutex);
-      shockQueue.push({duration, true});
+      shockQueue.push({duration, true, vibrate});
     }
     queueCV.notify_one();
   }
@@ -154,7 +154,8 @@ class ShockerHub {
   std::vector<double> shockTimestamps;
   serialib serial;
 
-  std::queue<std::tuple<std::optional<int>, bool>> shockQueue;
+  // Duration, upperHalf, vibrate
+  std::queue<std::tuple<std::optional<int>, bool, bool>> shockQueue;
   std::condition_variable queueCV;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
@@ -267,6 +268,7 @@ class ShockerHub {
 
       int durationMs = std::get<0>(item).value_or(-1);
       bool upperHalf = std::get<1>(item);
+      bool vibrate = std::get<2>(item);
 
       if (settings.cooldownEnabled) {
         double now = getCurrentTime();
@@ -316,25 +318,27 @@ class ShockerHub {
 
       int intensity = upperHalf ? sampleIntensityUpperHalf(curvePoints)
                                 : sampleIntensity(curvePoints);
-      sendShock(durationMs, intensity, chosenShocker);
+      sendShock(durationMs, intensity, chosenShocker, vibrate);
     }
   }
 
-  void sendShock(int durationMs, int strength, const std::string& shockerID) {
+  void sendShock(int durationMs, int strength, const std::string& shockerID,
+                 bool vibrate) {
     std::string command;
 
+    std::string opType = vibrate ? "vibrate" : "shock";
     if (settings.usePishock) {
       nlohmann::json payload = {{"cmd", "operate"},
                                 {"value",
                                  {{"id", std::stoi(shockerID)},
-                                  {"op", "shock"},
+                                  {"op", opType},
                                   {"duration", durationMs},
                                   {"intensity", strength}}}};
       command = payload.dump() + "\n";
     } else {
       nlohmann::json payload = {{"model", "caixianlin"},
                                 {"id", std::stoi(shockerID)},
-                                {"type", "shock"},
+                                {"type", opType},
                                 {"intensity", strength},
                                 {"durationMs", durationMs}};
       command = "rftransmit " + payload.dump() + "\n";
@@ -378,7 +382,7 @@ class ShockerHub {
     if (settings.ovrToolkitNotifications)
       Notifications::sendOVRToolkit("⚡ Shock", notifMsg);
 
-    logMsg("[ShockerHub] Sent shock: {}%, {:.1f}s\n", strength,
-           (durationMs / 1000.0f));
+    logMsg("[ShockerHub] Sent {}: {}%, {:.1f}s\n", opType, strength,
+           durationMs / 1000.0f);
   }
 };
