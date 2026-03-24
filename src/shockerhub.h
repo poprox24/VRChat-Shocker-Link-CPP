@@ -2,6 +2,7 @@
 
 #include <fmt/ranges.h>
 #include <serialib.h>
+#include <winhttp.h>
 #include <wininet.h>
 
 #include <algorithm>
@@ -15,6 +16,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "chatbox.h"
@@ -25,6 +27,7 @@
 #include "version.h"
 
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "winhttp.lib")
 
 class ShockerHub {
  public:
@@ -168,6 +171,63 @@ class ShockerHub {
         .count();
   }
 
+  bool resolvePiShockApi() {
+    // 1. Get userId
+    std::string authUrl =
+        "https://auth.pishock.com/Auth/GetUserIfAPIKeyValid?apikey=" +
+        settings.pishockApiKey + "&username=" + settings.pishockUsername;
+    auto authResp = httpGet(authUrl);
+    if (authResp.empty()) {
+      logMsg("[PiShock] Auth request failed (check username/apikey)\n");
+      return false;
+    }
+    auto authJson = nlohmann::json::parse(authResp, nullptr, false);
+    if (authJson.is_discarded() ||
+        (!authJson.contains("UserId") && !authJson.contains("UserID"))) {
+      logMsg("[PiShock] Auth parse failed: {}\n", authResp.substr(0, 200));
+      return false;
+    }
+    pishockUserId_ = authJson.contains("UserId")
+                         ? authJson["UserId"].get<int>()
+                         : authJson["UserID"].get<int>();
+    logMsg("[PiShock] Authenticated as userId {}\n", pishockUserId_);
+
+    // 2. Get all owned devices to map shockerId -> clientId
+    std::string devUrl =
+        "https://ps.pishock.com/PiShock/GetUserDevices?UserId=" +
+        std::to_string(pishockUserId_) + "&Token=" + settings.pishockApiKey +
+        "&api=true";
+    auto devResp = httpGet(devUrl);
+    if (devResp.empty()) {
+      logMsg("[PiShock] GetUserDevices failed\n");
+      return false;
+    }
+    auto devJson = nlohmann::json::parse(devResp, nullptr, false);
+    if (devJson.is_discarded() || !devJson.is_array()) {
+      logMsg("[PiShock] GetUserDevices parse failed\n");
+      return false;
+    }
+
+    pishockShockerToClient_.clear();
+    for (auto& dev : devJson) {
+      int clientId = dev.value("clientId", -1);
+      if (clientId == -1 || !dev.contains("shockers")) continue;
+      for (auto& s : dev["shockers"]) {
+        int sid = s.value("shockerId", -1);
+        if (sid != -1) pishockShockerToClient_[sid] = clientId;
+      }
+    }
+
+    if (pishockShockerToClient_.empty()) {
+      logMsg("[PiShock] No shockers found on account\n");
+      return false;
+    }
+    logMsg("[PiShock] Resolved {} shocker(s)\n",
+           pishockShockerToClient_.size());
+    pishockResolved_ = true;
+    return true;
+  }
+
  private:
   Settings& settings;
   int lastShockerIndex = -1;
@@ -180,6 +240,34 @@ class ShockerHub {
   std::condition_variable queueCV;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
+
+  int pishockUserId_ = -1;
+  std::unordered_map<int, int>
+      pishockShockerToClient_;  // shockerId -> clientId
+  bool pishockResolved_ = false;
+
+  static std::string httpGet(const std::string& url) {
+    HINTERNET hNet =
+        InternetOpenA("ShockerLink/" APP_VERSION, 0, nullptr, nullptr, 0);
+    if (!hNet) return "";
+    HINTERNET hUrl =
+        InternetOpenUrlA(hNet, url.c_str(), nullptr, 0,
+                         INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD |
+                             INTERNET_FLAG_NO_CACHE_WRITE,
+                         0);
+    if (!hUrl) {
+      InternetCloseHandle(hNet);
+      return "";
+    }
+    std::string result;
+    char buf[4096];
+    DWORD read;
+    while (InternetReadFile(hUrl, buf, sizeof(buf), &read) && read > 0)
+      result.append(buf, read);
+    InternetCloseHandle(hUrl);
+    InternetCloseHandle(hNet);
+    return result;
+  }
 
   static std::string postJson(
       const std::string& url, const std::string& body,
@@ -242,6 +330,119 @@ class ShockerHub {
     InternetCloseHandle(hConn);
     InternetCloseHandle(hNet);
     return result;
+  }
+
+  bool sendPiShockWs(int durationMs, int strength, int shockerId, int clientId,
+                     bool vibrate) {
+    nlohmann::json body = {{"id", shockerId},
+                           {"m", vibrate ? "v" : "s"},
+                           {"i", strength},
+                           {"d", durationMs},
+                           {"r", true},
+                           {"l",
+                            {{"u", pishockUserId_},
+                             {"ty", "api"},
+                             {"w", false},
+                             {"h", false},
+                             {"o", "ShockerLink"}}}};
+    nlohmann::json cmd = {
+        {"Operation", "PUBLISH"},
+        {"PublishCommands",
+         {{{"Target", "c" + std::to_string(clientId) + "-ops"},
+           {"Body", body}}}}};
+    std::string msgStr = cmd.dump();
+
+    std::wstring wUser(settings.pishockUsername.begin(),
+                       settings.pishockUsername.end());
+    std::wstring wKey(settings.pishockApiKey.begin(),
+                      settings.pishockApiKey.end());
+    std::wstring path = L"/v2?Username=" + wUser + L"&ApiKey=" + wKey;
+
+    HINTERNET hSession =
+        WinHttpOpen(L"ShockerLink", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) {
+      logMsg("[PiShock] WinHttpOpen failed ({})\n", GetLastError());
+      return false;
+    }
+
+    HINTERNET hConnect = WinHttpConnect(hSession, L"broker.pishock.com",
+                                        INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!hConnect) {
+      WinHttpCloseHandle(hSession);
+      logMsg("[PiShock] WinHttpConnect failed ({})\n", GetLastError());
+      return false;
+    }
+
+    HINTERNET hRequest = WinHttpOpenRequest(
+        hConnect, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
+        WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (!hRequest) {
+      WinHttpCloseHandle(hConnect);
+      WinHttpCloseHandle(hSession);
+      logMsg("[PiShock] WinHttpOpenRequest failed ({})\n", GetLastError());
+      return false;
+    }
+
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr,
+                     0);
+
+    DWORD timeout = 5000;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout,
+                     sizeof(timeout));
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_SEND_TIMEOUT, &timeout,
+                     sizeof(timeout));
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout,
+                     sizeof(timeout));
+
+    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr,
+                            0, 0, 0) ||
+        !WinHttpReceiveResponse(hRequest, nullptr)) {
+      logMsg("[PiShock] WS handshake failed ({})\n", GetLastError());
+      WinHttpCloseHandle(hRequest);
+      WinHttpCloseHandle(hConnect);
+      WinHttpCloseHandle(hSession);
+      return false;
+    }
+
+    HINTERNET hWs = WinHttpWebSocketCompleteUpgrade(hRequest, 0);
+    WinHttpCloseHandle(hRequest);
+    if (!hWs) {
+      logMsg("[PiShock] WS upgrade failed ({})\n", GetLastError());
+      WinHttpCloseHandle(hConnect);
+      WinHttpCloseHandle(hSession);
+      return false;
+    }
+
+    DWORD sendErr =
+        WinHttpWebSocketSend(hWs, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+                             (PVOID)msgStr.data(), (DWORD)msgStr.size());
+
+    bool ok = (sendErr == ERROR_SUCCESS);
+    if (!ok) {
+      logMsg("[PiShock] WS send failed ({})\n", sendErr);
+    } else {
+      char recvBuf[4096] = {};
+      DWORD bytesRead = 0;
+      WINHTTP_WEB_SOCKET_BUFFER_TYPE bufType{};
+      DWORD recvErr = WinHttpWebSocketReceive(
+          hWs, recvBuf, (DWORD)sizeof(recvBuf) - 1, &bytesRead, &bufType);
+      if (recvErr == ERROR_SUCCESS && bytesRead > 0) {
+        std::string resp(recvBuf, bytesRead);
+        auto rj = nlohmann::json::parse(resp, nullptr, false);
+        if (!rj.is_discarded() && rj.value("IsError", false)) {
+          logMsg("[PiShock] Broker error: {}\n", rj.value("Message", resp));
+          ok = false;
+        }
+      }
+    }
+
+    WinHttpWebSocketClose(hWs, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr,
+                          0);
+    WinHttpCloseHandle(hWs);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    return ok;
   }
 
   bool scanForPishock() {
@@ -498,27 +699,41 @@ class ShockerHub {
 
     try {
       if (settings.usePishock) {
-        // PiShock API (latest legacy endpoint)
-        int durationSec = std::clamp((durationMs + 500) / 1000, 1, 15);
-        nlohmann::json payload = {
-            {"Username", settings.pishockUsername},
-            {"Apikey", settings.pishockApiKey},
-            {"Code", shockerID},
-            {"Name", "ShockerLink"},
-            {"Op", vibrate ? 1 : 0},  // 0=shock, 1=vibrate
-            {"Duration", durationSec},
-            {"Intensity", strength}};
-
-        auto resp =
-            postJson("https://do.pishock.com/api/apioperate", payload.dump());
-
-        if (resp.empty()) {
-          logMsg("[ShockerHub] PiShock API: no response (check credentials)\n");
+        if (!pishockResolved_ && !resolvePiShockApi()) {
+          logMsg("[ShockerHub] PiShock API setup failed\n");
           return;
         }
-        if (resp.find("Succeeded") == std::string::npos &&
-            resp.find("200") == std::string::npos) {
-          logMsg("[ShockerHub] PiShock API error: {}\n", resp);
+
+        int sid = -1;
+        try {
+          sid = std::stoi(shockerID);
+        } catch (...) {
+        }
+        if (sid == -1) {
+          logMsg("[ShockerHub] Invalid shocker ID: {}\n", shockerID);
+          return;
+        }
+
+        auto it = pishockShockerToClient_.find(sid);
+        if (it == pishockShockerToClient_.end()) {
+          // Not found — re-resolve once (account may have changed)
+          logMsg("[ShockerHub] Shocker {} not in device list, re-resolving\n",
+                 sid);
+          pishockResolved_ = false;
+          if (!resolvePiShockApi()) return;
+          it = pishockShockerToClient_.find(sid);
+          if (it == pishockShockerToClient_.end()) {
+            logMsg(
+                "[ShockerHub] Shocker {} not found after re-resolve. "
+                "Ensure the ID matches your PiShock dashboard.\n",
+                sid);
+            return;
+          }
+        }
+
+        if (!sendPiShockWs(durationMs, strength, sid, it->second, vibrate)) {
+          // Mark unresolved so next attempt re-fetches clientId mapping
+          pishockResolved_ = false;
           return;
         }
 

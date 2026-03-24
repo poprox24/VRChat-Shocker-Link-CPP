@@ -1401,10 +1401,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                            ImGuiInputTextFlags_Password);
           ImGui::SetItemTooltip(
               "Your PiShock API key (from Account > API Access)");
-          ImGui::InputText("Share Codes (code, code, ...)##ps", stgShockerIDs,
+          ImGui::InputText("Shocker IDs (ID, ID, ...)##ps", stgShockerIDs,
                            sizeof(stgShockerIDs));
           ImGui::SetItemTooltip(
-              "Share code(s) for each shocker, comma-separated.\n"
+              "Share ID(s) for each shocker, comma-separated.\n"
               "Found on the PiShock website under your shocker.");
         } else {
           // OpenShock API

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <csignal>
 
+#include "future"
 #include "logger.h"
 #include "migration.h"
 #include "oscclient.h"
@@ -26,6 +27,11 @@ int main() {
 
   std::signal(SIGINT, signalHandler);
 
+  std::future<void> piShockFuture;
+  if (!settings.useSerial && settings.usePishock) {
+    piShockFuture =
+        std::async(std::launch::async, [&hub] { hub.resolvePiShockApi(); });
+  }
   hub.connectSerial();
   if (!hub.listShockers()) {
     hub.shutdown();

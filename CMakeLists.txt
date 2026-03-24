@@ -82,6 +82,7 @@ target_link_libraries(ShockerLink PUBLIC
     shell32
     dwmapi
     wininet
+    winhttp
 )
 
 target_include_directories(ShockerLink PRIVATE
