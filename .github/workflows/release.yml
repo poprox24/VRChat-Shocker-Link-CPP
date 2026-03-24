@@ -28,6 +28,12 @@ jobs:
         run: |
           echo "VERSION=$(grep -oE '#define APP_VERSION "[^"]+' src/version.h | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tr -d '\r')" >> $GITHUB_OUTPUT
           echo "RELNAME=$(grep -oE '#define APP_RELEASE_NAME "[^"]+' src/version.h | sed 's/#define APP_RELEASE_NAME "//;s/"//' | tr -d '\r')" >> $GITHUB_OUTPUT
+          {
+            echo 'RELNOTES<<EOF'
+            grep -oE '#define APP_RELEASE_NOTES "[^"]+' src/version.h \
+              | sed 's/#define APP_RELEASE_NOTES "//;s/\\n/\n/g' | tr -d '\r'
+            echo EOF
+          } >> $GITHUB_OUTPUT
 
       - name: Configure CMake
         run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
@@ -40,5 +46,6 @@ jobs:
         with:
           tag_name: v${{steps.version.outputs.VERSION}}
           name: ${{steps.version.outputs.RELNAME}}
+          body: ${{steps.version.outputs.RELNOTES}}
           files: build/Release/*.exe
           token: ${{secrets.GITHUB_TOKEN}}

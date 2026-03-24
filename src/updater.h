@@ -105,7 +105,10 @@ inline void checkAsync() {
 
       if (!newerThan(tag, APP_VERSION)) {
         logMsg("[Update] Up to date ({})", APP_VERSION);
-        logMsg("[Update] Patch: {}", APP_RELEASE_NAME);
+        std::string notes = APP_RELEASE_NOTES;
+        std::istringstream ss(notes);
+        std::string line;
+        while (std::getline(ss, line)) logMsg("[Update] {}", line);
         return;
       }
 
