@@ -178,16 +178,16 @@ class ShockerHub {
 
     if (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
 
-    std::string url = "https://" + serverUrl + "/1/shockers";
+    std::string url = "https://" + serverUrl + "/2/shockers/own";
     auto resp =
         httpGet(url, {"Open-Shock-Token: " + settings.openshockApiToken});
     if (resp.empty()) {
-      logMsg("[OpenShock] GET /1/shockers failed (check token / server)\n");
+      logMsg("[OpenShock] GET /2/shockers/own failed (check token / server)\n");
       return false;
     }
     auto j = nlohmann::json::parse(resp, nullptr, false);
     if (j.is_discarded() || !j.contains("data") || !j["data"].is_array()) {
-      logMsg("[OpenShock] GET /1/shockers parse failed: {}\n",
+      logMsg("[OpenShock] GET /2/shockers/own parse failed: {}\n",
              resp.substr(0, 200));
       return false;
     }
@@ -376,6 +376,89 @@ class ShockerHub {
     InternetCloseHandle(hReq);
     InternetCloseHandle(hConn);
     InternetCloseHandle(hNet);
+    return result;
+  }
+
+  static std::string httpGetWinHttp(
+      const std::string& url,
+      const std::vector<std::string>& extraHeaders = {}) {
+    HINTERNET hSession = WinHttpOpen(
+        L"ShockerLink/" APP_VERSION, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) {
+      logMsg("[OpenShock] WinHttpOpen failed (%lu)\n", GetLastError());
+      return "";
+    }
+
+    URL_COMPONENTSA uc{};
+    uc.dwStructSize = sizeof(uc);
+    char host[256] = {}, path[512] = {};
+    uc.lpszHostName = host;
+    uc.dwHostNameLength = sizeof(host);
+    uc.lpszUrlPath = path;
+    uc.dwUrlPathLength = sizeof(path);
+    if (!InternetCrackUrlA(url.c_str(), 0, 0, &uc)) {
+      WinHttpCloseHandle(hSession);
+      return "";
+    }
+
+    HINTERNET hConnect = WinHttpConnect(
+        hSession, std::wstring(host, host + uc.dwHostNameLength).c_str(),
+        uc.nPort, 0);
+    if (!hConnect) {
+      WinHttpCloseHandle(hSession);
+      logMsg("[OpenShock] WinHttpConnect failed (%lu)\n", GetLastError());
+      return "";
+    }
+
+    DWORD flags = WINHTTP_FLAG_REFRESH;
+    if (uc.nScheme == INTERNET_SCHEME_HTTPS) flags |= WINHTTP_FLAG_SECURE;
+
+    HINTERNET hRequest = WinHttpOpenRequest(
+        hConnect, L"GET", std::wstring(path, path + uc.dwUrlPathLength).c_str(),
+        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!hRequest) {
+      WinHttpCloseHandle(hConnect);
+      WinHttpCloseHandle(hSession);
+      logMsg("[OpenShock] WinHttpOpenRequest failed (%lu)\n", GetLastError());
+      return "";
+    }
+
+    std::string hdrStr;
+    for (auto& h : extraHeaders) hdrStr += h + "\r\n";
+    if (!hdrStr.empty()) {
+      std::wstring whdr(hdrStr.begin(), hdrStr.end());
+      WinHttpAddRequestHeaders(hRequest, whdr.c_str(), (DWORD)whdr.size(),
+                               WINHTTP_ADDREQ_FLAG_ADD);
+    }
+
+    DWORD timeout = 5000;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout,
+                     sizeof(timeout));
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_SEND_TIMEOUT, &timeout,
+                     sizeof(timeout));
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout,
+                     sizeof(timeout));
+
+    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr,
+                            0, 0, 0) ||
+        !WinHttpReceiveResponse(hRequest, nullptr)) {
+      logMsg("[OpenShock] Send/Receive failed (%lu)\n", GetLastError());
+      WinHttpCloseHandle(hRequest);
+      WinHttpCloseHandle(hConnect);
+      WinHttpCloseHandle(hSession);
+      return "";
+    }
+
+    std::string result;
+    char buf[4096];
+    DWORD read;
+    while (WinHttpReadData(hRequest, buf, sizeof(buf), &read) && read > 0)
+      result.append(buf, read);
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
     return result;
   }
 
