@@ -904,7 +904,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
     ImGui::End();
 
-    if (updateReady) Updater::applyAndRestart(g_hwnd);
+    if (updateReady.exchange(false)) Updater::applyAndRestart(g_hwnd);
 
     auto commitAll = [&]() {
       settings.shockParameter = stgShockParam;
