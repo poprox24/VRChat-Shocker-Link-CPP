@@ -843,14 +843,6 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
 
       ImPlot::PopPlotClipRect();
 
-      for (int i = 0; i < 3; i++) {
-        ImPlot::DragPoint(i, &pts[i].x, &pts[i].y, settings.markerColor,
-                          settings.touchMarkerSize / 15.f,
-                          ImPlotDragToolFlags_None);
-        pts[i].x = std::clamp(pts[i].x, 0.0, 100.0);
-        pts[i].y = std::clamp(pts[i].y, 0.0, 1.0);
-      }
-
       {
         // Sort + cache curve
         auto sorted = pts;
@@ -881,11 +873,6 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
         ImPlot::SetNextLineStyle(maxCol, 1.5f);
         ImPlot::PlotLine(maxLabel, (double*)nullptr, 0);
 
-        // Curve
-        ImPlot::SetNextLineStyle(settings.curveLineColor, settings.lineWidth);
-        ImPlot::PlotLine("##curve", cx.data(), cy.data(), (int)cx.size());
-
-        // Dashed vertical lines
         ImPlot::PushPlotClipRect();
         ImDrawList* dl2 = ImPlot::GetPlotDrawList();
 
@@ -917,6 +904,18 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
         };
         drawDashedV(sorted[0].x, minCol, 1.5f);
         drawDashedV(sorted[2].x, maxCol, 1.5f);
+
+        // Curve
+        ImPlot::SetNextLineStyle(settings.curveLineColor, settings.lineWidth);
+        ImPlot::PlotLine("##curve", cx.data(), cy.data(), (int)cx.size());
+
+        for (int i = 0; i < 3; i++) {
+          ImPlot::DragPoint(i, &pts[i].x, &pts[i].y, settings.markerColor,
+                            settings.touchMarkerSize / 15.f,
+                            ImPlotDragToolFlags_None);
+          pts[i].x = std::clamp(pts[i].x, 0.0, 100.0);
+          pts[i].y = std::clamp(pts[i].y, 0.0, 1.0);
+        }
 
         ImPlot::PopPlotClipRect();
       }
