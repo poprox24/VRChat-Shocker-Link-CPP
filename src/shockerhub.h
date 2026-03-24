@@ -139,11 +139,9 @@ class ShockerHub {
   bool listShockers() {
     if (settings.shockerIDs.empty()) {
       logMsg(
-          "[ShockerHub] No shockers configured and none found "
-          "automatically.\nPlease set them up in settings.\nThe program "
-          "will "
-          "now exit...\n");
-      return false;
+          "[ShockerHub] No shockers configured. Shocks will be disabled until "
+          "IDs are set in settings.\n");
+      return true;
     }
     logMsg("[ShockerHub] Shockers found: {}\n",
            fmt::join(settings.shockerIDs, ", "));
@@ -224,6 +222,14 @@ class ShockerHub {
     }
     logMsg("[PiShock] Resolved {} shocker(s)\n",
            pishockShockerToClient_.size());
+    if (settings.shockerIDs.empty()) {
+      for (auto& [sid, cid] : pishockShockerToClient_) {
+        settings.pushShockerId(std::to_string(sid));
+      }
+      logMsg("[PiShock] Auto-populated {} shocker ID(s): {}\n",
+             settings.shockerIDs.size(), fmt::join(settings.shockerIDs, ", "));
+    }
+
     pishockResolved_ = true;
     return true;
   }
@@ -590,6 +596,10 @@ class ShockerHub {
       {
         std::lock_guard<std::mutex> lock(queueMutex);
         ids = settings.shockerIDs;
+      }
+      if (ids.empty()) {
+        logMsg("[ShockerHub] No shocker IDs configured, dropping shock\n");
+        continue;
       }
       if (settings.randomOrSeq) {
         lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();

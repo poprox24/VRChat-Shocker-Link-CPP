@@ -39,7 +39,7 @@ class Settings {
   std::string shockParameter = "Shock";
   std::string secondShockParameter = "";
   bool usePishock = false;
-  std::vector<std::string> shockerIDs = {"41838"};
+  std::vector<std::string> shockerIDs = {};
   bool randomOrSeq = false;
   std::string serialPort = "";
 
@@ -111,7 +111,7 @@ class Settings {
       shockParameter = j.value("shockParameter", "Shock");
       secondShockParameter = j.value("secondShockParameter", "");
       usePishock = j.value("usePishock", false);
-      shockerIDs = j.value("shockerIDs", std::vector<std::string>{"41838"});
+      shockerIDs = j.value("shockerIDs", std::vector<std::string>{});
       randomOrSeq = j.value("randomOrSeq", false);
       serialPort = j.value("serialPort", "");
 

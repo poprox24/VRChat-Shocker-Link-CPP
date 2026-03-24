@@ -1405,7 +1405,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                            sizeof(stgShockerIDs));
           ImGui::SetItemTooltip(
               "Share ID(s) for each shocker, comma-separated.\n"
-              "Found on the PiShock website under your shocker.");
+              "Found on the PiShock website under your shocker.\nIf left "
+              "empty, will try to get the IDs automatically");
         } else {
           // OpenShock API
           ImGui::InputText("API Token##ost", stgOpenshockToken,
