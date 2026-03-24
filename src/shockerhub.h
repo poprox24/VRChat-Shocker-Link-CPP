@@ -179,8 +179,7 @@ class ShockerHub {
     if (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
 
     std::string url = "https://" + serverUrl + "/2/shockers/own";
-    auto resp =
-        httpGet(url, {"Open-Shock-Token: " + settings.openshockApiToken});
+    auto resp = httpGet(url, {"OpenShockToken: " + settings.openshockApiToken});
     if (resp.empty()) {
       logMsg("[OpenShock] GET /2/shockers/own failed (check token / server)\n");
       return false;
@@ -370,6 +369,78 @@ class ShockerHub {
     DWORD read;
     while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &read) && read > 0) {
       buf[read] = 0;
+      result += buf;
+    }
+
+    InternetCloseHandle(hReq);
+    InternetCloseHandle(hConn);
+    InternetCloseHandle(hNet);
+    return result;
+  }
+
+  static std::string postJsonWithCookie(const std::string& url,
+                                        const std::string& body,
+                                        const std::string& cookieValue) {
+    HINTERNET hNet =
+        InternetOpenA("ShockerLink/" APP_VERSION, 0, nullptr, nullptr, 0);
+    if (!hNet) return "";
+
+    URL_COMPONENTSA uc{};
+    uc.dwStructSize = sizeof(uc);
+    char host[256] = {}, path[512] = {};
+    uc.lpszHostName = host;
+    uc.dwHostNameLength = sizeof(host);
+    uc.lpszUrlPath = path;
+    uc.dwUrlPathLength = sizeof(path);
+
+    if (!InternetCrackUrlA(url.c_str(), 0, 0, &uc)) {
+      InternetCloseHandle(hNet);
+      return "";
+    }
+
+    HINTERNET hConn = InternetConnectA(hNet, host, uc.nPort, nullptr, nullptr,
+                                       INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) {
+      InternetCloseHandle(hNet);
+      return "";
+    }
+
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
+    if (uc.nScheme == INTERNET_SCHEME_HTTPS) flags |= INTERNET_FLAG_SECURE;
+
+    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", path, nullptr, nullptr,
+                                      nullptr, flags, 0);
+    if (!hReq) {
+      InternetCloseHandle(hConn);
+      InternetCloseHandle(hNet);
+      return "";
+    }
+
+    DWORD timeout = 10000;
+    InternetSetOption(hReq, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout,
+                      sizeof(timeout));
+    InternetSetOption(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout,
+                      sizeof(timeout));
+
+    std::string headers =
+        "Content-Type: application/json\r\n"
+        "Accept: application/json\r\n"
+        "Cookie: " +
+        cookieValue + "\r\n";
+
+    if (!HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(),
+                          (LPVOID)body.c_str(), (DWORD)body.size())) {
+      InternetCloseHandle(hReq);
+      InternetCloseHandle(hConn);
+      InternetCloseHandle(hNet);
+      return "";
+    }
+
+    std::string result;
+    char buf[4096];
+    DWORD read;
+    while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &read) && read > 0) {
+      buf[read] = '\0';
       result += buf;
     }
 
@@ -872,7 +943,6 @@ class ShockerHub {
         }
 
       } else {
-        // OpenShock API v2
         if (settings.shockerIDs.empty()) {
           if (!resolveOpenShockApi()) {
             logMsg("[ShockerHub] OpenShock shocker resolution failed\n");
@@ -881,33 +951,29 @@ class ShockerHub {
         }
 
         std::string type = vibrate ? "Vibrate" : "Shock";
+
         nlohmann::json shockEntry = {{"id", shockerID},
                                      {"type", type},
                                      {"intensity", strength},
                                      {"duration", durationMs},
                                      {"exclusive", true}};
+
         nlohmann::json payload = {
             {"shocks", nlohmann::json::array({shockEntry})},
-            {"customName", "ShockerLink"}};
+            {"customName", nullptr}};
 
-        std::string serverUrl = settings.openshockServerUrl;
-        if (serverUrl.starts_with("https://"))
-          serverUrl = serverUrl.substr(8);
-        else if (serverUrl.starts_with("http://"))
-          serverUrl = serverUrl.substr(7);
+        std::string url = "https://api.openshock.app/2/shockers/control";
 
-        auto resp = postJson(
-            "https://" + serverUrl + "/2/shockers/control", payload.dump(),
-            {"Open-Shock-Token: " + settings.openshockApiToken});
+        auto resp = postJsonWithCookie(
+            url, payload.dump(),
+            "Open-Shock-Token: " + settings.openshockApiToken);
 
         if (resp.empty()) {
-          logMsg(
-              "[ShockerHub] OpenShock API: no response (check token / "
-              "server)\n");
+          logMsg("[OpenShock] API: no response (check token or network)\n");
           return;
         }
       }
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
       logMsg("[ShockerHub] API send error: {}\n", e.what());
       return;
     }

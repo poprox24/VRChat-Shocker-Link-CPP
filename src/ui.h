@@ -1409,6 +1409,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
               "empty, will try to get the IDs automatically");
         } else {
           // OpenShock API
+          ImGui::Text("OpenShock API is currently broken, fix is underway.");
           ImGui::InputText("API Token##ost", stgOpenshockToken,
                            sizeof(stgOpenshockToken),
                            ImGuiInputTextFlags_Password);
@@ -1419,12 +1420,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                            sizeof(stgOpenshockServer));
           ImGui::SetItemTooltip(
               "OpenShock server hostname (without https://).\n"
-              "Default: api.shocklink.net");
+              "Default: api.openshock.app");
           ImGui::InputText("Shocker IDs (uuid, uuid, ...)##os", stgShockerIDs,
                            sizeof(stgShockerIDs));
           ImGui::SetItemTooltip(
               "Shocker UUID(s) from your OpenShock dashboard, "
-              "comma-separated.");
+              "comma-separated.\nDO NOT MISTAKE THIS FOR SHOCKER IDs\nThe UUID "
+              "is the long string of text and dashes");
         }
         ImGui::Checkbox("Sequential shocker order (vs Random)",
                         &stgRandomOrSeq);
