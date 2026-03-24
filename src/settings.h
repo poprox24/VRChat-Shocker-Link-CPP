@@ -50,7 +50,7 @@ class Settings {
   std::string pishockApiKey = "";
   // OpenShock API credentials
   std::string openshockApiToken = "";
-  std::string openshockServerUrl = "api.shocklink.net";
+  std::string openshockServerUrl = "api.openshock.app";
 
   // Cooldown Config
   int baseCooldown = 2;
@@ -120,7 +120,7 @@ class Settings {
       pishockUsername = j.value("pishockUsername", "");
       pishockApiKey = j.value("pishockApiKey", "");
       openshockApiToken = j.value("openshockApiToken", "");
-      openshockServerUrl = j.value("openshockServerUrl", "api.shocklink.net");
+      openshockServerUrl = j.value("openshockServerUrl", "api.openshock.app");
 
       // Cooldown Config
       baseCooldown = j.value("baseCooldown", 2);

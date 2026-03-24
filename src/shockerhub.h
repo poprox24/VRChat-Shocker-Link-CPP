@@ -498,24 +498,24 @@ class ShockerHub {
 
     try {
       if (settings.usePishock) {
-        // PiShock API: duration in whole seconds, clamped 1–15
+        // PiShock API (latest legacy endpoint)
         int durationSec = std::clamp((durationMs + 500) / 1000, 1, 15);
         nlohmann::json payload = {
             {"Username", settings.pishockUsername},
             {"Apikey", settings.pishockApiKey},
             {"Code", shockerID},
             {"Name", "ShockerLink"},
-            {"Op", vibrate ? 1 : 0},  // 0=shock, 1=vibrate, 2=beep
+            {"Op", vibrate ? 1 : 0},  // 0=shock, 1=vibrate
             {"Duration", durationSec},
             {"Intensity", strength}};
 
         auto resp =
-            postJson("https://ps.pishock.com/api/apioperate", payload.dump());
+            postJson("https://do.pishock.com/api/apioperate", payload.dump());
+
         if (resp.empty()) {
           logMsg("[ShockerHub] PiShock API: no response (check credentials)\n");
           return;
         }
-        // PiShock returns plain text like "Operation Succeeded." or an error
         if (resp.find("Succeeded") == std::string::npos &&
             resp.find("200") == std::string::npos) {
           logMsg("[ShockerHub] PiShock API error: {}\n", resp);
@@ -523,7 +523,7 @@ class ShockerHub {
         }
 
       } else {
-        // OpenShock API: POST /2/shockers/control
+        // OpenShock API v2
         std::string type = vibrate ? "Vibrate" : "Shock";
         nlohmann::json shockEntry = {{"id", shockerID},
                                      {"type", type},
@@ -535,15 +535,15 @@ class ShockerHub {
             {"customName", "ShockerLink"}};
 
         std::string serverUrl = settings.openshockServerUrl;
-        // Strip any protocol prefix the user may have entered
         if (serverUrl.starts_with("https://"))
           serverUrl = serverUrl.substr(8);
         else if (serverUrl.starts_with("http://"))
           serverUrl = serverUrl.substr(7);
 
-        auto resp = postJson("https://" + serverUrl + "/2/shockers/control",
-                             payload.dump(),
-                             {"Authorization: " + settings.openshockApiToken});
+        auto resp = postJson(
+            "https://" + serverUrl + "/2/shockers/control", payload.dump(),
+            {"Open-Shock-Token: " + settings.openshockApiToken});
+
         if (resp.empty()) {
           logMsg(
               "[ShockerHub] OpenShock API: no response (check token / "
