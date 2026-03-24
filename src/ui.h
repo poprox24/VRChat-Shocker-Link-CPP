@@ -388,6 +388,10 @@ inline void applyTheme(Settings& settings) {
   ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = settings.outsideCurveBg;
   ImPlot::GetStyle().Colors[ImPlotCol_AxisText] = settings.labelColor;
   ImPlot::GetStyle().Colors[ImPlotCol_LegendText] = settings.labelColor;
+
+  ImVec4& bgColor = settings.outsideCurveBg;
+  ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] =
+      ImVec4(bgColor.x, bgColor.y, bgColor.z, 0.84f);
 }
 
 static void RegisterAppHotkey(const Settings& settings) {
@@ -460,8 +464,9 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
   ImFont* boldFont =
       io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeuib.ttf", 18.0f);
 
+  ImVec4& bgColor = settings.outsideCurveBg;
   ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] =
-      ImVec4(0.1f, 0.1f, 0.15f, 0.85f);
+      ImVec4(bgColor.x, bgColor.y, bgColor.z, 0.84f);
   ImPlot::GetStyle().Colors[ImPlotCol_LegendBorder] =
       ImVec4(0.4f, 0.4f, 0.5f, 0.8f);
   ImPlot::GetStyle().LegendPadding = ImVec2(10, 8);
