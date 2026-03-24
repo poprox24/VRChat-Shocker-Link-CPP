@@ -362,6 +362,29 @@ inline void applyTheme(Settings& settings) {
   style.Colors[ImGuiCol_ChildBg] = settings.backgroundColor;
   style.Colors[ImGuiCol_Text] = settings.labelColor;
 
+  // Accent color variants
+  ImVec4 a = settings.accentColor;
+  ImVec4 aH = {a.x * 1.2f, a.y * 1.2f, a.z * 1.2f, a.w};  // Hovered
+  ImVec4 aA = {a.x * 0.8f, a.y * 0.8f, a.z * 0.8f, a.w};  // Active/pressed
+  ImVec4 aD = {a.x * 0.5f, a.y * 0.5f, a.z * 0.5f, a.w};  // Dim (frame bg)
+
+  style.Colors[ImGuiCol_Button] = aA;
+  style.Colors[ImGuiCol_ButtonHovered] = a;
+  style.Colors[ImGuiCol_ButtonActive] = aH;
+  style.Colors[ImGuiCol_FrameBg] = aD;
+  style.Colors[ImGuiCol_FrameBgHovered] = {aD.x * 1.3f, aD.y * 1.3f,
+                                           aD.z * 1.3f, aD.w};
+  style.Colors[ImGuiCol_FrameBgActive] = aA;
+  style.Colors[ImGuiCol_SliderGrab] = a;
+  style.Colors[ImGuiCol_SliderGrabActive] = aH;
+  style.Colors[ImGuiCol_CheckMark] = aH;
+  style.Colors[ImGuiCol_Header] = aA;
+  style.Colors[ImGuiCol_HeaderHovered] = a;
+  style.Colors[ImGuiCol_HeaderActive] = aH;
+  style.Colors[ImGuiCol_SeparatorHovered] = a;
+  style.Colors[ImGuiCol_SeparatorActive] = aH;
+  style.Colors[ImGuiCol_TitleBgActive] = aD;
+
   ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = settings.outsideCurveBg;
   ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = settings.outsideCurveBg;
   ImPlot::GetStyle().Colors[ImPlotCol_AxisText] = settings.labelColor;
@@ -536,6 +559,7 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
     Settings reverted(settingsPath);
     settings.backgroundColor = reverted.backgroundColor;
     settings.outsideCurveBg = reverted.outsideCurveBg;
+    settings.accentColor = reverted.accentColor;
     settings.curveLineColor = reverted.curveLineColor;
     settings.markerColor = reverted.markerColor;
     settings.labelColor = reverted.labelColor;
@@ -1151,6 +1175,9 @@ inline void ui_run(Settings& settings, ShockerHub& hub,
       ImGui::ColorEdit4("Outside Curve BG##s", (float*)&settings.outsideCurveBg,
                         ImGuiColorEditFlags_NoInputs);
       ImGui::SetItemTooltip("Area outside of the curve/plot UI.");
+      ImGui::ColorEdit4("Accent##s", (float*)&settings.accentColor,
+                        ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("Buttons, sliders, checkboxes, input fields.");
       ImGui::ColorEdit4("Curve Line##s", (float*)&settings.curveLineColor,
                         ImGuiColorEditFlags_NoInputs);
       ImGui::SetItemTooltip("The bezier curve line.");
