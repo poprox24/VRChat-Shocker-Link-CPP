@@ -26,6 +26,8 @@ class Settings {
   int windowX = 100, windowY = 100;
   int windowW = 750, windowH = 520;
 
+  bool showStats = false;
+
   // Preset state
   int defaultPreset = -1;
   float minShockDuration = 1.f;
@@ -103,6 +105,8 @@ class Settings {
       windowY = j.value("windowY", 100);
       windowW = j.value("windowW", 750);
       windowH = j.value("windowH", 520);
+
+      showStats = j.value("showStats", false);
 
       defaultPreset = j.value("defaultPreset", -1);
       lastSerialPort = j.value("lastSerialPort", "");
@@ -208,6 +212,8 @@ class Settings {
     j["windowY"] = windowY;
     j["windowW"] = windowW;
     j["windowH"] = windowH;
+
+    j["showStats"] = showStats;
 
     j["defaultPreset"] = defaultPreset;
     j["lastSerialPort"] = lastSerialPort;

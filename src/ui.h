@@ -733,8 +733,16 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   float settingsAnim = 0.f;
 
   // Stats modal state
-  bool showStats = false;
   float statsAnim = 0.f;
+  if (settings.showStats) {
+    // Start with animation fully open
+    statsAnim = 1.f;
+    // Make sure the window width is correct
+    int sw = (int)(statsAnim * 280);
+    SetWindowPos(g_hwnd, nullptr, settings.windowX - sw, settings.windowY,
+                 settings.windowW + sw + (int)(settingsAnim * 550),
+                 settings.windowH, SWP_NOZORDER);
+  }
 
   // Editable staging copies (only written back on Save)
   char stgShockParam[64] = {};
@@ -869,7 +877,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     bool cooldownActive = settings.cooldownEnabled &&
                           hub.cooldownUntil.load() > hub.getCurrentTime();
     bool needsAnimation = cooldownActive || !hub.isConnected ||
-                          settingsAnim > 0.0f || statsAnim > 0.0f || forceFrame;
+                          settingsAnim > 0.0f ||
+                          (statsAnim > 0.0f && statsAnim < 1.0f) || forceFrame;
 
     if (!forceFrame) {
       if (!needsAnimation && !focused) {
@@ -1072,8 +1081,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     float halfBtn =
         (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
         0.5f;
-    if (ImGui::Button(showStats ? "Stats  >" : "< Stats", {halfBtn, 0}))
-      showStats = !showStats;
+    if (ImGui::Button("Stats", {halfBtn, 0}))
+      settings.showStats = !settings.showStats;
     ImGui::SameLine();
     if (ImGui::Button("Settings", {-1, 0})) {
       if (!showSettings) {
@@ -1298,16 +1307,20 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (settingsAnim < 0.001f) settingsAnim = 0.f;
 
       // Stats slides left
-      float statsTarget = showStats ? 1.f : 0.f;
+      float statsTarget = settings.showStats ? 1.f : 0.f;
       float prevStatsAnim = statsAnim;
       statsAnim +=
           (statsTarget - statsAnim) * std::min(1.f, io.DeltaTime * 12.f);
       if (statsAnim < 0.001f) statsAnim = 0.f;
 
-      int sw = (int)(statsAnim * 280);
-      SetWindowPos(g_hwnd, nullptr, settings.windowX - sw, settings.windowY,
-                   settings.windowW + sw + (int)(settingsAnim * 550),
-                   settings.windowH, SWP_NOZORDER);
+      // Only force window position while animation is actually happening
+      if (fabs(statsAnim - prevStatsAnim) > 0.001f ||
+          fabs(settingsAnim - prevSettAnim) > 0.001f) {
+        int sw = (int)(statsAnim * 280);
+        SetWindowPos(g_hwnd, nullptr, settings.windowX - sw, settings.windowY,
+                     settings.windowW + sw + (int)(settingsAnim * 550),
+                     settings.windowH, SWP_NOZORDER);
+      }
 
       if ((settingsAnim == 0.f && prevSettAnim > 0.f) ||
           (statsAnim == 0.f && prevStatsAnim > 0.f))
@@ -1687,148 +1700,149 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           "Will close settings without saving\nTheme settings will be "
           "reverted");
 
-      // Stats panel (slides out to the left)
-      if (statsAnim > 0.001f) {
-        ImGui::SetNextWindowPos({0.f, 0.f}, ImGuiCond_Always);
-        ImGui::SetNextWindowSize({statsW, (float)settings.windowH},
-                                 ImGuiCond_Always);
-        ImGui::Begin("##statspanel", nullptr,
-                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_NoTitleBar |
-                         ImGuiWindowFlags_NoScrollbar |
-                         ImGuiWindowFlags_NoScrollWithMouse);
+      ImGui::End();
+    }
 
-        // Fade the text in so it doesn't clip weirdly during the slide
-        float alpha = std::min(1.f, std::max(0.f, (statsW - 60.f) / 160.f));
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+    // Stats panel (slides out to the left)
+    if (statsAnim > 0.001f) {
+      ImGui::SetNextWindowPos({0.f, 0.f}, ImGuiCond_Always);
+      ImGui::SetNextWindowSize({statsW, (float)settings.windowH},
+                               ImGuiCond_Always);
+      ImGui::Begin("##statspanel", nullptr,
+                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                       ImGuiWindowFlags_NoTitleBar |
+                       ImGuiWindowFlags_NoScrollbar |
+                       ImGuiWindowFlags_NoScrollWithMouse);
 
-        // Header row
-        if (boldFont) ImGui::PushFont(boldFont);
-        ImGui::Text("Statistics");
-        if (boldFont) ImGui::PopFont();
-        ImGui::SameLine(statsW - 36.f);
-        if (ImGui::SmallButton("X##sc")) showStats = false;
-        ImGui::Separator();
+      // Fade the text in so it doesn't clip weirdly during the slide
+      float alpha = std::min(1.f, std::max(0.f, (statsW - 60.f) / 160.f));
+      ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 
-        // Scrollable body
-        ImGui::BeginChild("##statsscroll",
-                          {0, -ImGui::GetFrameHeightWithSpacing() - 6}, false);
+      // Header row
+      if (boldFont) ImGui::PushFont(boldFont);
+      ImGui::Text("Statistics");
+      if (boldFont) ImGui::PopFont();
+      ImGui::SameLine(statsW - 36.f);
+      if (ImGui::SmallButton("X##sc")) settings.showStats = false;
+      ImGui::Separator();
 
-        // Two-column row helper
-        auto row = [&](const char* label, const std::string& val) {
-          ImGui::TextDisabled("%s", label);
-          ImGui::SameLine(112.f);
-          ImGui::TextUnformatted(val.c_str());
-        };
+      // Scrollable body
+      ImGui::BeginChild("##statsscroll",
+                        {0, -ImGui::GetFrameHeightWithSpacing() - 6}, false);
 
-        // Duration formatter
-        auto fmtMs = [](double ms) -> std::string {
-          int ts = (int)(ms / 1000.0);
-          if (ts < 60) return fmt::format("{:.1f}s", ms / 1000.0);
-          int m = ts / 60, s = ts % 60;
-          if (m < 60) return fmt::format("{}m {:02d}s", m, s);
-          int h = m / 60;
-          m %= 60;
-          return fmt::format("{}h {:02d}m", h, m);
-        };
+      // Two-column row helper
+      auto row = [&](const char* label, const std::string& val) {
+        ImGui::TextDisabled("%s", label);
+        ImGui::SameLine(112.f);
+        ImGui::TextUnformatted(val.c_str());
+      };
 
-        // All-Time
-        ImGui::SeparatorText("All-Time");
-        row("Shocks", std::to_string(gStats.totalShocks));
-        row("Vibrations", std::to_string(gStats.totalVibrations));
-        row("Shock time", fmtMs(gStats.totalShockDurationMs));
-        if (gStats.totalShocks > 0) {
-          row("Avg intensity",
-              fmt::format("{:.0f}%", gStats.averageIntensity()));
-          row("Peak intensity", fmt::format("{}%", gStats.highestIntensity));
-          row("Longest shock",
-              fmt::format("{:.1f}s", gStats.longestShockMs / 1000.0));
-        }
-        row("Cooldown blocks", std::to_string(gStats.totalCooldownHits));
-        if (!gStats.firstShockDate.empty()) row("Since", gStats.firstShockDate);
+      // Duration formatter
+      auto fmtMs = [](double ms) -> std::string {
+        int ts = (int)(ms / 1000.0);
+        if (ts < 60) return fmt::format("{:.1f}s", ms / 1000.0);
+        int m = ts / 60, s = ts % 60;
+        if (m < 60) return fmt::format("{}m {:02d}s", m, s);
+        int h = m / 60;
+        m %= 60;
+        return fmt::format("{}h {:02d}m", h, m);
+      };
 
-        // This Session
-        ImGui::Spacing();
-        ImGui::SeparatorText("This Session");
-        row("Shocks", std::to_string(gStats.sessionShocks));
-        row("Vibrations", std::to_string(gStats.sessionVibrations));
-        row("Shock time", fmtMs(gStats.sessionShockDurationMs));
-        row("Cooldown blocks", std::to_string(gStats.sessionCooldownHits));
+      // All-Time
+      ImGui::SeparatorText("All-Time");
+      row("Shocks", std::to_string(gStats.totalShocks));
+      row("Vibrations", std::to_string(gStats.totalVibrations));
+      row("Shock time", fmtMs(gStats.totalShockDurationMs));
+      if (gStats.totalShocks > 0) {
+        row("Avg intensity", fmt::format("{:.0f}%", gStats.averageIntensity()));
+        row("Peak intensity", fmt::format("{}%", gStats.highestIntensity));
+        row("Longest shock",
+            fmt::format("{:.1f}s", gStats.longestShockMs / 1000.0));
+      }
+      row("Cooldown blocks", std::to_string(gStats.totalCooldownHits));
+      if (!gStats.firstShockDate.empty()) row("Since", gStats.firstShockDate);
 
-        // Records
-        ImGui::Spacing();
-        ImGui::SeparatorText("Records");
-        {
-          auto [bestDay, bestCnt] = gStats.mostShockedDay();
-          ImGui::TextDisabled("Best day:");
-          if (bestCnt > 0) {
-            ImGui::Text("  %s", bestDay.c_str());
-            ImGui::Text("  %d shock%s", bestCnt, bestCnt == 1 ? "" : "s");
-          } else {
-            ImGui::TextDisabled("  None yet");
-          }
-          int tdc = gStats.todayCount();
-          ImGui::TextDisabled("Today:");
+      // This Session
+      ImGui::Spacing();
+      ImGui::SeparatorText("This Session");
+      row("Shocks", std::to_string(gStats.sessionShocks));
+      row("Vibrations", std::to_string(gStats.sessionVibrations));
+      row("Shock time", fmtMs(gStats.sessionShockDurationMs));
+      row("Cooldown blocks", std::to_string(gStats.sessionCooldownHits));
+
+      // Records
+      ImGui::Spacing();
+      ImGui::SeparatorText("Records");
+      {
+        auto [bestDay, bestCnt] = gStats.mostShockedDay();
+        ImGui::TextDisabled("Best day:");
+        if (bestCnt > 0) {
           ImGui::SameLine();
-          ImGui::Text("%d shock%s", tdc, tdc == 1 ? "" : "s");
-        }
-
-        // Last 7 Days bar chart
-        ImGui::Spacing();
-        ImGui::SeparatorText("Last 7 Days");
-        {
-          auto days = gStats.lastNDays(7);
-          double vals[7] = {};
-          double pos[7] = {0, 1, 2, 3, 4, 5, 6};
-          static std::string lblBufs[7];
-          const char* lbls[7] = {};
-          for (int i = 0; i < 7; i++) {
-            vals[i] = (double)days[i].second;
-            // Show only MM-DD to save space
-            lblBufs[i] = days[i].first.size() >= 10 ? days[i].first.substr(5)
-                                                    : days[i].first;
-            lbls[i] = lblBufs[i].c_str();
-          }
-          if (ImPlot::BeginPlot("##7d", {-1, 110},
-                                ImPlotFlags_NoTitle | ImPlotFlags_NoLegend |
-                                    ImPlotFlags_NoMouseText)) {
-            ImPlot::SetupAxes(
-                nullptr, nullptr,
-                ImPlotAxisFlags_NoGridLines | ImPlotAxisFlags_NoLabel,
-                ImPlotAxisFlags_NoGridLines | ImPlotAxisFlags_AutoFit |
-                    ImPlotAxisFlags_NoLabel);
-            ImPlot::SetupAxisLimits(ImAxis_X1, -0.5, 6.5, ImPlotCond_Always);
-            ImPlot::SetupAxisTicks(ImAxis_X1, pos, 7, lbls);
-            ImPlot::SetNextFillStyle(settings.curveLineColor, 0.85f);
-            ImPlot::PlotBars("##bars", vals, 7, 0.6);
-            ImPlot::EndPlot();
-          }
-        }
-
-        ImGui::EndChild();
-
-        // Footer: reset button
-        ImGui::Separator();
-        if (ImGui::Button("Reset Stats", {-1, 0}))
-          ImGui::OpenPopup("Confirm Reset##sr");
-        if (ImGui::BeginPopupModal("Confirm Reset##sr", nullptr,
-                                   ImGuiWindowFlags_AlwaysAutoResize)) {
-          ImGui::Text("Delete all recorded statistics?");
-          ImGui::Spacing();
-          if (ImGui::Button("Reset", {80, 0})) {
-            gStats.reset();
-            gStats.save("stats.json");
-            ImGui::CloseCurrentPopup();
-          }
+          ImGui::Text("%s", bestDay.c_str());
           ImGui::SameLine();
-          if (ImGui::Button("Cancel", {80, 0})) ImGui::CloseCurrentPopup();
-          ImGui::EndPopup();
+          ImGui::Text("%d shock%s", bestCnt, bestCnt == 1 ? "" : "s");
+        } else {
+          ImGui::SameLine();
+          ImGui::TextDisabled("None yet");
         }
-
-        ImGui::PopStyleVar();  // Alpha
-        ImGui::End();
+        int tdc = gStats.todayCount();
+        ImGui::TextDisabled("Today:");
+        ImGui::SameLine();
+        ImGui::Text("%d shock%s", tdc, tdc == 1 ? "" : "s");
       }
 
+      // Last 7 Days bar chart
+      ImGui::Spacing();
+      ImGui::SeparatorText("Last 7 Days");
+      {
+        auto days = gStats.lastNDays(7);
+        double vals[7] = {};
+        double pos[7] = {0, 1, 2, 3, 4, 5, 6};
+        static std::string lblBufs[7];
+        const char* lbls[7] = {};
+        for (int i = 0; i < 7; i++) {
+          vals[i] = (double)days[i].second;
+          lblBufs[i] = days[i].first.size() >= 10 ? days[i].first.substr(8, 2)
+                                                  : days[i].first;
+          lbls[i] = lblBufs[i].c_str();
+        }
+        if (ImPlot::BeginPlot("##7d", {-1, 110},
+                              ImPlotFlags_NoTitle | ImPlotFlags_NoLegend |
+                                  ImPlotFlags_NoMouseText)) {
+          ImPlot::SetupAxes(
+              nullptr, nullptr,
+              ImPlotAxisFlags_NoGridLines | ImPlotAxisFlags_NoLabel,
+              ImPlotAxisFlags_NoGridLines | ImPlotAxisFlags_AutoFit |
+                  ImPlotAxisFlags_NoLabel);
+          ImPlot::SetupAxisLimits(ImAxis_X1, -0.5, 6.5, ImPlotCond_Always);
+          ImPlot::SetupAxisTicks(ImAxis_X1, pos, 7, lbls);
+          ImPlot::SetNextFillStyle(settings.curveLineColor, 0.85f);
+          ImPlot::PlotBars("##bars", vals, 7, 0.6);
+          ImPlot::EndPlot();
+          ImGui::TextDisabled("%s", days[0].first.substr(0, 7).c_str());
+        }
+      }
+
+      // Footer: reset button
+      ImGui::Separator();
+      if (ImGui::Button("Reset Stats", {-1, 0}))
+        ImGui::OpenPopup("Confirm Reset##sr");
+      if (ImGui::BeginPopupModal("Confirm Reset##sr", nullptr,
+                                 ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Delete all recorded statistics?");
+        ImGui::Spacing();
+        if (ImGui::Button("Reset", {80, 0})) {
+          gStats.reset();
+          gStats.save("stats.json");
+          ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", {80, 0})) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+      }
+
+      ImGui::EndChild();
+      ImGui::PopStyleVar();  // Alpha
       ImGui::End();
     }
 
