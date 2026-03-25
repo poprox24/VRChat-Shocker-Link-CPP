@@ -8,7 +8,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP">
-    <img width="1074" height="512" alt="image" src="https://github.com/user-attachments/assets/0877633a-b652-4c67-a6f1-2fdcd1c4350d" />
+    <img width="1075" height="505" alt="image" src="https://github.com/user-attachments/assets/3f9db95b-2e46-4492-a617-e338c8b04094" />
   </a>
 
 <h3 align="center">VRChat Shocker Link</h3>
