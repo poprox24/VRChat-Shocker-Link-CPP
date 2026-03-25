@@ -26,7 +26,7 @@ using namespace std::chrono;
 #include "stats.h"
 #include "updater.h"
 
-static constexpr wchar_t kWindowTitle[] = L"Shocker Link v" APP_VERSION_W;
+static constexpr wchar_t kWindowTitle[] = L"Shocker Link";
 
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dContext = nullptr;
@@ -676,6 +676,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   io.IniFilename = nullptr;
 
   io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 18.0f);
+  // Merge symbol font for ⚡ (U+26A1)
+  {
+    ImFontConfig cfg;
+    cfg.MergeMode = true;
+    cfg.GlyphOffset = {0, 0.f};
+    static const ImWchar ranges[] = {0x2600, 0x27FF, 0};
+    io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/seguisym.ttf", 18.0f, &cfg,
+                                 ranges);
+  }
   ImFont* boldFont =
       io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeuib.ttf", 18.0f);
 
@@ -876,9 +885,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     bool focused = GetForegroundWindow() == g_hwnd || showSettings;
     bool cooldownActive = settings.cooldownEnabled &&
                           hub.cooldownUntil.load() > hub.getCurrentTime();
+    bool statsAnimating =
+        fabs(statsAnim - (settings.showStats ? 1.f : 0.f)) > 0.001f;
+    bool settAnimating =
+        fabs(settingsAnim - (showSettings ? 1.f : 0.f)) > 0.001f;
     bool needsAnimation = cooldownActive || !hub.isConnected ||
-                          settingsAnim > 0.0f ||
-                          (statsAnim > 0.0f && statsAnim < 1.0f) || forceFrame;
+                          statsAnimating || settAnimating || forceFrame;
 
     if (!forceFrame) {
       if (!needsAnimation && !focused) {
@@ -896,11 +908,45 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     RECT wr;
     if (GetWindowRect(g_hwnd, &wr)) {
-      if (statsAnim == 0.f) settings.windowX = wr.left;
-      settings.windowY = wr.top;
-      if (settingsAnim == 0.f && statsAnim == 0.f)
+      // Only update the logical base when fully idle - no panels animating.
+      // While animating, reading back and subtracting offsets causes a
+      // rounding feedback loop that makes the window vibrate.
+      bool fullyIdle = (statsAnim == 0.f && settingsAnim == 0.f);
+      if (fullyIdle) {
+        settings.windowX = wr.left;
         settings.windowW = wr.right - wr.left;
+      }
+      settings.windowY = wr.top;
       settings.windowH = wr.bottom - wr.top;
+    }
+
+    // Animate panels and reposition window before layout so they stay in sync
+    {
+      float settTarget = showSettings ? 1.f : 0.f;
+      float statsTarget = settings.showStats ? 1.f : 0.f;
+
+      float prevSettAnim = settingsAnim;
+      float prevStatsAnim = statsAnim;
+
+      settingsAnim +=
+          (settTarget - settingsAnim) * std::min(1.f, io.DeltaTime * 12.f);
+      statsAnim +=
+          (statsTarget - statsAnim) * std::min(1.f, io.DeltaTime * 12.f);
+      if (settingsAnim < 0.001f) settingsAnim = 0.f;
+      if (statsAnim < 0.043f) statsAnim = 0.f;
+
+      if (fabs(statsAnim - prevStatsAnim) > 0.001f ||
+          fabs(settingsAnim - prevSettAnim) > 0.001f) {
+        int sw = (int)roundf(statsAnim * 280.f);
+        int settW = (int)roundf(settingsAnim * 550.f);
+        SetWindowPos(g_hwnd, nullptr, settings.windowX - sw, settings.windowY,
+                     settings.windowW + sw + settW, settings.windowH,
+                     SWP_NOZORDER);
+      }
+
+      if ((settingsAnim == 0.f && prevSettAnim > 0.f) ||
+          (statsAnim == 0.f && prevStatsAnim > 0.f))
+        forceFrame = true;
     }
 
     ImGui_ImplDX11_NewFrame();
@@ -924,50 +970,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     float panelW = fontSize * 10.f;
 
     // Left panel
-    ImGui::BeginChild("##controls", {panelW, -90}, true);
+    float lineH = ImGui::GetTextLineHeightWithSpacing();
+    float logH = lineH * 3.f + ImGui::GetStyle().WindowPadding.y * 2.f;
+    float rowH = ImGui::GetTextLineHeightWithSpacing() + 3.f;
+    float sepH = 1.f + ImGui::GetStyle().ItemSpacing.y * 2.f;
+    float bottomH = rowH + logH + sepH;
+
+    ImGui::BeginChild("##controls", {panelW, -bottomH}, true);
     // Connected Icon
     ImGui::SetCursorPosY(ImGui::GetStyle().WindowPadding.y * 0.5f);
-
-    {
-      ImVec2 p = ImGui::GetCursorScreenPos();
-      float r = 5.f;
-      ImU32 col = hub.isConnected ? IM_COL32(60, 220, 80, 255)
-                                  : IM_COL32(220, 60, 60, 255);
-      ImGui::GetWindowDrawList()->AddCircleFilled(
-          {p.x + r, p.y + ImGui::GetTextLineHeight() * 0.5f}, r, col);
-      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + r * 2 + 6);
-      if (!hub.shocksDisabled) {
-        ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
-      } else {
-        ImGui::TextColored({1.f, 0.3f, 0.3f, 1.f}, "SHOCKS DISABLED");
-      }
-      if (!hub.isConnected) {
-        if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
-      }
-      if (hub.shocksDisabled) {
-        if (ImGui::Button("Enable Shocks", {-1, 0})) hub.enableShocks();
-      }
-    }
-
-    // Cooldown Bar
-    if (settings.cooldownEnabled) {
-      double remaining =
-          std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
-      double maxCd = settings.maxCooldown;
-      float fraction = (float)(remaining / maxCd);
-
-      ImVec2 p = ImGui::GetCursorScreenPos();
-      float w = ImGui::GetContentRegionAvail().x;
-      float h = 3.f;
-      ImDrawList* dl = ImGui::GetWindowDrawList();
-      dl->AddRectFilled(p, {p.x + w, p.y + h},
-                        ImGui::ColorConvertFloat4ToU32(
-                            ImGui::GetStyle().Colors[ImGuiCol_FrameBg]));
-      if (fraction > 0.f)
-        dl->AddRectFilled(p, {p.x + w * fraction, p.y + h},
-                          IM_COL32(220, 80, 80, 255));
-      ImGui::Dummy({w, h});
-    }
 
     ImGui::Spacing();
     ImGui::Text("Min Duration (s)");
@@ -1072,6 +1083,22 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                          ImGui::GetFrameHeightWithSpacing() -
                          ImGui::GetStyle().WindowPadding.y);
 
+    // Set cursor position based on buttons being visible or not
+    // Prevents Stats/Settings buttons being pushed down
+    {
+      int extraRows = (!hub.isConnected ? 1 : 0) + (hub.shocksDisabled ? 1 : 0);
+      float totalBtnsH = (1 + extraRows) * ImGui::GetFrameHeightWithSpacing() +
+                         ImGui::GetStyle().WindowPadding.y;
+      ImGui::SetCursorPosY(ImGui::GetWindowHeight() - totalBtnsH);
+    }
+
+    if (!hub.isConnected) {
+      if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
+    }
+    if (hub.shocksDisabled) {
+      if (ImGui::Button("Enable Shocks", {-1, 0})) hub.enableShocks();
+    }
+
     float halfBtn =
         (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
         0.5f;
@@ -1097,7 +1124,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::SameLine();
     // We are not using GetContentRegionAvail() otherwise the sliding animation
     // for the settings menu breaks
-    ImGui::BeginChild("##plot", {settings.windowW - 220.f, -90}, false);
+    ImGui::BeginChild("##plot", {settings.windowW - 220.f, -bottomH}, false);
 
     float sliderH = ImGui::GetFrameHeightWithSpacing() + 4;
     ImVec2 savedPlotPos = {}, savedPlotSize = {};
@@ -1243,8 +1270,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::EndChild();
 
     // Log bar
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - rowH - logH - sepH -
+                         ImGui::GetStyle().WindowPadding.y);  // CHANGED
     ImGui::Separator();
-    ImGui::BeginChild("##log", {0, 80}, false,
+    ImGui::BeginChild("##log", {0, logH}, false,
                       ImGuiWindowFlags_HorizontalScrollbar);
     {
       std::lock_guard<std::mutex> lock(gLog.mtx);
@@ -1253,6 +1282,80 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
       ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
+
+    // Status bar
+    ImGui::Separator();
+    {
+      // Align to bottom
+      ImGui::SetCursorPosY(ImGui::GetWindowHeight() - rowH);
+
+      float cy = ImGui::GetCursorScreenPos().y +
+                 ImGui::GetTextLineHeight() * 0.5f + 2.f;
+      float cx = ImGui::GetCursorScreenPos().x;
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+
+      // Connection circle
+      ImU32 connCol = hub.isConnected ? IM_COL32(60, 220, 80, 255)
+                                      : IM_COL32(220, 60, 60, 255);
+      dl->AddCircleFilled({cx + 7.f, cy}, 5.f, connCol);
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 17.f);
+      if (!hub.shocksDisabled) {
+        ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
+      } else {
+        ImGui::TextColored({1.f, 0.3f, 0.3f, 1.f}, "SHOCKS DISABLED");
+      }
+
+      ImGui::SameLine(0, 12);
+      ImGui::TextDisabled("|");
+      ImGui::SameLine(0, 12);
+
+      // Shock counter
+      // \xe2\x9a\xa1 = ⚡ symbol
+      ImGui::Text("\xe2\x9a\xa1 %d", gStats.sessionShocks);
+
+      ImGui::SameLine(0, 12);
+      ImGui::TextDisabled("|");
+      ImGui::SameLine(0, 12);
+
+      // Cooldown indicator
+      if (settings.cooldownEnabled) {
+        double rem =
+            std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
+        if (rem > 0.0)
+          ImGui::TextColored({1.f, 0.4f, 0.4f, 1.f}, "Cooldown: %.1fs", rem);
+        else
+          ImGui::TextDisabled("Cooldown: 0.0s");
+      }
+
+      ImGui::SameLine(0, 8);
+
+      // Cooldown Bar
+      if (settings.cooldownEnabled) {
+        double remaining =
+            std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
+        double maxCd = settings.maxCooldown;
+        float fraction = (float)(remaining / maxCd);
+
+        float height = 3.f;
+        float textH = ImGui::GetTextLineHeight();
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        p.y += (textH - height) * 0.7f;
+        float len = ImGui::GetContentRegionAvail().x * 0.28;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(p, {p.x + len, p.y + height},
+                          ImGui::ColorConvertFloat4ToU32(
+                              ImGui::GetStyle().Colors[ImGuiCol_FrameBg]));
+        if (fraction > 0.f)
+          dl->AddRectFilled(p, {p.x + len * fraction, p.y + height},
+                            IM_COL32(220, 80, 80, 255));
+        ImGui::Dummy({len, height});
+      }
+
+      // Right-align: version
+      float verW = ImGui::CalcTextSize("v" APP_VERSION).x;
+      ImGui::SameLine(ImGui::GetContentRegionMax().x - verW);
+      ImGui::TextDisabled("v" APP_VERSION);
+    }
 
     ImGui::End();
 
@@ -1291,35 +1394,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       settings.save(settingsPath);
     };
-
-    {
-      // Settings slides right
-      float settTarget = showSettings ? 1.f : 0.f;
-      float prevSettAnim = settingsAnim;
-      settingsAnim +=
-          (settTarget - settingsAnim) * std::min(1.f, io.DeltaTime * 12.f);
-      if (settingsAnim < 0.001f) settingsAnim = 0.f;
-
-      // Stats slides left
-      float statsTarget = settings.showStats ? 1.f : 0.f;
-      float prevStatsAnim = statsAnim;
-      statsAnim +=
-          (statsTarget - statsAnim) * std::min(1.f, io.DeltaTime * 12.f);
-      if (statsAnim < 0.001f) statsAnim = 0.f;
-
-      // Only force window position while animation is actually happening
-      if (fabs(statsAnim - prevStatsAnim) > 0.001f ||
-          fabs(settingsAnim - prevSettAnim) > 0.001f) {
-        int sw = (int)(statsAnim * 280);
-        SetWindowPos(g_hwnd, nullptr, settings.windowX - sw, settings.windowY,
-                     settings.windowW + sw + (int)(settingsAnim * 550),
-                     settings.windowH, SWP_NOZORDER);
-      }
-
-      if ((settingsAnim == 0.f && prevSettAnim > 0.f) ||
-          (statsAnim == 0.f && prevStatsAnim > 0.f))
-        forceFrame = true;
-    }
 
     if (showSettings) {
       float panelW = settingsAnim * 542.f;
@@ -1698,7 +1772,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
 
     // Stats panel (slides out to the left)
-    if (statsAnim > 0.001f) {
+    if (statsAnim > 0.43) {
       ImGui::SetNextWindowPos({0.f, 0.f}, ImGuiCond_Always);
       ImGui::SetNextWindowSize({statsW, (float)settings.windowH},
                                ImGuiCond_Always);
@@ -1754,7 +1828,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             fmt::format("{:.1f}s", gStats.longestShockMs / 1000.0));
       }
       row("Cooldown blocks", std::to_string(gStats.totalCooldownHits));
-      if (!gStats.firstShockDate.empty()) row("Since", gStats.firstShockDate);
 
       // This Session
       ImGui::Spacing();
@@ -1791,15 +1864,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       {
         auto days = gStats.lastNDays(7);
         double vals[7] = {};
-        double pos[7] = {0, 1, 2, 3, 4, 5, 6};
-        static std::string lblBufs[7];
-        const char* lbls[7] = {};
-        for (int i = 0; i < 7; i++) {
-          vals[i] = (double)days[i].second;
-          lblBufs[i] = days[i].first.size() >= 10 ? days[i].first.substr(8, 2)
-                                                  : days[i].first;
-          lbls[i] = lblBufs[i].c_str();
-        }
         if (ImPlot::BeginPlot("##7d", {-1, 110},
                               ImPlotFlags_NoTitle | ImPlotFlags_NoLegend |
                                   ImPlotFlags_NoMouseText)) {
@@ -1810,13 +1874,30 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                   ImPlotAxisFlags_NoLabel);
           ImPlot::SetupAxisLimits(ImAxis_X1, 0.0, 6.5, ImPlotCond_Always);
           ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, 0.0, DBL_MAX);
-          double max = *std::max_element(vals, vals + 7);
-          int max_i = (int)std::ceil(max);
 
-          // Force ticks: 0,1,2,...
+          // Days of the month
+          static std::string dayStrings[7];
+          const char* dayLabels[7] = {};
+          for (int i = 0; i < 7; i++) {
+            vals[i] = (double)days[i].second;
+            dayStrings[i] = days[i].first.size() >= 10
+                                ? days[i].first.substr(8, 2)
+                                : days[i].first;
+            dayLabels[i] = dayStrings[i].c_str();
+          }
+          double dayPositions[7] = {0, 1, 2, 3, 4, 5, 6};
+          ImPlot::SetupAxisTicks(ImAxis_X1, dayPositions, 7, dayLabels);
+
+          // Smart vertical ticks
           static std::vector<double> yticks;
           yticks.clear();
-          for (int i = 0; i <= max_i; i++) yticks.push_back((double)i);
+
+          double max = *std::max_element(vals, vals + 7);
+          int max_i = (int)std::ceil(max);
+          // 4 vertical ticks max, will show 5 due to 0 not being counted
+          int step = max_i <= 4 ? 1 : (int)std::ceil(max_i / 4.0);
+          for (int i = 0; i <= max_i; i += step) yticks.push_back((double)i);
+          if (yticks.back() < max_i) yticks.push_back((double)max_i);
 
           ImPlot::SetupAxisTicks(ImAxis_Y1, yticks.data(), yticks.size());
           ImPlot::SetNextFillStyle(settings.curveLineColor, 0.85f);

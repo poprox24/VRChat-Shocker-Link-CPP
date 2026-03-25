@@ -16,7 +16,6 @@ struct Stats {
   double totalIntensitySum = 0.0;
   int highestIntensity = 0;
   double longestShockMs = 0.0;
-  std::string firstShockDate;
 
   std::map<std::string, int> dailyShocks;
 
@@ -44,9 +43,6 @@ struct Stats {
     totalIntensitySum += intensity;
     if (intensity > highestIntensity) highestIntensity = intensity;
     if (durationMs > longestShockMs) longestShockMs = durationMs;
-    std::string d = today();
-    dailyShocks[d]++;
-    if (firstShockDate.empty()) firstShockDate = d;
   }
 
   void recordVibration(int durationMs) {
@@ -107,7 +103,6 @@ struct Stats {
       j["totalIntensitySum"] = totalIntensitySum;
       j["highestIntensity"] = highestIntensity;
       j["longestShockMs"] = longestShockMs;
-      j["firstShockDate"] = firstShockDate;
       nlohmann::json ds = nlohmann::json::object();
       for (auto& [k, v] : dailyShocks) ds[k] = v;
       j["dailyShocks"] = ds;
@@ -130,7 +125,6 @@ struct Stats {
       totalIntensitySum = j.value("totalIntensitySum", 0.0);
       highestIntensity = j.value("highestIntensity", 0);
       longestShockMs = j.value("longestShockMs", 0.0);
-      firstShockDate = j.value("firstShockDate", "");
       if (j.contains("dailyShocks"))
         for (auto& [k, v] : j["dailyShocks"].items())
           dailyShocks[k] = v.get<int>();
