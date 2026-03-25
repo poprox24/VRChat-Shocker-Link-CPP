@@ -1409,7 +1409,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
               "empty, will try to get the IDs automatically");
         } else {
           // OpenShock API
-          ImGui::Text("OpenShock API is currently broken, fix is underway.");
           ImGui::InputText("API Token##ost", stgOpenshockToken,
                            sizeof(stgOpenshockToken),
                            ImGuiInputTextFlags_Password);
