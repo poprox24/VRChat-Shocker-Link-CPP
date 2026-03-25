@@ -9,6 +9,7 @@
 #include "oscclient.h"
 #include "settings.h"
 #include "shockerhub.h"
+#include "stats.h"
 #include "ui.h"
 #include "updater.h"
 
@@ -20,6 +21,7 @@ void signalHandler(int) { running = false; }
 
 int main() {
   Settings settings(settingsLocation);
+  gStats.load("stats.json");
 
   migrateConfigYmlIfPresent(settings, settingsLocation);
 

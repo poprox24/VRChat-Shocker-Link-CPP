@@ -24,6 +24,7 @@
 #include "logger.h"
 #include "notifications.h"
 #include "settings.h"
+#include "stats.h"
 #include "version.h"
 
 #pragma comment(lib, "wininet.lib")
@@ -708,6 +709,7 @@ class ShockerHub {
               fmt::format("[ShockerHub] On cooldown: {:.1f}s", remaining);
           logMsg("{}\n", cooldownMsg);
           chatbox.send(cooldownMsg);
+          gStats.recordCooldownHit();
           continue;
         }
       }
@@ -786,6 +788,11 @@ class ShockerHub {
         Notifications::sendOVRToolkit("⚡ Shock", notifMsg);
     }
 
+    if (opType == "vibrate" || opType == "Vibrate")
+      gStats.recordVibration(durationMs);
+    else
+      gStats.recordShock(durationMs, strength);
+    gStats.save("stats.json");
     logMsg("[ShockerHub] Sent {}: {}%, {:.1f}s\n", opType, strength,
            durationMs / 1000.0f);
   }
