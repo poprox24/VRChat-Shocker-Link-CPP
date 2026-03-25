@@ -1062,17 +1062,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (ImGui::Button(
-            "Test vibrate",
-            {!settings.secondShockParameter.empty() ? 77.5f : -1.f, 0}))
-      hub.queueShock(-1, true);
-    ImGui::SetItemTooltip("Test first parameter\nSends a vibration command");
-
-    if (!settings.secondShockParameter.empty()) {
-      ImGui::SameLine();
-      if (ImGui::Button("Test 2nd", {-1, 0})) hub.queueShockUpperHalf(-1, true);
-      ImGui::SetItemTooltip("Test second parameter\nSends a vibration command");
-    }
+    if (ImGui::Button("Test Vibrate", {77.5f, 0})) hub.queueShock(-1, true);
+    ImGui::SetItemTooltip("Sends a vibration command");
+    ImGui::SameLine();
+    if (ImGui::Button("Test Shock", {-1, 0})) hub.queueShock(-1, false);
+    ImGui::SetItemTooltip("Sends a Shock command");
 
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() -
                          ImGui::GetFrameHeightWithSpacing() -
@@ -1814,8 +1808,17 @@ inline void runUI(Settings& settings, ShockerHub& hub,
               ImPlotAxisFlags_NoGridLines | ImPlotAxisFlags_NoLabel,
               ImPlotAxisFlags_NoGridLines | ImPlotAxisFlags_AutoFit |
                   ImPlotAxisFlags_NoLabel);
-          ImPlot::SetupAxisLimits(ImAxis_X1, -0.5, 6.5, ImPlotCond_Always);
-          ImPlot::SetupAxisTicks(ImAxis_X1, pos, 7, lbls);
+          ImPlot::SetupAxisLimits(ImAxis_X1, 0.0, 6.5, ImPlotCond_Always);
+          ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, 0.0, DBL_MAX);
+          double max = *std::max_element(vals, vals + 7);
+          int max_i = (int)std::ceil(max);
+
+          // Force ticks: 0,1,2,...
+          static std::vector<double> yticks;
+          yticks.clear();
+          for (int i = 0; i <= max_i; i++) yticks.push_back((double)i);
+
+          ImPlot::SetupAxisTicks(ImAxis_Y1, yticks.data(), yticks.size());
           ImPlot::SetNextFillStyle(settings.curveLineColor, 0.85f);
           ImPlot::PlotBars("##bars", vals, 7, 0.6);
           ImPlot::EndPlot();
