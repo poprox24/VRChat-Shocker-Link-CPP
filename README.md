@@ -70,7 +70,7 @@ Make sure you install this before you continue:
 ### Usage
 
 1. Most stuff is self explanatory
-2. The PiShock/OpenShock hub needs to be connected to the PC, this program uses serial for low latency
+2. Either connect the PiShock hub to your PC to use Serial or get the API Key from the devices respective website
 3. All inputs have Undo/Redo support using CTRL+Z/CTRL+Y
 4. Presets:
 
