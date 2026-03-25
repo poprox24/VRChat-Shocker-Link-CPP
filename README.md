@@ -63,7 +63,7 @@ Make sure you install this before you continue:
 4. Open settings (bottom left)
 5. Change the `Shock Parameter` to the parameter you set on your VRChat avatar and set `OpenShock/PiShock` depending on your use case
 
-- If using an OpenShock Hub, add your shockers to the `Shocker IDs` in settings, they cannot be read automatically from the hub
+- If using an OpenShock Hub via Serial, add your shockers to the `Shocker IDs` in settings, they cannot be read automatically from the hub
 
 6. Click on Save(or Save & Restart if needed)
 
