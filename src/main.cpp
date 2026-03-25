@@ -20,6 +20,7 @@ std::atomic<bool> shouldRestart = false;
 void signalHandler(int) { running = false; }
 
 int main() {
+  // STARUP
   Settings settings(settingsLocation);
   gStats.load("stats.json");
 
@@ -57,6 +58,7 @@ int main() {
     return 1;
   }
 
+  // Connects OSCQuery server and ShorkerHub
   std::thread oscBridge([&]() {
     while (running) {
       std::unique_lock<std::mutex> lock(oscQuery.shockMutex);
@@ -79,6 +81,8 @@ int main() {
   runUI(settings, hub, settingsLocation);
   running = false;
   oscBridge.join();
+
+  // SHUTDOWN
   oscQuery.stop();
   hub.shutdown();
   settings.save(settingsLocation);

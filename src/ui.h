@@ -1598,7 +1598,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGuiCol_FrameBg,
           ImVec4(base.x * 1.25f, base.y * 1.25f, base.z * 1.25f, 1.0f));
 
-      // Color pickers -- edit settings directly for live preview
+      // Color pickers
       ImGui::ColorEdit4("Background##s", (float*)&settings.backgroundColor,
                         ImGuiColorEditFlags_NoInputs);
       ImGui::SetItemTooltip("Main window background color.");
@@ -1620,12 +1620,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::ColorEdit4("Gradient Left##s", (float*)&settings.gradientLeftColor,
                         ImGuiColorEditFlags_NoInputs);
       ImGui::SetItemTooltip(
-          "Plot background gradient — left/low intensity side.");
+          "Plot background gradient - left/low intensity side.");
       ImGui::ColorEdit4("Gradient Right##s",
                         (float*)&settings.gradientRightColor,
                         ImGuiColorEditFlags_NoInputs);
       ImGui::SetItemTooltip(
-          "Plot background gradient — right/high intensity side.");
+          "Plot background gradient - right/high intensity side.");
 
       ImGui::TextDisabled("* - Restart required");
 

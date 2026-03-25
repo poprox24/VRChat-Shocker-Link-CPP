@@ -14,6 +14,8 @@
 
 #include "logger.h"
 
+// I have no idea how this works, I didn't write it but it works with VRChats
+// stupid implementation of OSCQuery
 class MdnsAdvertiser {
  public:
   MdnsAdvertiser(const std::string& serviceName, int httpPort)
@@ -129,8 +131,8 @@ class MdnsAdvertiser {
     std::string ptrName = "_oscjson._tcp.local";
     std::string instanceName = serviceName_ + "._oscjson._tcp.local";
     std::string hostName = hostname_ + ".local";
-    uint32_t ttlLong = 4500;  // 75 min — for service records
-    uint32_t ttlShort = 120;  // 2 min  — for A record (matches VRChat)
+    uint32_t ttlLong = 4500;  // 75 min - for service records
+    uint32_t ttlShort = 120;  // 2 min  - for A record (matches VRChat)
 
     std::vector<uint8_t> buf;
 
@@ -139,9 +141,9 @@ class MdnsAdvertiser {
     appendU16(buf, 0);       // ID
     appendU16(buf, 0x8400);  // Flags: QR=1, AA=1
     appendU16(buf, 0);       // QDCOUNT
-    appendU16(buf, 1);       // ANCOUNT  — PTR only
+    appendU16(buf, 1);       // ANCOUNT  - PTR only
     appendU16(buf, 0);       // NSCOUNT
-    appendU16(buf, 3);       // ARCOUNT  — SRV, TXT, A
+    appendU16(buf, 3);       // ARCOUNT  - SRV, TXT, A
 
     // === ANSWER SECTION ===
     // PTR: _oscjson._tcp.local -> instanceName (no cache flush on PTR)

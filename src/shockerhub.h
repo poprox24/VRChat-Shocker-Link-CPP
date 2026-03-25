@@ -196,16 +196,20 @@ class ShockerHub {
     return true;
   }
 
+  // Connect to PiShock API
+  // Handles Authenticating and getting shocker IDs
   bool resolvePiShockApi() {
-    // 1. Authenticate and get userId
+    // Authenticate and get userId
     std::string authUrl =
         "https://auth.pishock.com/Auth/GetUserIfAPIKeyValid?apikey=" +
         settings.pishockApiKey + "&username=" + settings.pishockUsername;
+
     auto authResp = httpGet(authUrl);
     if (authResp.empty()) {
       logMsg("[PiShock] Auth request failed (check username/apikey)\n");
       return false;
     }
+
     auto authJson = nlohmann::json::parse(authResp, nullptr, false);
     if (authJson.is_discarded() ||
         (!authJson.contains("UserId") && !authJson.contains("UserID"))) {
@@ -217,7 +221,7 @@ class ShockerHub {
                          : authJson["UserID"].get<int>();
     logMsg("[PiShock] Authenticated as userId {}\n", pishockUserId_);
 
-    // 2. Get all owned devices to map shockerId -> clientId
+    // Get all owned devices to map shockerId -> clientId
     std::string devUrl =
         "https://ps.pishock.com/PiShock/GetUserDevices?UserId=" +
         std::to_string(pishockUserId_) + "&Token=" + settings.pishockApiKey +
@@ -233,31 +237,30 @@ class ShockerHub {
       return false;
     }
 
-    pishockShockerToClient_.clear();
+    pishockShockerToClient.clear();
     for (auto& dev : devJson) {
       int clientId = dev.value("clientId", -1);
       if (clientId == -1 || !dev.contains("shockers")) continue;
       for (auto& s : dev["shockers"]) {
         int sid = s.value("shockerId", -1);
-        if (sid != -1) pishockShockerToClient_[sid] = clientId;
+        if (sid != -1) pishockShockerToClient[sid] = clientId;
       }
     }
 
-    if (pishockShockerToClient_.empty()) {
+    if (pishockShockerToClient.empty()) {
       logMsg("[PiShock] No shockers found on account\n");
       return false;
     }
-    logMsg("[PiShock] Resolved {} shocker(s)\n",
-           pishockShockerToClient_.size());
+    logMsg("[PiShock] Resolved {} shocker(s)\n", pishockShockerToClient.size());
 
     if (settings.shockerIDs.empty()) {
-      for (auto& [sid, cid] : pishockShockerToClient_)
+      for (auto& [sid, cid] : pishockShockerToClient)
         settings.pushShockerId(std::to_string(sid));
       logMsg("[PiShock] Auto-populated {} shocker ID(s): {}\n",
              settings.shockerIDs.size(), fmt::join(settings.shockerIDs, ", "));
     }
 
-    pishockResolved_ = true;
+    pishockResolved = true;
     return true;
   }
 
@@ -267,18 +270,18 @@ class ShockerHub {
   std::vector<double> shockTimestamps;
   serialib serial;
 
-  // Duration, upperHalf, vibrate
+  // Duration, useUpperHalf, vibrate
   std::queue<std::tuple<std::optional<int>, bool, bool>> shockQueue;
   std::condition_variable queueCV;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
 
   int pishockUserId_ = -1;
-  std::unordered_map<int, int>
-      pishockShockerToClient_;  // shockerId -> clientId
-  bool pishockResolved_ = false;
+  // shockerId -> clientId
+  std::unordered_map<int, int> pishockShockerToClient;
+  bool pishockResolved = false;
 
-  // WinINet GET — used for PiShock endpoints
+  // WinINet GET - used for PiShock endpoints
   static std::string httpGet(
       const std::string& url,
       const std::vector<std::string>& extraHeaders = {}) {
@@ -307,7 +310,7 @@ class ShockerHub {
     return result;
   }
 
-  // WinHTTP GET — used for OpenShock endpoints
+  // WinHTTP GET - used for OpenShock endpoints
   static std::string httpGetWinHttp(
       const std::string& url,
       const std::vector<std::string>& extraHeaders = {}) {
@@ -389,7 +392,7 @@ class ShockerHub {
     return result;
   }
 
-  // WinHTTP POST with JSON body — used for OpenShock and PiShock API endpoints
+  // WinHTTP POST with JSON body - used for OpenShock API endpoints
   static std::string postJsonWinHttp(
       const std::string& url, const std::string& body,
       const std::vector<std::string>& extraHeaders = {}) {
@@ -471,6 +474,7 @@ class ShockerHub {
     return result;
   }
 
+  // PiShock WebSocket send
   bool sendPiShockWs(int durationMs, int strength, int shockerId, int clientId,
                      bool vibrate) {
     nlohmann::json body = {{"id", shockerId},
@@ -667,6 +671,7 @@ class ShockerHub {
     }
   }
 
+  // Does all the repetitive logic
   void workerLoop() {
     std::mt19937 rng((unsigned)std::chrono::high_resolution_clock::now()
                          .time_since_epoch()
@@ -680,17 +685,20 @@ class ShockerHub {
       shockQueue.pop();
       lock.unlock();
 
+      // Ignore shocks on panic button
       if (shocksDisabled) {
         logMsg("[ShockerHub] Shocks disabled, ignoring\n");
         continue;
       }
 
       int durationMs = std::get<0>(item).value_or(-1);
-      bool upperHalf = std::get<1>(item);
+      bool useUpperHalf = std::get<1>(item);
       bool vibrate = std::get<2>(item);
 
       if (settings.cooldownEnabled) {
         double now = getCurrentTime();
+
+        // Remove recorded shocks after cooldown window
         int cooldownWindowS = settings.cooldownWindow;
         shockTimestamps.erase(
             std::remove_if(shockTimestamps.begin(), shockTimestamps.end(),
@@ -698,10 +706,14 @@ class ShockerHub {
                              return now - t > cooldownWindowS;
                            }),
             shockTimestamps.end());
+
+        // Calculate how many shocks there were in the last x(window) seconds
         double dynamicCooldown = std::min(
             (double)settings.baseCooldown +
                 (double)settings.cooldownFactor * (int)shockTimestamps.size(),
             (double)settings.maxCooldown);
+
+        // Calculate remaining cooldown
         double remaining = dynamicCooldown - (now - lastTriggerTimeAtomic);
         activeCooldownDuration.store(dynamicCooldown);
         if (remaining > 0) {
@@ -709,6 +721,8 @@ class ShockerHub {
               fmt::format("[ShockerHub] On cooldown: {:.1f}s", remaining);
           logMsg("{}\n", cooldownMsg);
           chatbox.send(cooldownMsg);
+
+          // Record to stats
           gStats.recordCooldownHit();
           continue;
         }
@@ -719,11 +733,13 @@ class ShockerHub {
         std::lock_guard<std::mutex> lock(queueMutex);
         ids = settings.shockerIDs;
       }
+
       if (ids.empty()) {
         logMsg("[ShockerHub] No shocker IDs configured, dropping shock\n");
         continue;
       }
 
+      // Choose shocker depending on settings
       std::string chosenShocker;
       if (settings.randomOrSeq) {
         lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
@@ -733,6 +749,8 @@ class ShockerHub {
         chosenShocker = ids[idxDist(rng)];
       }
 
+      // Calculate duration if no duration is set yet
+      // Duration is only set already when shocks are being re-sent
       if (durationMs == -1) {
         std::uniform_real_distribution<float> durDist(
             settings.minShockDuration,
@@ -741,8 +759,8 @@ class ShockerHub {
         durationMs = std::max(100, (int)(durDist(rng) * 1000));
       }
 
-      int intensity = upperHalf ? sampleIntensityUpperHalf(curvePoints)
-                                : sampleIntensity(curvePoints);
+      int intensity = useUpperHalf ? sampleIntensityUpperHalf(curvePoints)
+                                   : sampleIntensity(curvePoints);
       sendShock(durationMs, intensity, chosenShocker, vibrate);
     }
   }
@@ -755,6 +773,8 @@ class ShockerHub {
       sendShockApi(durationMs, strength, shockerID, vibrate);
   }
 
+  // Stuff to do after the shock was sent
+  // (Send chat message, handle cooldown math, send notifications, record shock)
   void afterShockSent(int durationMs, int strength, const std::string& opType) {
     shockTimestamps.push_back(getCurrentTime());
     lastTriggerTimeAtomic = getCurrentTime();
@@ -819,6 +839,7 @@ class ShockerHub {
       command = "rftransmit " + payload.dump() + "\n";
     }
 
+    // Re-send shock if serial write failed
     if (serial.writeString(command.c_str()) <= 0) {
       logMsg("[ShockerHub] Serial write failed, reconnecting...\n");
       reconnectSerial();
@@ -835,39 +856,39 @@ class ShockerHub {
 
     try {
       if (settings.usePishock) {
-        if (!pishockResolved_ && !resolvePiShockApi()) {
+        if (!pishockResolved && !resolvePiShockApi()) {
           logMsg("[ShockerHub] PiShock API setup failed\n");
           return;
         }
 
-        int sid = -1;
+        int id = -1;
         try {
-          sid = std::stoi(shockerID);
+          id = std::stoi(shockerID);
         } catch (...) {
         }
-        if (sid == -1) {
+        if (id == -1) {
           logMsg("[ShockerHub] Invalid shocker ID: {}\n", shockerID);
           return;
         }
 
-        auto it = pishockShockerToClient_.find(sid);
-        if (it == pishockShockerToClient_.end()) {
+        auto it = pishockShockerToClient.find(id);
+        if (it == pishockShockerToClient.end()) {
           logMsg("[ShockerHub] Shocker {} not in device list, re-resolving\n",
-                 sid);
-          pishockResolved_ = false;
+                 id);
+          pishockResolved = false;
           if (!resolvePiShockApi()) return;
-          it = pishockShockerToClient_.find(sid);
-          if (it == pishockShockerToClient_.end()) {
+          it = pishockShockerToClient.find(id);
+          if (it == pishockShockerToClient.end()) {
             logMsg(
                 "[ShockerHub] Shocker {} not found after re-resolve. "
                 "Ensure the ID matches your PiShock dashboard.\n",
-                sid);
+                id);
             return;
           }
         }
 
-        if (!sendPiShockWs(durationMs, strength, sid, it->second, vibrate)) {
-          pishockResolved_ = false;
+        if (!sendPiShockWs(durationMs, strength, id, it->second, vibrate)) {
+          pishockResolved = false;
           return;
         }
 
@@ -902,10 +923,11 @@ class ShockerHub {
           return;
         }
 
-        auto rj = nlohmann::json::parse(resp, nullptr, false);
-        if (!rj.is_discarded() && rj.contains("message") &&
-            !rj.contains("data")) {
-          logMsg("[OpenShock] API error: {}\n", rj.value("message", resp));
+        auto respJson = nlohmann::json::parse(resp, nullptr, false);
+        if (!respJson.is_discarded() && respJson.contains("message") &&
+            !respJson.contains("data")) {
+          logMsg("[OpenShock] API error: {}\n",
+                 respJson.value("message", resp));
           return;
         }
       }
