@@ -1424,7 +1424,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                            sizeof(stgShockerIDs));
           ImGui::SetItemTooltip(
               "Shocker UUID(s) from your OpenShock dashboard, "
-              "comma-separated.\nDO NOT MISTAKE THIS FOR SHOCKER IDs\nThe UUID "
+              "comma-separated.\nIf left empty, will find them automatically "
+              "using the API\nDO NOT MISTAKE THIS FOR SHOCKER IDs\nThe UUID "
               "is the long string of text and dashes");
         }
         ImGui::Checkbox("Sequential shocker order (vs Random)",

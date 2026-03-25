@@ -32,7 +32,6 @@
 class ShockerHub {
  public:
   std::atomic<double> cooldownUntil{0.0};
-
   std::atomic<double> lastTriggerTimeAtomic{0.0};
   std::atomic<double> activeCooldownDuration{0.0};
 
@@ -49,7 +48,6 @@ class ShockerHub {
   ShockerHub(Settings& set) : settings(set), chatbox(set.vrchatHost) {}
 
   bool connectSerial() {
-    // In API mode there's no serial connection to establish
     if (!settings.useSerial) {
       isConnected = true;
       logMsg("[ShockerHub] API mode - skipping serial connection");
@@ -65,8 +63,7 @@ class ShockerHub {
       if (!opened) {
         logMsg(
             "[ShockerHub] Could not open port saved in settings: {}, trying "
-            "last "
-            "known working port.\n",
+            "last known working port.\n",
             settings.serialPort);
       } else {
         startWorkerThread();
@@ -83,14 +80,11 @@ class ShockerHub {
         return true;
       }
     }
+
     logMsg(
         "[ShockerHub] Could not open last known working port, running a port "
         "scan");
-    if (settings.usePishock) {
-      return scanForPishock();
-    } else {
-      return scanForOpenshock();
-    }
+    return settings.usePishock ? scanForPishock() : scanForOpenshock();
   }
 
   void queueShock(int duration = -1, bool vibrate = false) {
@@ -151,15 +145,12 @@ class ShockerHub {
   void enableShocks() {
     shocksDisabled = false;
     logMsg("[ShockerHub] Shocks re-enabled");
-    return;
   }
 
   void shutdown() {
     stopWorker = true;
     queueCV.notify_one();
-    if (workerThread.joinable()) {
-      workerThread.join();
-    }
+    if (workerThread.joinable()) workerThread.join();
     serial.closeDevice();
   }
 
@@ -175,27 +166,27 @@ class ShockerHub {
       serverUrl = serverUrl.substr(8);
     else if (serverUrl.starts_with("http://"))
       serverUrl = serverUrl.substr(7);
-
     if (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
 
-    std::string url = "https://" + serverUrl + "/2/shockers/own";
-    auto resp = httpGet(url, {"openshocktoken: " + settings.openshockApiToken});
+    std::string url = "https://" + serverUrl + "/1/shockers/own";
+    auto resp =
+        httpGetWinHttp(url, {"openshocktoken: " + settings.openshockApiToken});
     if (resp.empty()) {
-      logMsg("[OpenShock] GET /2/shockers/own failed (check token / server)\n");
+      logMsg("[OpenShock] GET /1/shockers/own failed (check token / server)\n");
       return false;
     }
+
     auto j = nlohmann::json::parse(resp, nullptr, false);
     if (j.is_discarded() || !j.contains("data") || !j["data"].is_array()) {
-      logMsg("[OpenShock] GET /2/shockers/own parse failed: {}\n",
+      logMsg("[OpenShock] GET /1/shockers/own parse failed: {}\n",
              resp.substr(0, 200));
       return false;
     }
 
     if (settings.shockerIDs.empty()) {
-      for (auto& s : j["data"]) {
+      for (auto& s : j["data"])
         if (s.contains("id"))
           settings.pushShockerId(s["id"].get<std::string>());
-      }
       logMsg("[OpenShock] Auto-populated {} shocker ID(s): {}\n",
              settings.shockerIDs.size(), fmt::join(settings.shockerIDs, ", "));
     }
@@ -205,7 +196,7 @@ class ShockerHub {
   }
 
   bool resolvePiShockApi() {
-    // 1. Get userId
+    // 1. Authenticate and get userId
     std::string authUrl =
         "https://auth.pishock.com/Auth/GetUserIfAPIKeyValid?apikey=" +
         settings.pishockApiKey + "&username=" + settings.pishockUsername;
@@ -257,10 +248,10 @@ class ShockerHub {
     }
     logMsg("[PiShock] Resolved {} shocker(s)\n",
            pishockShockerToClient_.size());
+
     if (settings.shockerIDs.empty()) {
-      for (auto& [sid, cid] : pishockShockerToClient_) {
+      for (auto& [sid, cid] : pishockShockerToClient_)
         settings.pushShockerId(std::to_string(sid));
-      }
       logMsg("[PiShock] Auto-populated {} shocker ID(s): {}\n",
              settings.shockerIDs.size(), fmt::join(settings.shockerIDs, ", "));
     }
@@ -287,6 +278,7 @@ class ShockerHub {
       pishockShockerToClient_;  // shockerId -> clientId
   bool pishockResolved_ = false;
 
+  // WinINet GET — used for PiShock endpoints
   static std::string httpGet(
       const std::string& url,
       const std::vector<std::string>& extraHeaders = {}) {
@@ -315,6 +307,89 @@ class ShockerHub {
     return result;
   }
 
+  // WinHTTP GET — used for OpenShock endpoints
+  static std::string httpGetWinHttp(
+      const std::string& url,
+      const std::vector<std::string>& extraHeaders = {}) {
+    HINTERNET hSession = WinHttpOpen(
+        L"ShockerLink/" APP_VERSION, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) return "";
+
+    URL_COMPONENTSA uc{};
+    uc.dwStructSize = sizeof(uc);
+    char host[256] = {}, path[512] = {};
+    uc.lpszHostName = host;
+    uc.dwHostNameLength = sizeof(host);
+    uc.lpszUrlPath = path;
+    uc.dwUrlPathLength = sizeof(path);
+    if (!InternetCrackUrlA(url.c_str(), 0, 0, &uc)) {
+      WinHttpCloseHandle(hSession);
+      return "";
+    }
+
+    HINTERNET hConnect = WinHttpConnect(
+        hSession, std::wstring(host, host + uc.dwHostNameLength).c_str(),
+        uc.nPort, 0);
+    if (!hConnect) {
+      WinHttpCloseHandle(hSession);
+      return "";
+    }
+
+    DWORD flags = WINHTTP_FLAG_REFRESH;
+    if (url.rfind("https://", 0) == 0) flags |= WINHTTP_FLAG_SECURE;
+
+    HINTERNET hRequest = WinHttpOpenRequest(
+        hConnect, L"GET", std::wstring(path, path + uc.dwUrlPathLength).c_str(),
+        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!hRequest) {
+      WinHttpCloseHandle(hConnect);
+      WinHttpCloseHandle(hSession);
+      return "";
+    }
+
+    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy,
+                     sizeof(redirectPolicy));
+
+    std::string hdrStr;
+    for (auto& h : extraHeaders) hdrStr += h + "\r\n";
+    if (!hdrStr.empty()) {
+      std::wstring whdr(hdrStr.begin(), hdrStr.end());
+      WinHttpAddRequestHeaders(hRequest, whdr.c_str(), (DWORD)whdr.size(),
+                               WINHTTP_ADDREQ_FLAG_ADD);
+    }
+
+    DWORD timeout = 5000;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout,
+                     sizeof(timeout));
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_SEND_TIMEOUT, &timeout,
+                     sizeof(timeout));
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout,
+                     sizeof(timeout));
+
+    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr,
+                            0, 0, 0) ||
+        !WinHttpReceiveResponse(hRequest, nullptr)) {
+      WinHttpCloseHandle(hRequest);
+      WinHttpCloseHandle(hConnect);
+      WinHttpCloseHandle(hSession);
+      return "";
+    }
+
+    std::string result;
+    char buf[4096];
+    DWORD read;
+    while (WinHttpReadData(hRequest, buf, sizeof(buf), &read) && read > 0)
+      result.append(buf, read);
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    return result;
+  }
+
+  // WinHTTP POST with JSON body — used for OpenShock and PiShock API endpoints
   static std::string postJsonWinHttp(
       const std::string& url, const std::string& body,
       const std::vector<std::string>& extraHeaders = {}) {
@@ -378,154 +453,6 @@ class ShockerHub {
                             (LPVOID)body.c_str(), (DWORD)body.size(),
                             (DWORD)body.size(), 0) ||
         !WinHttpReceiveResponse(hRequest, nullptr)) {
-      WinHttpCloseHandle(hRequest);
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    std::string result;
-    char buf[4096];
-    DWORD read;
-    while (WinHttpReadData(hRequest, buf, sizeof(buf), &read) && read > 0)
-      result.append(buf, read);
-
-    WinHttpCloseHandle(hRequest);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
-    return result;
-  }
-
-  static std::string postJson(
-      const std::string& url, const std::string& body,
-      const std::vector<std::string>& extraHeaders = {}) {
-    HINTERNET hNet =
-        InternetOpenA("ShockerLink/" APP_VERSION, 0, nullptr, nullptr, 0);
-    if (!hNet) return "";
-
-    URL_COMPONENTSA uc{};
-    uc.dwStructSize = sizeof(uc);
-    char host[256] = {}, path[512] = {};
-    uc.lpszHostName = host;
-    uc.dwHostNameLength = sizeof(host);
-    uc.lpszUrlPath = path;
-    uc.dwUrlPathLength = sizeof(path);
-    if (!InternetCrackUrlA(url.c_str(), 0, 0, &uc)) {
-      InternetCloseHandle(hNet);
-      return "";
-    }
-
-    HINTERNET hConn = InternetConnectA(hNet, host, uc.nPort, nullptr, nullptr,
-                                       INTERNET_SERVICE_HTTP, 0, 0);
-    if (!hConn) {
-      InternetCloseHandle(hNet);
-      return "";
-    }
-
-    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
-                  INTERNET_FLAG_NO_COOKIES;  // ADDED: prevent WinINet from
-                                             // interfering with cookies
-    if (url.rfind("https://", 0) == 0) flags |= INTERNET_FLAG_SECURE;
-
-    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", path, nullptr, nullptr,
-                                      nullptr, flags, 0);
-    if (!hReq) {
-      InternetCloseHandle(hConn);
-      InternetCloseHandle(hNet);
-      return "";
-    }
-
-    DWORD timeout = 5000;
-    InternetSetOption(hReq, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout,
-                      sizeof(timeout));
-    InternetSetOption(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout,
-                      sizeof(timeout));
-
-    std::string headers = "Content-Type: application/json\r\n";
-    for (auto& h : extraHeaders) headers += h + "\r\n";
-
-    HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(),
-                     (LPVOID)body.c_str(), (DWORD)body.size());
-
-    std::string result;
-    char buf[4096];
-    DWORD read;
-    while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &read) && read > 0) {
-      buf[read] = 0;
-      result += buf;
-    }
-
-    InternetCloseHandle(hReq);
-    InternetCloseHandle(hConn);
-    InternetCloseHandle(hNet);
-    return result;
-  }
-
-  static std::string httpGetWinHttp(
-      const std::string& url,
-      const std::vector<std::string>& extraHeaders = {}) {
-    HINTERNET hSession = WinHttpOpen(
-        L"ShockerLink/" APP_VERSION, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!hSession) {
-      logMsg("[OpenShock] WinHttpOpen failed (%lu)\n", GetLastError());
-      return "";
-    }
-
-    URL_COMPONENTSA uc{};
-    uc.dwStructSize = sizeof(uc);
-    char host[256] = {}, path[512] = {};
-    uc.lpszHostName = host;
-    uc.dwHostNameLength = sizeof(host);
-    uc.lpszUrlPath = path;
-    uc.dwUrlPathLength = sizeof(path);
-    if (!InternetCrackUrlA(url.c_str(), 0, 0, &uc)) {
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    HINTERNET hConnect = WinHttpConnect(
-        hSession, std::wstring(host, host + uc.dwHostNameLength).c_str(),
-        uc.nPort, 0);
-    if (!hConnect) {
-      WinHttpCloseHandle(hSession);
-      logMsg("[OpenShock] WinHttpConnect failed (%lu)\n", GetLastError());
-      return "";
-    }
-
-    DWORD flags = WINHTTP_FLAG_REFRESH;
-    if (uc.nScheme == INTERNET_SCHEME_HTTPS) flags |= WINHTTP_FLAG_SECURE;
-
-    HINTERNET hRequest = WinHttpOpenRequest(
-        hConnect, L"GET", std::wstring(path, path + uc.dwUrlPathLength).c_str(),
-        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hRequest) {
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      logMsg("[OpenShock] WinHttpOpenRequest failed (%lu)\n", GetLastError());
-      return "";
-    }
-
-    std::string hdrStr;
-    for (auto& h : extraHeaders) hdrStr += h + "\r\n";
-    if (!hdrStr.empty()) {
-      std::wstring whdr(hdrStr.begin(), hdrStr.end());
-      WinHttpAddRequestHeaders(hRequest, whdr.c_str(), (DWORD)whdr.size(),
-                               WINHTTP_ADDREQ_FLAG_ADD);
-    }
-
-    DWORD timeout = 5000;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout,
-                     sizeof(timeout));
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_SEND_TIMEOUT, &timeout,
-                     sizeof(timeout));
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout,
-                     sizeof(timeout));
-
-    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr,
-                            0, 0, 0) ||
-        !WinHttpReceiveResponse(hRequest, nullptr)) {
-      logMsg("[OpenShock] Send/Receive failed (%lu)\n", GetLastError());
       WinHttpCloseHandle(hRequest);
       WinHttpCloseHandle(hConnect);
       WinHttpCloseHandle(hSession);
@@ -660,10 +587,9 @@ class ShockerHub {
   bool scanForPishock() {
     for (int i = 1; i <= 50; i++) {
       settings.serialPort = "COM" + std::to_string(i);
-
-      bool opened = serial.openDevice(settings.serialPort.c_str(),
-                                      settings.baudRate) == 1;
-      if (!opened) continue;
+      if (serial.openDevice(settings.serialPort.c_str(), settings.baudRate) !=
+          1)
+        continue;
 
       serial.writeString("{\"cmd\": \"info\"}\n");
 
@@ -672,19 +598,15 @@ class ShockerHub {
         char buf[1024] = {0};
         serial.readString(buf, '\n', 1024, 1000);
         std::string response(buf);
-
         if (response.starts_with("TERMINALINFO: ") &&
             response.find("pishock") != std::string::npos) {
           found = true;
           if (settings.shockerIDs.empty()) {
-            std::string jsonStr =
-                response.substr(14);  // strip "TERMINALINFO: "
-            auto json = nlohmann::json::parse(jsonStr, nullptr, false);
-            if (!json.is_discarded() && json.contains("shockers")) {
-              for (auto& s : json["shockers"]) {
+            auto json = nlohmann::json::parse(response.substr(14), nullptr,
+                                              false);  // strip "TERMINALINFO: "
+            if (!json.is_discarded() && json.contains("shockers"))
+              for (auto& s : json["shockers"])
                 settings.pushShockerId(std::to_string(s["id"].get<int>()));
-              }
-            }
           }
           break;
         }
@@ -694,7 +616,6 @@ class ShockerHub {
         startWorkerThread();
         return true;
       }
-
       serial.closeDevice();
     }
 
@@ -707,10 +628,9 @@ class ShockerHub {
   bool scanForOpenshock() {
     for (int i = 1; i <= 24; i++) {
       settings.serialPort = "COM" + std::to_string(i);
-
-      bool opened = serial.openDevice(settings.serialPort.c_str(),
-                                      settings.baudRate) == 1;
-      if (!opened) continue;
+      if (serial.openDevice(settings.serialPort.c_str(), settings.baudRate) !=
+          1)
+        continue;
 
       serial.writeString("domain\n");
 
@@ -728,7 +648,6 @@ class ShockerHub {
         startWorkerThread();
         return true;
       }
-
       serial.closeDevice();
     }
 
@@ -754,12 +673,9 @@ class ShockerHub {
                          .count());
     while (!stopWorker) {
       std::unique_lock<std::mutex> lock(queueMutex);
-
-      // Sleep until there's work or shutdown
       queueCV.wait(lock, [this] { return !shockQueue.empty() || stopWorker; });
       if (stopWorker) break;
 
-      // Take item and release lock before doing any work
       auto item = shockQueue.front();
       shockQueue.pop();
       lock.unlock();
@@ -797,7 +713,6 @@ class ShockerHub {
         }
       }
 
-      std::string chosenShocker;
       std::vector<std::string> ids;
       {
         std::lock_guard<std::mutex> lock(queueMutex);
@@ -807,6 +722,8 @@ class ShockerHub {
         logMsg("[ShockerHub] No shocker IDs configured, dropping shock\n");
         continue;
       }
+
+      std::string chosenShocker;
       if (settings.randomOrSeq) {
         lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
         chosenShocker = ids[lastShockerIndex];
@@ -829,7 +746,6 @@ class ShockerHub {
     }
   }
 
-  // Routes to serial or API depending on settings.useSerial
   void sendShock(int durationMs, int strength, const std::string& shockerID,
                  bool vibrate) {
     if (settings.useSerial)
@@ -838,7 +754,6 @@ class ShockerHub {
       sendShockApi(durationMs, strength, shockerID, vibrate);
   }
 
-  // Called after a shock is successfully sent (serial or API)
   void afterShockSent(int durationMs, int strength, const std::string& opType) {
     shockTimestamps.push_back(getCurrentTime());
     lastTriggerTime = getCurrentTime();
@@ -878,8 +793,8 @@ class ShockerHub {
 
   void sendShockSerial(int durationMs, int strength,
                        const std::string& shockerID, bool vibrate) {
-    std::string command;
     std::string opType = vibrate ? "vibrate" : "shock";
+    std::string command;
 
     if (settings.usePishock) {
       nlohmann::json payload = {{"cmd", "operate"},
@@ -898,8 +813,7 @@ class ShockerHub {
       command = "rftransmit " + payload.dump() + "\n";
     }
 
-    int result = serial.writeString(command.c_str());
-    if (result <= 0) {
+    if (serial.writeString(command.c_str()) <= 0) {
       logMsg("[ShockerHub] Serial write failed, reconnecting...\n");
       reconnectSerial();
       queueShock(durationMs);
@@ -932,7 +846,6 @@ class ShockerHub {
 
         auto it = pishockShockerToClient_.find(sid);
         if (it == pishockShockerToClient_.end()) {
-          // Not found — re-resolve once (account may have changed)
           logMsg("[ShockerHub] Shocker {} not in device list, re-resolving\n",
                  sid);
           pishockResolved_ = false;
@@ -948,33 +861,25 @@ class ShockerHub {
         }
 
         if (!sendPiShockWs(durationMs, strength, sid, it->second, vibrate)) {
-          // Mark unresolved so next attempt re-fetches clientId mapping
           pishockResolved_ = false;
           return;
         }
 
       } else {
-        if (settings.shockerIDs.empty()) {
-          if (!resolveOpenShockApi()) {
-            logMsg("[ShockerHub] OpenShock shocker resolution failed\n");
-            return;
-          }
+        if (settings.shockerIDs.empty() && !resolveOpenShockApi()) {
+          logMsg("[ShockerHub] OpenShock shocker resolution failed\n");
+          return;
         }
 
         std::string type = vibrate ? "Vibrate" : "Shock";
-
-        nlohmann::json shockEntry = {{"id", shockerID},
-                                     {"type", type},
-                                     {"intensity", strength},
-                                     {"duration", durationMs},
-                                     {"exclusive", true}};
-
         nlohmann::json payload = {
-            {"shocks", nlohmann::json::array({shockEntry})},
-            {"customName", nullptr}};
+            {"shocks", nlohmann::json::array({{{"id", shockerID},
+                                               {"type", type},
+                                               {"intensity", strength},
+                                               {"duration", durationMs},
+                                               {"exclusive", true}}})},
+            {"customName", "ShockerLink"}};
 
-        // CHANGED: build URL from settings instead of hardcoded, use postJson
-        // with proper auth header
         std::string serverUrl = settings.openshockServerUrl;
         if (serverUrl.starts_with("https://"))
           serverUrl = serverUrl.substr(8);
@@ -982,27 +887,20 @@ class ShockerHub {
           serverUrl = serverUrl.substr(7);
         if (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
 
-        std::string url = "https://" + serverUrl + "/2/shockers/control";
+        auto resp = postJsonWinHttp(
+            "https://" + serverUrl + "/2/shockers/control", payload.dump(),
+            {"openshocktoken: " + settings.openshockApiToken});
 
-        auto resp =
-            postJsonWinHttp(url, payload.dump(),
-                            {"openshocktoken: " + settings.openshockApiToken});
-
-        // CHANGED: log response and check for API-level errors
         if (resp.empty()) {
           logMsg("[OpenShock] API: no response (check token or network)\n");
           return;
         }
 
-        logMsg("[OpenShock] API response: {}\n", resp.substr(0, 300));  // ADDED
-
         auto rj = nlohmann::json::parse(resp, nullptr, false);
-        if (!rj.is_discarded()) {
-          // OpenShock v2 returns {"message":"..."} on error with 4xx
-          if (rj.contains("message") && !rj.contains("data")) {
-            logMsg("[OpenShock] API error: {}\n", rj.value("message", resp));
-            return;  // ADDED: was falling through to afterShockSent regardless
-          }
+        if (!rj.is_discarded() && rj.contains("message") &&
+            !rj.contains("data")) {
+          logMsg("[OpenShock] API error: {}\n", rj.value("message", resp));
+          return;
         }
       }
     } catch (const std::exception& e) {
