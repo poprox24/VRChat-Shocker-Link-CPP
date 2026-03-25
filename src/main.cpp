@@ -86,6 +86,7 @@ int main() {
   oscQuery.stop();
   hub.shutdown();
   settings.save(settingsLocation);
+  gStats.save("stats.json");
 
   if (shouldRestart) {
     char exePath[MAX_PATH] = {};

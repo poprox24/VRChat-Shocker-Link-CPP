@@ -280,7 +280,35 @@ class Settings {
   }
 
   bool operator==(const Settings& other) const {
-    return toJson() == other.toJson();
+    return windowX == other.windowX && windowY == other.windowY &&
+           windowW == other.windowW && windowH == other.windowH &&
+           showStats == other.showStats &&
+           defaultPreset == other.defaultPreset &&
+           minShockDuration == other.minShockDuration &&
+           maxShockDuration == other.maxShockDuration &&
+           xViewMin == other.xViewMin && xViewMax == other.xViewMax &&
+           shockParameter == other.shockParameter &&
+           secondShockParameter == other.secondShockParameter &&
+           usePishock == other.usePishock && shockerIDs == other.shockerIDs &&
+           randomOrSeq == other.randomOrSeq && serialPort == other.serialPort &&
+           useSerial == other.useSerial &&
+           pishockUsername == other.pishockUsername &&
+           pishockApiKey == other.pishockApiKey &&
+           openshockApiToken == other.openshockApiToken &&
+           openshockServerUrl == other.openshockServerUrl &&
+           baseCooldown == other.baseCooldown &&
+           maxCooldown == other.maxCooldown &&
+           cooldownFactor == other.cooldownFactor &&
+           cooldownWindow == other.cooldownWindow &&
+           cooldownEnabled == other.cooldownEnabled &&
+           hotkeyVk == other.hotkeyVk && hotkeyMods == other.hotkeyMods &&
+           notificationsEnabled == other.notificationsEnabled &&
+           notifUseOvrToolkit == other.notifUseOvrToolkit &&
+           presetCount == other.presetCount &&
+           touchSelectThreshold == other.touchSelectThreshold &&
+           touchMarkerSize == other.touchMarkerSize &&
+           lineWidth == other.lineWidth && vrchatHost == other.vrchatHost &&
+           presets.size() == other.presets.size();
   }
 
   bool operator!=(const Settings& other) const { return !(*this == other); }

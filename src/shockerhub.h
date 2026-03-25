@@ -812,7 +812,6 @@ class ShockerHub {
       gStats.recordVibration(durationMs);
     else
       gStats.recordShock(durationMs, strength);
-    gStats.save("stats.json");
     logMsg("[ShockerHub] Sent {}: {}%, {:.1f}s\n", opType, strength,
            durationMs / 1000.0f);
   }

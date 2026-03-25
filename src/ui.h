@@ -866,6 +866,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   ImVec4& clear = settings.backgroundColor;
 
   bool forceFrame = true;
+  auto lastAnimTime = steady_clock::now();
   MSG msg{};
   while (msg.message != WM_QUIT) {
     if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -922,16 +923,19 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     // Animate panels and reposition window before layout so they stay in sync
     {
+      auto now = steady_clock::now();
+      float dt =
+          std::min(duration<float>(now - lastAnimTime).count(), 1.f / 30.f);
+      lastAnimTime = now;
+
       float settTarget = showSettings ? 1.f : 0.f;
       float statsTarget = settings.showStats ? 1.f : 0.f;
 
       float prevSettAnim = settingsAnim;
       float prevStatsAnim = statsAnim;
 
-      settingsAnim +=
-          (settTarget - settingsAnim) * std::min(1.f, io.DeltaTime * 12.f);
-      statsAnim +=
-          (statsTarget - statsAnim) * std::min(1.f, io.DeltaTime * 12.f);
+      settingsAnim += (settTarget - settingsAnim) * std::min(1.f, dt * 12.f);
+      statsAnim += (statsTarget - statsAnim) * std::min(1.f, dt * 12.f);
       if (settingsAnim < 0.001f) settingsAnim = 0.f;
       if (statsAnim < 0.043f) statsAnim = 0.f;
 
@@ -1957,9 +1961,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (isEditingThisFrame && !stateChangedPreviousFrame) {
         pushUndoSnapshot(undoStack, redoStack, lastCommittedState, false);
       }
-      lastCommittedState = currentState;
+      if (isEditingThisFrame || stateChangedPreviousFrame) {
+        lastCommittedState = snapshotAppState(ui);
+      }
     } else {
-      lastCommittedState = currentState;
+      lastCommittedState = snapshotAppState(ui);
     }
 
     stateChangedPreviousFrame = isEditingThisFrame;
