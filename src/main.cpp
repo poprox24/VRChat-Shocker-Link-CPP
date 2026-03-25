@@ -2,8 +2,8 @@
 
 #include <atomic>
 #include <csignal>
+#include <future>
 
-#include "future"
 #include "logger.h"
 #include "migration.h"
 #include "oscclient.h"

@@ -50,7 +50,6 @@ class ShockerHub {
   bool connectSerial() {
     if (!settings.useSerial) {
       isConnected = true;
-      logMsg("[ShockerHub] API mode - skipping serial connection");
       startWorkerThread();
       return true;
     }
@@ -112,7 +111,7 @@ class ShockerHub {
   bool reconnectSerial() {
     if (!settings.useSerial) return true;
     int delay = 1000;
-    while (true) {
+    while (!stopWorker) {
       serial.closeDevice();
       isConnected = false;
       if (connectSerial()) return true;
@@ -121,6 +120,7 @@ class ShockerHub {
       std::this_thread::sleep_for(std::chrono::milliseconds(delay));
       delay = std::min(delay * 2, 15000);
     }
+    return false;
   }
 
   bool tryReconnect() {
@@ -263,7 +263,6 @@ class ShockerHub {
  private:
   Settings& settings;
   int lastShockerIndex = -1;
-  double lastTriggerTime = 0.0;
   std::vector<double> shockTimestamps;
   serialib serial;
 
@@ -702,7 +701,7 @@ class ShockerHub {
             (double)settings.baseCooldown +
                 (double)settings.cooldownFactor * (int)shockTimestamps.size(),
             (double)settings.maxCooldown);
-        double remaining = dynamicCooldown - (now - lastTriggerTime);
+        double remaining = dynamicCooldown - (now - lastTriggerTimeAtomic);
         activeCooldownDuration.store(dynamicCooldown);
         if (remaining > 0) {
           std::string cooldownMsg =
@@ -756,10 +755,10 @@ class ShockerHub {
 
   void afterShockSent(int durationMs, int strength, const std::string& opType) {
     shockTimestamps.push_back(getCurrentTime());
-    lastTriggerTime = getCurrentTime();
+    lastTriggerTimeAtomic = getCurrentTime();
 
     if (settings.cooldownEnabled) {
-      double now = lastTriggerTime;
+      double now = lastTriggerTimeAtomic;
       int windowS = settings.cooldownWindow;
       shockTimestamps.erase(
           std::remove_if(

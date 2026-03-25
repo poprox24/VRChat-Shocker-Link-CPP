@@ -229,14 +229,6 @@ static void pushUndoSnapshot(std::deque<AppState>& undoStack,
   redoStack.clear();
 }
 
-static bool hasUndo(const std::deque<AppState>& undoStack) {
-  return !undoStack.empty();
-}
-
-static bool hasRedo(const std::deque<AppState>& redoStack) {
-  return !redoStack.empty();
-}
-
 static void performUndoRedo(bool is_undo, std::deque<AppState>& undoStack,
                             std::deque<AppState>& redoStack, UiContext& ui,
                             bool& isPerformingUndoRedo) {
@@ -525,7 +517,7 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
   ImVec2 hMinPos = {valToX(*vMin), trackY};
   ImVec2 hMaxPos = {valToX(*vMax), trackY};
 
-  int dragging = 0;
+  static int dragging = 0;
   ImVec2 mouse = io.MousePos;
 
   auto inCircle = [&](ImVec2 c) {
@@ -1013,7 +1005,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         settings.save(settingsPath);
       }
       // Right click - open rename popup
-      if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+      if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && hasData)
         ImGui::OpenPopup(("##rename" + std::to_string(i)).c_str());
 
       // Rename popup
