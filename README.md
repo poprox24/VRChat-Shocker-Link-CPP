@@ -8,7 +8,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP">
-    <img width="795" height="499" alt="image" src="https://github.com/user-attachments/assets/010b76e9-9e47-481a-9d2d-31bd369ee020" />
+    <img width="1074" height="512" alt="image" src="https://github.com/user-attachments/assets/0877633a-b652-4c67-a6f1-2fdcd1c4350d" />
   </a>
 
 <h3 align="center">VRChat Shocker Link</h3>
@@ -63,7 +63,7 @@ Make sure you install this before you continue:
 4. Open settings (bottom left)
 5. Change the `Shock Parameter` to the parameter you set on your VRChat avatar and set `OpenShock/PiShock` depending on your use case
 
-- If using an OpenShock Hub, add your shockers to the `Shocker IDs` in settings, they cannot be read automatically from the hub
+- If using an OpenShock Hub via Serial, add your shockers to the `Shocker IDs` in settings, they cannot be read automatically from the hub
 
 6. Click on Save(or Save & Restart if needed)
 
