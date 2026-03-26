@@ -4,124 +4,122 @@
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 
-<!-- PROJECT LOGO -->
 <br />
 <div align="center">
   <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP">
-    <img width="1077" height="523" alt="image" src="https://github.com/user-attachments/assets/67277c49-8b2f-4111-92b1-96d2e794c7e4" />
+    <img width="1077" height="523" alt="ShockerLink UI" src="https://github.com/user-attachments/assets/67277c49-8b2f-4111-92b1-96d2e794c7e4" />
   </a>
 
-<h3 align="center">VRChat Shocker Link</h3>
+  <h3 align="center">ShockerLink</h3>
 
   <p align="center">
-    This program connects a VRChat avatar parameter with your PiShock or OpenShock device
-    <br />
-    It has chat message support, curve for intensity and a few more settings you can easily change in the UI
-    <br />
+    Connects a VRChat avatar parameter to a PiShock or OpenShock device.<br />
+    Supports serial and API modes, a bezier intensity curve, cooldown system, chatbox output, and VR notifications.
+    <br /><br />
     <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues/new?labels=bug">Report Bug or Request Feature</a>
+  </p>
 
 https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 
-  </p>
 </div>
 
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-  </ol>
-</details>
+---
 
-<!-- GETTING STARTED -->
+## Table of Contents
+
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Usage](#usage)
+- [Features](#features)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
+
+---
 
 ## Getting Started
 
-How to setup this project
-
 ### Prerequisites
-
-Make sure you install this before you continue:
 
 - [.NET Framework](https://dotnet.microsoft.com/en-us/download/dotnet-framework)
 
 ### Installation
 
-1. Go to [releases](https://github.com/poprox24/VRChat-Shocker-Link-CPP/releases/latest)
-2. Download Shocker_Link.exe and put it into any folder on your computer
-3. Run the program
-4. Open settings (bottom left)
-5. Change the `Shock Parameter` to the parameter you set on your VRChat avatar and set `OpenShock/PiShock` depending on your use case
-
-- If using an OpenShock Hub via Serial, add your shockers to the `Shocker IDs` in settings, they cannot be read automatically from the hub
-
-6. Click on Save(or Save & Restart if needed)
+1. Go to [Releases](https://github.com/poprox24/VRChat-Shocker-Link-CPP/releases/latest) and download `Shocker_Link.exe`
+2. Place it in any folder and run it
+3. Open Settings (bottom left)
+4. Set your `Shock Parameter` to match the parameter name on your VRChat avatar
+5. Choose your connection mode: `PiShock` or `OpenShock`
+   - Serial (USB hub): connect the hub and let the app scan, or enter the COM port manually
+   - API: enter your credentials in Settings
+   - OpenShock serial users: add your shocker IDs manually in Settings, they cannot be auto-detected over serial
+6. Click `Save` or `Save and Restart` if prompted
 
 ### Usage
 
-1. Most stuff is self explanatory
-2. Either connect the PiShock hub to your PC to use Serial or get the API Key from the devices respective website
-3. All inputs have Undo/Redo support using CTRL+Z/CTRL+Y
-4. Presets:
+- The intensity curve controls the probability distribution of shock strength.
+- Presets store the curve, duration range, and view state. Left-click to load, right-click to rename, middle-click to reset to default.
+- All inputs support undo/redo with `Ctrl+Z` / `Ctrl+Y`.
+- A second OSC parameter can optionally trigger shocks biased toward the upper half of the intensity curve.
+- The cooldown system dynamically increases the wait time between shocks based on recent trigger frequency.
+- The panic hotkey (default `F9`) disables shocks immediately.
 
-- Left click to load
-- Right click to rename
-- Middle click to default
+---
 
-<br />
 
-<!-- ROADMAP -->
+## Features
+
+- PiShock and OpenShock support via serial or API
+- Bezier intensity curve with weighted random sampling
+- Dynamic cooldown system
+- Presets with per-preset curve and view state
+- VRChat chatbox output and VR notifications (XSOverlay / OVRToolkit)
+- Stats tracking: shock count, duration, intensity, and daily history
+
+---
 
 ## Roadmap
 
-- [x] Undo/Redo Support
+- [x] Undo/redo support
+- [x] Auto-updater
+- [x] Stats menu
+- [x] PiShock and OpenShock API support
 
-See the [open issues](https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues) for a full list of proposed features (and known issues).
+See [open issues](https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues) for proposed features and known issues.
 
-<!-- CONTRIBUTING -->
+---
 
 ## Contributing
 
-If you have a suggestion that would make this tool better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
+Fork the repo and open a pull request, or file an issue tagged `enhancement`.
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. Fork the project
+2. Create a feature branch (`git checkout -b feature/MyFeature`)
+3. Commit your changes (`git commit -m 'Add MyFeature'`)
+4. Push to the branch (`git push origin feature/MyFeature`)
+5. Open a pull request
 
-### Top contributors:
+### Contributors
 
 <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=poprox24/VRChat-Shocker-Link-CPP" alt="contrib.rocks image" />
+  <img src="https://contrib.rocks/image?repo=poprox24/VRChat-Shocker-Link-CPP" alt="Contributors" />
 </a>
 
-<br />
-
-<!-- LICENSE -->
+---
 
 ## License
 
-Distributed under the DWYW License. See `LICENSE.txt` for more information.
+Distributed under the DWYW License. See `LICENSE` for details.
 
-<!-- CONTACT -->
+---
 
 ## Contact
 
 Poprox24 - [@poprox422](https://twitter.com/poprox422) - poprox24.roxy@gmail.com
 
-Project Link: [VRChat-Shocker-Link-CPP](https://github.com/poprox24/VRChat-Shocker-Link-CPP)
+Project: [VRChat-Shocker-Link-CPP](https://github.com/poprox24/VRChat-Shocker-Link-CPP)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -135,4 +133,3 @@ Project Link: [VRChat-Shocker-Link-CPP](https://github.com/poprox24/VRChat-Shock
 [issues-url]: https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues
 [license-shield]: https://img.shields.io/github/license/poprox24/VRChat-Shocker-Link-CPP.svg?style=for-the-badge
 [license-url]: https://github.com/poprox24/VRChat-Shocker-Link-CPP/blob/master/LICENSE
-[product-screenshot]: images/screenshot.png
