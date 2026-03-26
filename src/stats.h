@@ -43,6 +43,7 @@ struct Stats {
     totalIntensitySum += intensity;
     if (intensity > highestIntensity) highestIntensity = intensity;
     if (durationMs > longestShockMs) longestShockMs = durationMs;
+    dailyShocks[today()]++;
   }
 
   void recordVibration(int durationMs) {
