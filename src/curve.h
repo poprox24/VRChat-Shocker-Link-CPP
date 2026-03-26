@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <random>
 #include <vector>
 
 struct CurvePoint {
@@ -25,7 +26,7 @@ inline std::vector<CurvePoint> bezierInterpolate(CurvePoint p0, CurvePoint p1,
   return out;
 }
 
-inline int sampleIntensity(std::array<CurvePoint, 3>& pts) {
+inline int sampleIntensity(std::array<CurvePoint, 3>& pts, std::mt19937& rng) {
   auto sorted = pts;
   std::sort(sorted.begin(), sorted.end(),
             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
@@ -43,7 +44,8 @@ inline int sampleIntensity(std::array<CurvePoint, 3>& pts) {
 
   double totalWeight = 0.0;
   for (double w : ys) totalWeight += w;
-  double r = ((double)rand() / RAND_MAX) * totalWeight;
+  std::uniform_real_distribution<double> dist(0.0, totalWeight);
+  double r = dist(rng);
   double acc = 0.0;
   for (size_t i = 0; i < xs.size(); i++) {
     acc += ys[i];
@@ -52,7 +54,8 @@ inline int sampleIntensity(std::array<CurvePoint, 3>& pts) {
   return (int)xs.back();
 }
 
-inline int sampleIntensityUpperHalf(std::array<CurvePoint, 3>& pts) {
+inline int sampleIntensityUpperHalf(std::array<CurvePoint, 3>& pts,
+                                    std::mt19937& rng) {
   auto sorted = pts;
   std::sort(sorted.begin(), sorted.end(),
             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
@@ -68,12 +71,15 @@ inline int sampleIntensityUpperHalf(std::array<CurvePoint, 3>& pts) {
 
   if (xs.empty()) return 75;
 
-  // Upper half by sorted-index
-  size_t start = xs.size() / 2;
+  size_t start = 0;
+  while (start < xs.size() && xs[start] < 50.0) start++;
+
+  if (start >= xs.size()) return 75;
 
   double totalWeight = 0.0;
   for (size_t i = start; i < ys.size(); i++) totalWeight += ys[i];
-  double r = ((double)rand() / RAND_MAX) * totalWeight;
+  std::uniform_real_distribution<double> dist(0.0, totalWeight);
+  double r = dist(rng);
   double acc = 0.0;
   for (size_t i = start; i < xs.size(); i++) {
     acc += ys[i];

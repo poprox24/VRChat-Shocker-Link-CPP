@@ -25,10 +25,17 @@ class ChatboxSender {
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
     sock_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    clearThread_ = std::thread([this]() { clearLoop(); });
   }
 
   ~ChatboxSender() {
-    clearGeneration_++;
+    {
+      std::lock_guard<std::mutex> l(clearMutex_);
+      stopping_ = true;
+    }
+    clearCV_.notify_all();
+    if (clearThread_.joinable()) clearThread_.join();
+
     SOCKET s = sock_;
     sock_ = INVALID_SOCKET;
     if (s != INVALID_SOCKET) closesocket(s);
@@ -38,7 +45,6 @@ class ChatboxSender {
     std::lock_guard<std::mutex> lock(sendMutex_);
 
     bool isShock = message.find("\xe2\x9a\xa1") != std::string::npos;
-
     if (!isShock) {
       auto now = std::chrono::steady_clock::now();
       float elapsed = std::chrono::duration<float>(now - lastSendTime_).count();
@@ -49,16 +55,11 @@ class ChatboxSender {
     sendRaw(message);
 
     if (clearAfter) {
-      int gen = ++clearGeneration_;
-
-      std::thread([this, gen]() {
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(static_cast<int>(CLEAR_AFTER_S * 1000)));
-        if (clearGeneration_.load() == gen) {
-          std::lock_guard<std::mutex> l(sendMutex_);
-          sendRaw("");
-        }
-      }).detach();
+      std::lock_guard<std::mutex> l(clearMutex_);
+      clearDeadline_ =
+          std::chrono::steady_clock::now() +
+          std::chrono::milliseconds(static_cast<int>(CLEAR_AFTER_S * 1000));
+      clearCV_.notify_one();
     }
   }
 
@@ -68,7 +69,37 @@ class ChatboxSender {
   SOCKET sock_ = INVALID_SOCKET;
   std::mutex sendMutex_;
   std::chrono::steady_clock::time_point lastSendTime_{};
-  std::atomic<int> clearGeneration_{0};
+
+  std::thread clearThread_;
+  std::mutex clearMutex_;
+  std::condition_variable clearCV_;
+  std::chrono::steady_clock::time_point clearDeadline_{};
+  bool stopping_ = false;
+
+  void clearLoop() {
+    while (true) {
+      std::unique_lock<std::mutex> l(clearMutex_);
+      clearCV_.wait(l, [this] {
+        return stopping_ ||
+               clearDeadline_ != std::chrono::steady_clock::time_point{};
+      });
+      if (stopping_) return;
+      auto deadline = clearDeadline_;
+      l.unlock();
+
+      std::this_thread::sleep_until(deadline);
+
+      {
+        std::lock_guard<std::mutex> l2(clearMutex_);
+        if (stopping_) return;
+        if (std::chrono::steady_clock::now() >= clearDeadline_) {
+          clearDeadline_ = {};
+          std::lock_guard<std::mutex> sl(sendMutex_);
+          sendRaw("");
+        }
+      }
+    }
+  }
 
   static std::vector<uint8_t> buildPacket(const std::string& msg) {
     std::vector<uint8_t> pkt;

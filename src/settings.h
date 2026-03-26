@@ -280,6 +280,9 @@ class Settings {
   }
 
   bool operator==(const Settings& other) const {
+    auto vec4Eq = [](const ImVec4& a, const ImVec4& b) {
+      return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+    };
     return windowX == other.windowX && windowY == other.windowY &&
            windowW == other.windowW && windowH == other.windowH &&
            showStats == other.showStats &&
@@ -308,7 +311,15 @@ class Settings {
            touchSelectThreshold == other.touchSelectThreshold &&
            touchMarkerSize == other.touchMarkerSize &&
            lineWidth == other.lineWidth && vrchatHost == other.vrchatHost &&
-           presets.size() == other.presets.size();
+           presets.size() == other.presets.size() &&
+           vec4Eq(backgroundColor, other.backgroundColor) &&
+           vec4Eq(outsideCurveBg, other.outsideCurveBg) &&
+           vec4Eq(accentColor, other.accentColor) &&
+           vec4Eq(curveLineColor, other.curveLineColor) &&
+           vec4Eq(markerColor, other.markerColor) &&
+           vec4Eq(labelColor, other.labelColor) &&
+           vec4Eq(gradientLeftColor, other.gradientLeftColor) &&
+           vec4Eq(gradientRightColor, other.gradientRightColor);
   }
 
   bool operator!=(const Settings& other) const { return !(*this == other); }

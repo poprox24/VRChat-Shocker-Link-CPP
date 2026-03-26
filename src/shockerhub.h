@@ -170,8 +170,8 @@ class ShockerHub {
     if (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
 
     std::string url = "https://" + serverUrl + "/1/shockers/own";
-    auto resp =
-        httpGetWinHttp(url, {"openshocktoken: " + settings.openshockApiToken});
+    auto resp = winHttpRequest(
+        "GET", url, "", {"openshocktoken: " + settings.openshockApiToken});
     if (resp.empty()) {
       logMsg("[OpenShock] GET /1/shockers/own failed (check token / server)\n");
       return false;
@@ -310,9 +310,10 @@ class ShockerHub {
     return result;
   }
 
-  // WinHTTP GET - used for OpenShock endpoints
-  static std::string httpGetWinHttp(
-      const std::string& url,
+  // OpenSchock GET and POST functions
+  static std::string winHttpRequest(
+      const std::string& method, const std::string& url,
+      const std::string& body = "",
       const std::vector<std::string>& extraHeaders = {}) {
     HINTERNET hSession = WinHttpOpen(
         L"ShockerLink/" APP_VERSION, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
@@ -341,95 +342,9 @@ class ShockerHub {
 
     DWORD flags = WINHTTP_FLAG_REFRESH;
     if (url.rfind("https://", 0) == 0) flags |= WINHTTP_FLAG_SECURE;
-
+    std::wstring wmethod(method.begin(), method.end());
     HINTERNET hRequest = WinHttpOpenRequest(
-        hConnect, L"GET", std::wstring(path, path + uc.dwUrlPathLength).c_str(),
-        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hRequest) {
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy,
-                     sizeof(redirectPolicy));
-
-    std::string hdrStr;
-    for (auto& h : extraHeaders) hdrStr += h + "\r\n";
-    if (!hdrStr.empty()) {
-      std::wstring whdr(hdrStr.begin(), hdrStr.end());
-      WinHttpAddRequestHeaders(hRequest, whdr.c_str(), (DWORD)whdr.size(),
-                               WINHTTP_ADDREQ_FLAG_ADD);
-    }
-
-    DWORD timeout = 5000;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout,
-                     sizeof(timeout));
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_SEND_TIMEOUT, &timeout,
-                     sizeof(timeout));
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout,
-                     sizeof(timeout));
-
-    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr,
-                            0, 0, 0) ||
-        !WinHttpReceiveResponse(hRequest, nullptr)) {
-      WinHttpCloseHandle(hRequest);
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    std::string result;
-    char buf[4096];
-    DWORD read;
-    while (WinHttpReadData(hRequest, buf, sizeof(buf), &read) && read > 0)
-      result.append(buf, read);
-
-    WinHttpCloseHandle(hRequest);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
-    return result;
-  }
-
-  // WinHTTP POST with JSON body - used for OpenShock API endpoints
-  static std::string postJsonWinHttp(
-      const std::string& url, const std::string& body,
-      const std::vector<std::string>& extraHeaders = {}) {
-    HINTERNET hSession = WinHttpOpen(
-        L"ShockerLink/" APP_VERSION, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!hSession) return "";
-
-    DWORD disableCookies = WINHTTP_DISABLE_COOKIES;
-    WinHttpSetOption(hSession, WINHTTP_OPTION_DISABLE_FEATURE, &disableCookies,
-                     sizeof(disableCookies));
-
-    URL_COMPONENTSA uc{};
-    uc.dwStructSize = sizeof(uc);
-    char host[256] = {}, path[512] = {};
-    uc.lpszHostName = host;
-    uc.dwHostNameLength = sizeof(host);
-    uc.lpszUrlPath = path;
-    uc.dwUrlPathLength = sizeof(path);
-    if (!InternetCrackUrlA(url.c_str(), 0, 0, &uc)) {
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    HINTERNET hConnect = WinHttpConnect(
-        hSession, std::wstring(host, host + uc.dwHostNameLength).c_str(),
-        uc.nPort, 0);
-    if (!hConnect) {
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    DWORD flags = WINHTTP_FLAG_REFRESH;
-    if (url.rfind("https://", 0) == 0) flags |= WINHTTP_FLAG_SECURE;
-
-    HINTERNET hRequest = WinHttpOpenRequest(
-        hConnect, L"POST",
+        hConnect, wmethod.c_str(),
         std::wstring(path, path + uc.dwUrlPathLength).c_str(), nullptr,
         WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
     if (!hRequest) {
@@ -438,12 +353,6 @@ class ShockerHub {
       return "";
     }
 
-    std::string hdrStr = "Content-Type: application/json\r\n";
-    for (auto& h : extraHeaders) hdrStr += h + "\r\n";
-    std::wstring whdr(hdrStr.begin(), hdrStr.end());
-    WinHttpAddRequestHeaders(hRequest, whdr.c_str(), (DWORD)whdr.size(),
-                             WINHTTP_ADDREQ_FLAG_ADD);
-
     DWORD timeout = 5000;
     WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout,
                      sizeof(timeout));
@@ -452,9 +361,19 @@ class ShockerHub {
     WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout,
                      sizeof(timeout));
 
-    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                            (LPVOID)body.c_str(), (DWORD)body.size(),
-                            (DWORD)body.size(), 0) ||
+    std::string hdrStr =
+        body.empty() ? "" : "Content-Type: application/json\r\n";
+    for (auto& h : extraHeaders) hdrStr += h + "\r\n";
+    if (!hdrStr.empty()) {
+      std::wstring whdr(hdrStr.begin(), hdrStr.end());
+      WinHttpAddRequestHeaders(hRequest, whdr.c_str(), (DWORD)whdr.size(),
+                               WINHTTP_ADDREQ_FLAG_ADD);
+    }
+
+    LPVOID bodyPtr = body.empty() ? nullptr : (LPVOID)body.c_str();
+    DWORD bodyLen = (DWORD)body.size();
+    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, bodyPtr,
+                            bodyLen, bodyLen, 0) ||
         !WinHttpReceiveResponse(hRequest, nullptr)) {
       WinHttpCloseHandle(hRequest);
       WinHttpCloseHandle(hConnect);
@@ -589,7 +508,7 @@ class ShockerHub {
   }
 
   bool scanForPishock() {
-    for (int i = 1; i <= 50; i++) {
+    for (int i = 1; i <= 24; i++) {
       settings.serialPort = "COM" + std::to_string(i);
       if (serial.openDevice(settings.serialPort.c_str(), settings.baudRate) !=
           1)
@@ -600,7 +519,7 @@ class ShockerHub {
       bool found = false;
       for (int attempt = 0; attempt < 20; attempt++) {
         char buf[1024] = {0};
-        serial.readString(buf, '\n', 1024, 1000);
+        serial.readString(buf, '\n', 1024, 500);
         std::string response(buf);
         if (response.starts_with("TERMINALINFO: ") &&
             response.find("pishock") != std::string::npos) {
@@ -700,18 +619,12 @@ class ShockerHub {
 
         // Remove recorded shocks after cooldown window
         int cooldownWindowS = settings.cooldownWindow;
-        shockTimestamps.erase(
-            std::remove_if(shockTimestamps.begin(), shockTimestamps.end(),
-                           [now, cooldownWindowS](double t) {
-                             return now - t > cooldownWindowS;
-                           }),
-            shockTimestamps.end());
+        while (!shockTimestamps.empty() &&
+               now - shockTimestamps.front() > cooldownWindowS)
+          shockTimestamps.erase(shockTimestamps.begin());
 
-        // Calculate how many shocks there were in the last x(window) seconds
-        double dynamicCooldown = std::min(
-            (double)settings.baseCooldown +
-                (double)settings.cooldownFactor * (int)shockTimestamps.size(),
-            (double)settings.maxCooldown);
+        double dynamicCooldown = calcDynamicCooldown();
+        cooldownUntil.store(now + dynamicCooldown);
 
         // Calculate remaining cooldown
         double remaining = dynamicCooldown - (now - lastTriggerTimeAtomic);
@@ -759,9 +672,12 @@ class ShockerHub {
         durationMs = std::max(100, (int)(durDist(rng) * 1000));
       }
 
-      int intensity = useUpperHalf ? sampleIntensityUpperHalf(curvePoints)
-                                   : sampleIntensity(curvePoints);
+      int intensity = useUpperHalf ? sampleIntensityUpperHalf(curvePoints, rng)
+                                   : sampleIntensity(curvePoints, rng);
       sendShock(durationMs, intensity, chosenShocker, vibrate);
+
+      if (settings.cooldownEnabled)
+        cooldownUntil.store(getCurrentTime() + calcDynamicCooldown());
     }
   }
 
@@ -779,22 +695,7 @@ class ShockerHub {
     shockTimestamps.push_back(getCurrentTime());
     lastTriggerTimeAtomic = getCurrentTime();
 
-    if (settings.cooldownEnabled) {
-      double now = lastTriggerTimeAtomic;
-      int windowS = settings.cooldownWindow;
-      shockTimestamps.erase(
-          std::remove_if(
-              shockTimestamps.begin(), shockTimestamps.end(),
-              [now, windowS](double t) { return now - t > windowS; }),
-          shockTimestamps.end());
-      double dynamicCooldown = std::min(
-          (double)settings.baseCooldown +
-              (double)settings.cooldownFactor * (int)shockTimestamps.size(),
-          (double)settings.maxCooldown);
-      cooldownUntil.store(now + dynamicCooldown);
-    } else {
-      cooldownUntil.store(0.0);
-    }
+    if (!settings.cooldownEnabled) cooldownUntil.store(0.0);
 
     // \xe2\x9a\xa1 = ⚡ symbol
     chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
@@ -847,6 +748,13 @@ class ShockerHub {
     }
 
     afterShockSent(durationMs, strength, opType);
+  }
+
+  double calcDynamicCooldown() const {
+    return std::min((double)settings.baseCooldown +
+                        (double)settings.cooldownFactor *
+                            std::max(0, (int)shockTimestamps.size() - 1),
+                    (double)settings.maxCooldown);
   }
 
   void sendShockApi(int durationMs, int strength, const std::string& shockerID,
@@ -913,9 +821,9 @@ class ShockerHub {
           serverUrl = serverUrl.substr(7);
         if (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
 
-        auto resp = postJsonWinHttp(
-            "https://" + serverUrl + "/2/shockers/control", payload.dump(),
-            {"openshocktoken: " + settings.openshockApiToken});
+        auto resp = winHttpRequest(
+            "POST", "https://" + serverUrl + "/2/shockers/control",
+            payload.dump(), {"openshocktoken: " + settings.openshockApiToken});
 
         if (resp.empty()) {
           logMsg("[OpenShock] API: no response (check token or network)\n");
