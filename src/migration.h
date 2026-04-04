@@ -39,7 +39,11 @@ inline void migrateConfigYmlIfPresent(Settings& s,
     s.lineWidth = c["LINE_WIDTH"].as<float>(3.f);
     auto hex = [](const std::string& h) {
       unsigned r = 0, g = 0, b = 0;
+#ifdef _WIN32
       sscanf_s(h.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
+#else
+      sscanf(h.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
+#endif
       return ImVec4{r / 255.f, g / 255.f, b / 255.f, 1.f};
     };
     s.outsideCurveBg = hex(c["inside_CURVE_BG"].as<std::string>(

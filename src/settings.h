@@ -61,8 +61,12 @@ class Settings {
   int cooldownWindow = 30;
   bool cooldownEnabled = true;
 
-  // Panic hotkey
+// Panic hotkey
+#ifdef _WIN32
   int hotkeyVk = VK_F9;
+#else
+  int hotkeyVk = 298;  // GLFW_KEY_F9
+#endif
   int hotkeyMods = 0;  // Alt = 1, Control = 2, Shift = 4
 
   // Notification Config
@@ -133,8 +137,12 @@ class Settings {
       cooldownWindow = j.value("cooldownWindow", 30);
       cooldownEnabled = j.value("cooldownEnabled", true);
 
-      // Panic hotkey
+// Panic hotkey
+#ifdef _WIN32
       hotkeyVk = j.value("hotkeyVk", VK_F9);
+#else
+      hotkeyVk = j.value("hotkeyVk", 298);  // GLFW_KEY_F9
+#endif
       hotkeyMods = j.value("hotkeyMods", 0);
 
       // Notification Config (migrate if old values are present)
