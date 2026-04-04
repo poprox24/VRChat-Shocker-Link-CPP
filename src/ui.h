@@ -1,8 +1,7 @@
 #pragma once
 
-// CHANGED: entire rendering backend swapped DX11/Win32 → OpenGL3/GLFW
 #define GLFW_INCLUDE_NONE
-#include <GL/gl.h>  // glViewport, glClearColor, glClear (OpenGL 1.x, no loader needed)
+#include <GL/gl.h>
 #include <GLFW/glfw3.h>
 
 #include <array>
@@ -22,8 +21,8 @@ using namespace std::chrono;
 
 #include "curve.h"
 #include "imgui.h"
-#include "imgui_impl_glfw.h"     // CHANGED
-#include "imgui_impl_opengl3.h"  // CHANGED
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
 #include "implot.h"
 #include "logger.h"
@@ -34,17 +33,14 @@ using namespace std::chrono;
 
 static constexpr const char* kWindowTitle = "Shocker Link";
 
-// CHANGED: no D3D11 globals — GLFW owns the GL context
 static GLFWwindow* g_window = nullptr;
 static ShockerHub* g_hub = nullptr;
-static Settings* g_settingsForHotkey = nullptr;  // ADDED: read by key callback
+static Settings* g_settingsForHotkey = nullptr;
 
 extern std::atomic<bool> shouldRestart;
 
 static constexpr size_t kMaxUndoRedoStates = 128;
 
-// ── AppState ──────────────────────────────────────────────────────────────
-// (unchanged from Windows version)
 struct AppState {
   Settings settings;
   std::array<CurvePoint, 3> curvePoints;
@@ -150,7 +146,6 @@ static AppState snapshotAppState(const UiContext& ui) {
   return st;
 }
 
-// CHANGED: strncpy_s → snprintf (strncpy_s is MSVC-only)
 static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.settings = st.settings;
   ui.hub.curvePoints = st.curvePoints;
@@ -224,9 +219,6 @@ static void performUndoRedo(bool is_undo, std::deque<AppState>& undoStack,
   isPerformingUndoRedo = false;
 }
 
-// ── GLFW callbacks ────────────────────────────────────────────────────────
-// CHANGED: replaced WndProc with GLFW key callback for panic hotkey
-
 static void glfwKeyCallback(GLFWwindow* window, int key, int scancode,
                             int action, int mods) {
   ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
@@ -238,8 +230,6 @@ static void glfwKeyCallback(GLFWwindow* window, int key, int scancode,
     }
   }
 }
-
-// ── Helpers (unchanged from Windows version) ─────────────────────────────
 
 static bool drawSaveIconButton(const char* id) {
   ImVec2 size(16, 16);
@@ -363,12 +353,8 @@ inline void applyUiTheme(Settings& settings) {
                                                    bgColor.z, 0.84f};
 }
 
-// CHANGED: no-op on Linux — hotkeyVk now stores a GLFW_KEY_* value
-// Hotkey fires via glfwKeyCallback when window is focused (no global hotkeys on
-// Linux)
 static void registerPanicHotkey(const Settings&) {}
 
-// CHANGED: uses GLFW key names instead of MapVirtualKeyA
 inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
   std::string s;
   if (mods & 2) s += "Ctrl+";
@@ -389,8 +375,6 @@ inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
   return s;
 }
 
-// CHANGED: replaced SHBrowseForFolderA with a plain path argument
-// caller in settings panel shows an InputText for the path
 inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
                                      float& minDur, float& maxDur,
                                      float& xViewMin, float& xViewMax,
@@ -529,12 +513,13 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
   return true;
 }
 
-// ── runUI ─────────────────────────────────────────────────────────────────
-
 inline void runUI(Settings& settings, ShockerHub& hub,
                   const std::string& settingsPath) {
-  // CHANGED: GLFW + OpenGL3 init instead of Win32 + D3D11
+  static bool g_canSetWindowPos = true;
   glfwSetErrorCallback([](int err, const char* desc) {
+    if (err == 65548) {
+      return;
+    }
     logMsg("[GLFW] Error {}: {}", err, desc);
   });
   if (!glfwInit()) {
@@ -557,13 +542,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     return;
   }
 
+#ifdef _WIN32
   glfwSetWindowPos(g_window, settings.windowX, settings.windowY);
+#endif
   glfwMakeContextCurrent(g_window);
   glfwSwapInterval(1);  // vsync
 
   g_hub = &hub;
   g_settingsForHotkey = &settings;
-  g_wakeUiFunc = [] { glfwPostEmptyEvent(); };  // ADDED: wake logger → UI
+  g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
 
   glfwSetKeyCallback(g_window, glfwKeyCallback);
 
@@ -574,7 +561,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   ImGuiIO& io = ImGui::GetIO();
   io.IniFilename = nullptr;
 
-  // CHANGED: load fonts from common Linux paths, fall back to ImGui default
   ImFont* boldFont = nullptr;
   {
     const char* regularPaths[] = {
@@ -597,7 +583,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
 
-    // Merge ⚡ (U+26A1) from a symbols font if available
     for (auto p = symPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
         ImFontConfig cfg;
@@ -627,11 +612,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   ImGui::StyleColorsDark();
   applyUiTheme(settings);
 
-  ImGui_ImplGlfw_InitForOpenGL(
-      g_window, false);  // false = we installed our own key callback
+  ImGui_ImplGlfw_InitForOpenGL(g_window, true);
+  glfwSetKeyCallback(g_window, glfwKeyCallback);
   ImGui_ImplOpenGL3_Init("#version 330 core");
 
-  // ── dynamic UI state (unchanged) ─────────────────────────────────────
+  // Dynamic UI state
   float minDur = settings.minShockDuration;
   float maxDur = settings.maxShockDuration;
   bool cooldownEnabled = settings.cooldownEnabled;
@@ -756,7 +741,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool forceFrame = true;
   auto lastAnimTime = steady_clock::now();
 
-  // CHANGED: render loop — GLFW events instead of Win32 message pump
   while (!glfwWindowShouldClose(g_window)) {
     bool minimized = glfwGetWindowAttrib(g_window, GLFW_ICONIFIED);
     bool focused = glfwGetWindowAttrib(g_window, GLFW_FOCUSED) || showSettings;
@@ -774,7 +758,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       continue;
     }
 
-    // CHANGED: replaced MsgWaitForMultipleObjects with glfwWaitEventsTimeout
     if (forceFrame) {
       glfwPollEvents();
     } else if (!needsAnimation) {
@@ -786,7 +769,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     // Window position tracking
     {
-      int wx, wy, ww, wh;
+      int ww, wh;
+#ifdef _WIN32
+      int wx, wy;
       glfwGetWindowPos(g_window, &wx, &wy);
       glfwGetWindowSize(g_window, &ww, &wh);
       bool fullyIdle = (statsAnim == 0.f && settingsAnim == 0.f);
@@ -796,6 +781,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       settings.windowY = wy;
       settings.windowH = wh;
+#else
+      glfwGetWindowSize(g_window, &ww, &wh);
+      settings.windowW = ww;
+      settings.windowH = wh;
+#endif
     }
 
     // Panel slide animations
@@ -813,11 +803,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (statsAnim < 0.043f) statsAnim = 0.f;
       if (fabs(statsAnim - prevStats) > 0.001f ||
           fabs(settingsAnim - prevSett) > 0.001f) {
+#ifdef _WIN32
         int sw = (int)roundf(statsAnim * 280.f);
         int settW = (int)roundf(settingsAnim * 550.f);
         glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
         glfwSetWindowSize(g_window, settings.windowW + sw + settW,
                           settings.windowH);
+#endif
       }
       if ((settingsAnim == 0.f && prevSett > 0.f) ||
           (statsAnim == 0.f && prevStats > 0.f))
@@ -1186,10 +1178,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     ImGui::End();
 
-    // CHANGED: applyAndRestart has no HWND on Linux, updater is stubbed
     if (updateReady.exchange(false)) Updater::applyAndRestart();
 
-    // commitAll lambda (unchanged)
     auto commitAll = [&]() {
       settings.shockParameter = stgShockParam;
       settings.secondShockParameter = stgSecondParam;
@@ -1357,7 +1347,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       ImGui::Spacing();
 
-      // CHANGED: hotkey capture uses glfwGetKey instead of GetAsyncKeyState
       ImGui::SeparatorText("Hotkey");
       ImGui::TextDisabled("Panic button:");
       ImGui::SameLine();
@@ -1455,7 +1444,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::Separator();
       ImGui::Spacing();
 
-      // CHANGED: replaced SHBrowseForFolderA with InputText
       static char importPathBuf[512] = {};
       ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - 135.f);
       ImGui::InputTextWithHint("##importpath", "/path/to/python/shocker-link",
@@ -1492,7 +1480,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           commitAll();
           registerPanicHotkey(settings);
           shouldRestart = true;
-          // CHANGED: glfwSetWindowShouldClose instead of PostMessage(WM_CLOSE)
           glfwSetWindowShouldClose(g_window, 1);
         }
       } else {
@@ -1509,7 +1496,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::End();
     }
 
-    // Stats panel (slides out left) — unchanged widget code
+    // Stats panel (slides out left)
     if (statsAnim > 0.43f) {
       ImGui::SetNextWindowPos({0.f, 0.f}, ImGuiCond_Always);
       ImGui::SetNextWindowSize({statsW, (float)settings.windowH},
@@ -1649,7 +1636,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::End();
     }
 
-    // Ctrl+Z / Ctrl+Y — CHANGED: glfwGetKey instead of GetAsyncKeyState
+    // Ctrl+Z / Ctrl+Y
     const bool editingText = io.WantTextInput;
     bool ctrlDown = glfwGetKey(g_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                     glfwGetKey(g_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
@@ -1701,7 +1688,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   settings.xViewMin = xViewMin;
   settings.xViewMax = xViewMax;
 
-  // CHANGED: GLFW/OpenGL shutdown instead of D3D11
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImPlot::DestroyContext();
