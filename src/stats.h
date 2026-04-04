@@ -28,7 +28,11 @@ struct Stats {
     auto now = std::chrono::system_clock::now();
     auto t = std::chrono::system_clock::to_time_t(now);
     std::tm tm{};
+#ifdef _WIN32
     localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
     char buf[12];
     snprintf(buf, sizeof(buf), "%04d-%02d-%02d", tm.tm_year + 1900,
              tm.tm_mon + 1, tm.tm_mday);
@@ -82,7 +86,11 @@ struct Stats {
       auto day = now - std::chrono::hours(24 * i);
       auto t = std::chrono::system_clock::to_time_t(day);
       std::tm tm{};
+#ifdef _WIN32
       localtime_s(&tm, &t);
+#else
+      localtime_r(&t, &tm);
+#endif
       char buf[12];
       snprintf(buf, sizeof(buf), "%04d-%02d-%02d", tm.tm_year + 1900,
                tm.tm_mon + 1, tm.tm_mday);

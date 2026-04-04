@@ -2,8 +2,10 @@
 
 #include <fmt/ranges.h>
 #include <serialib.h>
+#ifdef _WIN32
 #include <winhttp.h>
 #include <wininet.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -281,6 +283,7 @@ class ShockerHub {
   std::unordered_map<int, int> pishockShockerToClient;
   bool pishockResolved = false;
 
+#ifdef _WIN32
   // WinINet GET - used for PiShock endpoints
   static std::string httpGet(
       const std::string& url,
@@ -506,6 +509,21 @@ class ShockerHub {
     WinHttpCloseHandle(hSession);
     return ok;
   }
+#else
+  static std::string httpGet(const std::string&,
+                             const std::vector<std::string>& = {}) {
+    return "";
+  }
+  static std::string winHttpRequest(const std::string&, const std::string&,
+                                    const std::string& = "",
+                                    const std::vector<std::string>& = {}) {
+    return "";
+  }
+  bool sendPiShockWs(int, int, int, int, bool) {
+    logMsg("[ShockerHub] PiShock WS not implemented on Linux");
+    return false;
+  }
+#endif
 
   bool scanForPishock() {
     for (int i = 1; i <= 24; i++) {

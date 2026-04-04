@@ -1,4 +1,6 @@
+#ifdef _WIN32
 #pragma comment(linker, "/ENTRY:mainCRTStartup")
+#endif
 
 #include <atomic>
 #include <csignal>
@@ -89,6 +91,7 @@ int main() {
   gStats.save("stats.json");
 
   if (shouldRestart) {
+#ifdef _WIN32
     char exePath[MAX_PATH] = {};
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
     ShellExecuteA(
@@ -96,6 +99,7 @@ int main() {
         ("/c timeout /t 1 /nobreak && \"" + std::string(exePath) + "\"")
             .c_str(),
         nullptr, SW_HIDE);
+#endif
   }
   return 0;
 }

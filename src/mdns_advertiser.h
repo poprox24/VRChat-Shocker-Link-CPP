@@ -1,4 +1,7 @@
 #pragma once
+#ifdef _WIN32
+// Windows
+
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -269,3 +272,14 @@ class MdnsAdvertiser {
     }
   }
 };
+#else
+// Linux
+
+#include <string>
+class MdnsAdvertiser {
+ public:
+  MdnsAdvertiser(const std::string&, int) {}
+  bool start() { return true; }
+  void stop() {}
+};
+#endif

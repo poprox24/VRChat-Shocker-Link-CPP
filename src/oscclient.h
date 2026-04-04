@@ -1,4 +1,6 @@
 #pragma once
+#ifdef _WIN32
+// Windows
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -308,3 +310,21 @@ class OscQueryServer {
     }
   }
 };
+#else
+// Linux
+
+#include <condition_variable>
+#include <mutex>
+#include <string>
+class OscQueryServer {
+ public:
+  std::mutex shockMutex;
+  std::condition_variable shockCV;
+  bool shockPending = false, secondShockPending = false;
+  OscQueryServer(int, const std::string&) {}
+  void setShockPath(const std::string&) {}
+  void setSecondShockPath(const std::string&) {}
+  bool start() { return true; }
+  void stop() {}
+};
+#endif

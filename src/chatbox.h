@@ -1,4 +1,6 @@
 #pragma once
+#ifdef _WIN32
+// Windows
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -129,3 +131,13 @@ class ChatboxSender {
            sizeof(dest));
   }
 };
+#else
+// Linux
+
+#include <string>
+class ChatboxSender {
+ public:
+  ChatboxSender(const std::string& = "127.0.0.1", int = 9000) {}
+  void send(const std::string&, bool = true) {}
+};
+#endif

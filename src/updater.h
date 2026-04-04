@@ -1,5 +1,7 @@
-
 #pragma once
+#ifdef _WIN32
+// Windows
+
 #include <windows.h>
 #include <wininet.h>
 #include <winsock2.h>
@@ -159,3 +161,15 @@ inline void applyAndRestart(HWND hwnd) {
 }
 
 }  // namespace Updater
+#else
+// Linux
+
+#include <atomic>
+#include <string>
+inline std::atomic<bool> updateReady{false};
+inline std::string pendingExePath;
+namespace Updater {
+inline void checkAsync() {}
+inline void applyAndRestart() {}
+}  // namespace Updater
+#endif
