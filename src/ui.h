@@ -522,6 +522,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     logMsg("[GLFW] Error {}: {}", err, desc);
   });
+#ifndef _WIN32
+  glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+#endif
   if (!glfwInit()) {
     logMsg("[UI] glfwInit failed");
     return;

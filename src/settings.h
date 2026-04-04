@@ -103,7 +103,10 @@ class Settings {
     try {
       std::ifstream file(path);
       if (!file.is_open()) return;
-      nlohmann::json j = nlohmann::json::parse(file);
+      std::string content((std::istreambuf_iterator<char>(file)),
+                          std::istreambuf_iterator<char>());
+      if (content.empty()) return;
+      nlohmann::json j = nlohmann::json::parse(content);
 
       windowX = j.value("windowX", 100);
       windowY = j.value("windowY", 100);
