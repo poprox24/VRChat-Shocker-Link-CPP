@@ -556,6 +556,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
 
   glfwSetKeyCallback(g_window, glfwKeyCallback);
+  glfwSetWindowCloseCallback(g_window,
+                             [](GLFWwindow*) { glfwPostEmptyEvent(); });
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -773,7 +775,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     // Window position tracking
     {
       int ww, wh;
-#ifdef _WIN32
       int wx, wy;
       glfwGetWindowPos(g_window, &wx, &wy);
       glfwGetWindowSize(g_window, &ww, &wh);
@@ -784,11 +785,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       settings.windowY = wy;
       settings.windowH = wh;
-#else
-      glfwGetWindowSize(g_window, &ww, &wh);
-      settings.windowW = ww;
-      settings.windowH = wh;
-#endif
     }
 
     // Panel slide animations
@@ -806,13 +802,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (statsAnim < 0.043f) statsAnim = 0.f;
       if (fabs(statsAnim - prevStats) > 0.001f ||
           fabs(settingsAnim - prevSett) > 0.001f) {
-#ifdef _WIN32
         int sw = (int)roundf(statsAnim * 280.f);
         int settW = (int)roundf(settingsAnim * 550.f);
         glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
         glfwSetWindowSize(g_window, settings.windowW + sw + settW,
                           settings.windowH);
-#endif
       }
       if ((settingsAnim == 0.f && prevSett > 0.f) ||
           (statsAnim == 0.f && prevStats > 0.f))
