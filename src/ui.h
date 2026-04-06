@@ -557,7 +557,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   g_settingsForHotkey = &settings;
   g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
 
-  glfwSetKeyCallback(g_window, glfwKeyCallback);
   glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
     glfwSetWindowShouldClose(win, GLFW_TRUE);
     running = false;
