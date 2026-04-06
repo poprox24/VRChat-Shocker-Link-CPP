@@ -1175,7 +1175,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     ImGui::End();
 
-    if (updateReady.exchange(false)) Updater::applyAndRestart();
+    if (updateReady.exchange(false)) {
+      Updater::applyAndRestart();
+      glfwSetWindowShouldClose(g_window, 1);
+    }
 
     auto commitAll = [&]() {
       settings.shockParameter = stgShockParam;

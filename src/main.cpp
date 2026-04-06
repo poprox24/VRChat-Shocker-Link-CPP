@@ -82,14 +82,17 @@ int main() {
 
   Updater::checkAsync();
   runUI(settings, hub, settingsLocation);
-  running = false;
-  oscBridge.join();
 
   // SHUTDOWN
-  oscQuery.stop();
-  hub.shutdown();
+  running = false;
+
   settings.save(settingsLocation);
   gStats.save("stats.json");
+
+  oscBridge.join();
+
+  oscQuery.stop();
+  hub.shutdown();
 
   if (shouldRestart) {
 #ifdef _WIN32

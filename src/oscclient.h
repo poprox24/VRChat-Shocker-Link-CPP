@@ -170,6 +170,7 @@ class OscQueryServer {
   bool start() {
     httpServer_.set_read_timeout(1, 0);
     httpServer_.set_write_timeout(1, 0);
+    httpServer_.set_idle_interval(0, 500000);
     httpServer_.Get(
         ".*", [this](const httplib::Request& req, httplib::Response& res) {
           handleHttpRequest(req, res);

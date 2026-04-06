@@ -295,7 +295,8 @@ class ShockerHub {
     curl_easy_setopt(c, CURLOPT_URL, url.c_str());
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, curlWrite);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, &result);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 3L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 3L);
     if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
     curl_easy_perform(c);
     if (hdrs) curl_slist_free_all(hdrs);
@@ -317,7 +318,8 @@ class ShockerHub {
     curl_easy_setopt(c, CURLOPT_URL, url.c_str());
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, curlWrite);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, &result);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 3L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 3L);
     if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
     if (method == "POST") {
       curl_easy_setopt(c, CURLOPT_POST, 1L);
@@ -365,7 +367,7 @@ class ShockerHub {
 
     curl_easy_setopt(c, CURLOPT_URL, url.c_str());
     curl_easy_setopt(c, CURLOPT_CONNECT_ONLY, 2L);  // WebSocket mode
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 3L);
 
     CURLcode res = curl_easy_perform(c);
     if (res != CURLE_OK) {
