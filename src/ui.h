@@ -515,6 +515,8 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
 
 inline void runUI(Settings& settings, ShockerHub& hub,
                   const std::string& settingsPath) {
+  extern std::atomic<bool> running;
+
   static bool g_canSetWindowPos = true;
   glfwSetErrorCallback([](int err, const char* desc) {
     if (err == 65548) {
@@ -556,8 +558,16 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
 
   glfwSetKeyCallback(g_window, glfwKeyCallback);
-  glfwSetWindowCloseCallback(g_window,
-                             [](GLFWwindow*) { glfwPostEmptyEvent(); });
+  glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
+    glfwSetWindowShouldClose(win, GLFW_TRUE);
+    running = false;
+
+    g_wakeUiFunc = nullptr;
+
+    if (g_hub) {
+      g_hub->queueCV.notify_all();
+    }
+  });
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -618,7 +628,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   applyUiTheme(settings);
 
   ImGui_ImplGlfw_InitForOpenGL(g_window, true);
-  glfwSetKeyCallback(g_window, glfwKeyCallback);
   ImGui_ImplOpenGL3_Init("#version 330 core");
 
   // Dynamic UI state
@@ -746,7 +755,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool forceFrame = true;
   auto lastAnimTime = steady_clock::now();
 
-  while (!glfwWindowShouldClose(g_window)) {
+  while (!glfwWindowShouldClose(g_window) && running.load()) {
     bool minimized = glfwGetWindowAttrib(g_window, GLFW_ICONIFIED);
     bool focused = glfwGetWindowAttrib(g_window, GLFW_FOCUSED) || showSettings;
     bool cooldownActive = settings.cooldownEnabled &&
@@ -835,18 +844,19 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         {ImGui::GetIO().DisplaySize.x - statsW, ImGui::GetIO().DisplaySize.y});
     ImGui::Begin("##root", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoScrollWithMouse |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     float fontSize = ImGui::GetFontSize();
-    float panelW = fontSize * 10.f;
+    float leftPanelWidth = std::max(180.f, fontSize * 11.5f);
     float lineH = ImGui::GetTextLineHeightWithSpacing();
     float logH = lineH * 3.f + ImGui::GetStyle().WindowPadding.y * 2.f;
     float rowH = ImGui::GetTextLineHeightWithSpacing() + 3.f;
     float sepH = 1.f + ImGui::GetStyle().ItemSpacing.y * 2.f;
     float bottomH = rowH + logH + sepH;
 
-    ImGui::BeginChild("##controls", {panelW, -bottomH}, true);
+    ImGui::BeginChild("##controls", ImVec2(leftPanelWidth, -bottomH), true);
     ImGui::SetCursorPosY(ImGui::GetStyle().WindowPadding.y * 0.5f);
     ImGui::Spacing();
     ImGui::Text("Min Duration (s)");
@@ -875,7 +885,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       bool isDefault = (settings.defaultPreset == i);
       if (isDefault)
         ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.54f, 0.34f, 1.f});
-      ImGui::Button(label.c_str(), {panelW - fontSize * 2.5f, 0});
+      ImGui::Button(label.c_str(),
+                    ImVec2(fontSize * 10.f - fontSize * 2.5f, 0));
       ImGui::SetItemTooltip(
           "LClick - Load\nMClick - Startup default\nRClick - Rename");
       if (isDefault) ImGui::PopStyleColor();
@@ -956,6 +967,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       } else
         closeSettingsModal();
     }
+
     if (showSettings)
       ImGui::SetItemTooltip("Will close settings without saving.");
 
@@ -1322,33 +1334,69 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::Spacing();
 
       ImGui::SeparatorText("Notifications");
+
 #ifdef _WIN32
       ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
       if (stgNotifEnabled) {
         ImGui::SameLine();
         ImGui::TextDisabled("Provider:");
         ImGui::SameLine();
+
+        // XSOverlay button
         if (!stgNotifUseOvr)
           ImGui::PushStyleColor(
               ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
         else
           ImGui::PushStyleColor(ImGuiCol_Button,
                                 ImGui::GetStyle().Colors[ImGuiCol_Button]);
+
         if (ImGui::Button("XSOverlay##np", {90, 0})) stgNotifUseOvr = false;
         ImGui::PopStyleColor();
+
         ImGui::SameLine(0, 0);
+
+        // OVRToolkit button
         if (stgNotifUseOvr)
           ImGui::PushStyleColor(
               ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
         else
           ImGui::PushStyleColor(ImGuiCol_Button,
                                 ImGui::GetStyle().Colors[ImGuiCol_Button]);
+
         if (ImGui::Button("OVRToolkit##np", {90, 0})) stgNotifUseOvr = true;
         ImGui::PopStyleColor();
       }
 #else
-      ImGui::Text(
-          "Unavailable\nXSOverlay and OVRToolkit are windows only tools.");
+      // Linux: Force XSOverlay, grey out OVRToolkit
+      ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
+
+      if (stgNotifEnabled) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("Provider:");
+
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+        ImGui::Button("XSOverlay##np", {90, 0});  // Active / selected
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine(0, 0);
+
+        // Greyed out OVRToolkit (disabled)
+        ImGui::BeginDisabled();
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
+        ImGui::Button("OVRToolkit##np", {90, 0});
+        ImGui::PopStyleColor();
+        ImGui::EndDisabled();
+
+        ImGui::Text(
+            "XSOverlay notifications work with WayVR\nXSOverlay and OVRToolkit "
+            "don't work on linux");
+      }
+
+      // Force XSOverlay on Linux
+      stgNotifUseOvr = false;
 #endif
       ImGui::Spacing();
 
@@ -1685,6 +1733,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     glfwSwapBuffers(g_window);
     forceFrame = false;
   }
+
+  running = false;
+  g_wakeUiFunc = nullptr;
+
+  hub.shutdown();
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   // Cleanup
   settings.minShockDuration = minDur;

@@ -35,6 +35,8 @@ class ShockerHub {
   std::atomic<double> lastTriggerTimeAtomic{0.0};
   std::atomic<double> activeCooldownDuration{0.0};
 
+  std::condition_variable queueCV;
+
   ChatboxSender chatbox;
 
   bool isConnected = false;
@@ -270,7 +272,6 @@ class ShockerHub {
   serialib serial;
 
   std::queue<std::tuple<std::optional<int>, bool, bool>> shockQueue;
-  std::condition_variable queueCV;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
 

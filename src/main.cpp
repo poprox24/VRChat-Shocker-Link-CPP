@@ -86,13 +86,18 @@ int main() {
   // SHUTDOWN
   running = false;
 
-  settings.save(settingsLocation);
-  gStats.save("stats.json");
+  oscQuery.shockCV.notify_all();
+  hub.queueCV.notify_all();
 
-  oscBridge.join();
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+  if (oscBridge.joinable()) oscBridge.join();
 
   oscQuery.stop();
   hub.shutdown();
+
+  settings.save(settingsLocation);
+  gStats.save("stats.json");
 
   if (shouldRestart) {
 #ifdef _WIN32

@@ -12,6 +12,16 @@
 
 inline void (*g_wakeUiFunc)() = nullptr;
 
+inline void safeWakeUi() {
+  if (g_wakeUiFunc) {
+    static std::atomic<bool> waking{false};
+    if (waking.exchange(true)) return;
+
+    g_wakeUiFunc();
+    waking = false;
+  }
+}
+
 struct Logger {
   static constexpr int MAX_LINES = 100;
   std::deque<std::string> lines;
@@ -22,6 +32,7 @@ struct Logger {
 
   void add(std::string msg) {
     if (!msg.empty() && msg.back() == '\n') msg.pop_back();
+
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
     std::tm tm{};
@@ -39,7 +50,7 @@ struct Logger {
       logFile << stamped << '\n';
       logFile.flush();
     }
-    if (g_wakeUiFunc) g_wakeUiFunc();
+    if (g_wakeUiFunc) safeWakeUi();
   }
 };
 
