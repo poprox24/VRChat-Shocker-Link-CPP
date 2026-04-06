@@ -13,7 +13,12 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 using namespace std::chrono;
+
+#ifndef _WIN32
+#include <png.h>
+#endif
 
 #include <yaml-cpp/yaml.h>
 
@@ -32,6 +37,64 @@ using namespace std::chrono;
 #include "updater.h"
 
 static constexpr const char* kWindowTitle = "Shocker Link";
+
+#ifndef _WIN32
+static bool loadPngRgbaFromFile(const std::filesystem::path& pngPath,
+                                int& width, int& height,
+                                std::vector<uint8_t>& pixels) {
+  std::ifstream file(pngPath, std::ios::binary);
+  if (!file) return false;
+  std::vector<uint8_t> pngData((std::istreambuf_iterator<char>(file)), {});
+  if (pngData.empty()) return false;
+
+  png_image image;
+  memset(&image, 0, sizeof(image));
+  image.version = PNG_IMAGE_VERSION;
+  if (!png_image_begin_read_from_memory(&image, pngData.data(), pngData.size()))
+    return false;
+
+  image.format = PNG_FORMAT_RGBA;
+  size_t size = PNG_IMAGE_SIZE(image);
+  pixels.assign(size, 0);
+  if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr))
+    return false;
+
+  width = static_cast<int>(image.width);
+  height = static_cast<int>(image.height);
+  return true;
+}
+
+static bool setWindowIcon(GLFWwindow* window) {
+  std::filesystem::path sourcePath =
+      std::filesystem::path(__FILE__).parent_path() / "icon.png";
+  std::filesystem::path buildPath =
+      std::filesystem::current_path() / "src" / "icon.png";
+  std::filesystem::path rootBuildPath =
+      std::filesystem::current_path().parent_path() / "src" / "icon.png";
+
+  std::vector<std::filesystem::path> candidates = {sourcePath, buildPath,
+                                                   rootBuildPath};
+  std::filesystem::path pngPath;
+  for (auto& path : candidates) {
+    if (std::filesystem::exists(path)) {
+      pngPath = path;
+      break;
+    }
+  }
+  if (pngPath.empty()) return false;
+
+  std::vector<uint8_t> pixels;
+  int width = 0, height = 0;
+  if (!loadPngRgbaFromFile(pngPath, width, height, pixels)) return false;
+
+  GLFWimage icon;
+  icon.width = width;
+  icon.height = height;
+  icon.pixels = pixels.data();
+  glfwSetWindowIcon(window, 1, &icon);
+  return true;
+}
+#endif
 
 static GLFWwindow* g_window = nullptr;
 static ShockerHub* g_hub = nullptr;
@@ -546,6 +609,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     glfwTerminate();
     return;
   }
+
+#ifndef _WIN32
+  if (!setWindowIcon(g_window)) {
+    logMsg("[UI] Failed to load window icon");
+  }
+#endif
 
 #ifdef _WIN32
   glfwSetWindowPos(g_window, settings.windowX, settings.windowY);

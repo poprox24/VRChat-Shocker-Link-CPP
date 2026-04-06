@@ -57,6 +57,7 @@ if(WIN32)
 else()
     find_package(OpenGL REQUIRED)
     find_package(Threads REQUIRED)
+    find_package(PNG REQUIRED)
 
     FetchContent_Declare(glfw GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG 3.4)
     set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -72,7 +73,7 @@ else()
     set_target_properties(ShockerLink PROPERTIES OUTPUT_NAME "Shocker_Link")
     target_link_libraries(ShockerLink PUBLIC
         yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib
-        glfw OpenGL::GL Threads::Threads CURL::libcurl
+        glfw OpenGL::GL Threads::Threads CURL::libcurl PNG::PNG
     )
 endif()
 
