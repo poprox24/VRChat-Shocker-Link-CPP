@@ -52,18 +52,9 @@ class MdnsAdvertiser {
 
     char hostname[256] = {};
     gethostname(hostname, sizeof(hostname));
-    addrinfo hints{}, *res = nullptr;
-    hints.ai_family = AF_INET;
-    uint32_t localAddr = INADDR_ANY;
-    if (getaddrinfo(hostname, nullptr, &hints, &res) == 0 && res) {
-      localAddr = ((sockaddr_in*)res->ai_addr)->sin_addr.s_addr;
-      freeaddrinfo(res);
-    }
     hostname_ = hostname;
 
-    setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_IF, (char*)&localAddr,
-               sizeof(localAddr));
-    int loop = 0;
+    int loop = 1;
     setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_LOOP, (char*)&loop,
                sizeof(loop));
     int ttl = 255;
@@ -84,7 +75,7 @@ class MdnsAdvertiser {
 
     ip_mreq mreq{};
     inet_pton(AF_INET, "224.0.0.251", &mreq.imr_multiaddr);
-    mreq.imr_interface.s_addr = localAddr;
+    mreq.imr_interface.s_addr = INADDR_ANY;
     setsockopt(sock_, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq,
                sizeof(mreq));
 
