@@ -162,14 +162,149 @@ inline void applyAndRestart(HWND hwnd) {
 
 }  // namespace Updater
 #else
-// Linux
+// CHANGED: Linux implementation using curl + exec
+
+#include <curl/curl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <atomic>
+#include <nlohmann/json.hpp>
 #include <string>
+#include <thread>
+
+#include "logger.h"
+#include "version.h"
+
 inline std::atomic<bool> updateReady{false};
 inline std::string pendingExePath;
+
 namespace Updater {
-inline void checkAsync() {}
-inline void applyAndRestart() {}
+
+inline bool newerThan(const std::string& remote, const std::string& local) {
+  auto parse = [](const std::string& v) {
+    std::string s = (!v.empty() && v[0] == 'v') ? v.substr(1) : v;
+    int a = 0, b = 0, c = 0;
+    sscanf(s.c_str(), "%d.%d.%d", &a, &b, &c);
+    return std::make_tuple(a, b, c);
+  };
+  return parse(remote) > parse(local);
+}
+
+// ADDED: curl write helper (static so no ODR issues)
+static size_t curlWriteUpd(void* ptr, size_t sz, size_t n, std::string* out) {
+  out->append(static_cast<char*>(ptr), sz * n);
+  return sz * n;
+}
+
+static size_t curlWriteFile(void* ptr, size_t sz, size_t n, FILE* f) {
+  return fwrite(ptr, sz, n, f);
+}
+
+inline void checkAsync() {
+  std::thread([] {
+    CURL* c = curl_easy_init();
+    if (!c) return;
+    std::string resp;
+    std::string ua = std::string("ShockerLink/") + APP_VERSION;
+    curl_easy_setopt(c, CURLOPT_URL,
+                     "https://api.github.com/repos/poprox24/"
+                     "VRChat-Shocker-Link-CPP/releases/latest");
+    curl_easy_setopt(c, CURLOPT_USERAGENT, ua.c_str());
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, curlWriteUpd);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &resp);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 15L);
+    if (curl_easy_perform(c) != CURLE_OK) {
+      logMsg("[Update] Could not reach GitHub");
+      curl_easy_cleanup(c);
+      return;
+    }
+    curl_easy_cleanup(c);
+
+    try {
+      auto j = nlohmann::json::parse(resp);
+      std::string tag = j["tag_name"].get<std::string>();
+      if (!newerThan(tag, APP_VERSION)) {
+        logMsg("[Update] Up to date ({})", APP_VERSION);
+        return;
+      }
+      logMsg("[Update] New version {} found, downloading...", tag);
+
+      std::string dlUrl;
+      for (auto& asset : j["assets"]) {
+        std::string name = asset["name"].get<std::string>();
+        if (name.size() >= 4 && name.substr(name.size() - 4) == ".exe")
+          continue;  // skip .exe
+        if (name.find("Shocker") != std::string::npos) {
+          dlUrl = asset["browser_download_url"].get<std::string>();
+          break;
+        }
+      }
+      // fallback: grab first non-.exe asset
+      if (dlUrl.empty()) {
+        for (auto& asset : j["assets"]) {
+          std::string name = asset["name"].get<std::string>();
+          if (name.substr(name.size() - 4) != ".exe") {
+            dlUrl = asset["browser_download_url"].get<std::string>();
+            break;
+          }
+        }
+      }
+      if (dlUrl.empty()) {
+        logMsg("[Update] No Linux binary in release assets");
+        return;
+      }
+
+      // Get current exe path via /proc/self/exe
+      char exePath[4096] = {};
+      ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+      if (len < 0) {
+        logMsg("[Update] readlink /proc/self/exe failed");
+        return;
+      }
+      pendingExePath = std::string(exePath, len);
+      std::string newPath = pendingExePath + ".new";
+
+      FILE* f = fopen(newPath.c_str(), "wb");
+      if (!f) {
+        logMsg("[Update] Cannot open {} for writing", newPath);
+        return;
+      }
+      CURL* dc = curl_easy_init();
+      curl_easy_setopt(dc, CURLOPT_URL, dlUrl.c_str());
+      curl_easy_setopt(dc, CURLOPT_WRITEFUNCTION, curlWriteFile);
+      curl_easy_setopt(dc, CURLOPT_WRITEDATA, f);
+      curl_easy_setopt(dc, CURLOPT_FOLLOWLOCATION, 1L);
+      curl_easy_setopt(dc, CURLOPT_TIMEOUT, 120L);
+      CURLcode res = curl_easy_perform(dc);
+      fclose(f);
+      curl_easy_cleanup(dc);
+
+      if (res != CURLE_OK) {
+        logMsg("[Update] Download failed: {}", curl_easy_strerror(res));
+        return;
+      }
+      logMsg("[Update] Ready, will restart shortly");
+      updateReady = true;
+    } catch (std::exception& e) {
+      logMsg("[Update] Error: {}", e.what());
+    }
+  }).detach();
+}
+
+inline void applyAndRestart() {
+  std::string newPath = pendingExePath + ".new";
+  chmod(newPath.c_str(), 0755);
+  // Fork a short-lived child: sleep, replace, relaunch
+  if (fork() == 0) {
+    sleep(1);
+    if (rename(newPath.c_str(), pendingExePath.c_str()) == 0)
+      execl(pendingExePath.c_str(), pendingExePath.c_str(), nullptr);
+    _exit(1);
+  }
+  // Parent exits normally (GLFW close is called by the caller via
+  // shouldRestart)
+}
+
 }  // namespace Updater
 #endif

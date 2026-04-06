@@ -40,6 +40,8 @@ set(SHOCKER_COMMON_SOURCES
     ${implot_SOURCE_DIR}/implot_items.cpp
 )
 
+find_package(CURL 7.86 REQUIRED)
+
 if(WIN32)
     list(APPEND SHOCKER_COMMON_SOURCES
         src/resource.rc
@@ -49,8 +51,8 @@ if(WIN32)
     add_executable(ShockerLink WIN32 ${SHOCKER_COMMON_SOURCES})
     set_target_properties(ShockerLink PROPERTIES WIN32_EXECUTABLE TRUE OUTPUT_NAME "Shocker_Link")
     target_link_libraries(ShockerLink PUBLIC
-        yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib
-        ws2_32 d3d11 dxgi d3dcompiler comdlg32 shell32 dwmapi wininet winhttp
+        yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib CURL::libcurl
+        ws2_32 d3d11 dxgi d3dcompiler comdlg32 shell32 dwmapi
     )
 else()
     find_package(OpenGL REQUIRED)
@@ -70,7 +72,7 @@ else()
     set_target_properties(ShockerLink PROPERTIES OUTPUT_NAME "Shocker_Link")
     target_link_libraries(ShockerLink PUBLIC
         yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib
-        glfw OpenGL::GL Threads::Threads
+        glfw OpenGL::GL Threads::Threads CURL::libcurl
     )
 endif()
 

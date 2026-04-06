@@ -1,5 +1,6 @@
 #ifdef _WIN32
 #pragma comment(linker, "/ENTRY:mainCRTStartup")
+#include <unistd.h>
 #endif
 
 #include <atomic>
@@ -99,6 +100,17 @@ int main() {
         ("/c timeout /t 1 /nobreak && \"" + std::string(exePath) + "\"")
             .c_str(),
         nullptr, SW_HIDE);
+#else
+    char exePath[4096] = {};
+    ssize_t n = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+    if (n > 0) {
+      exePath[n] = '\0';
+      if (fork() == 0) {
+        sleep(1);
+        execl(exePath, exePath, nullptr);
+        _exit(1);
+      }
+    }
 #endif
   }
   return 0;

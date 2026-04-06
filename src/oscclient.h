@@ -1,11 +1,30 @@
 #pragma once
-#ifdef _WIN32
-// Windows
 
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+using sock_t = SOCKET;
+#define SOCK_INVAL INVALID_SOCKET
+#define sock_close closesocket
+#define SOCK_NFDS(s) 0
+inline void sock_init() {
+  WSADATA w;
+  WSAStartup(MAKEWORD(2, 2), &w);
+}
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+using sock_t = int;
+#define SOCK_INVAL (-1)
+#define sock_close close
+#define SOCK_NFDS(s) ((s) + 1)
+inline void sock_init() {}
+#endif
 
 #include <atomic>
+#include <condition_variable>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -16,139 +35,100 @@
 #include <unordered_map>
 
 #include "httplib.h"
+#include "logger.h"
 #include "mdns_advertiser.h"
 
 class OscListener {
  public:
-  using Callback = std::function<void(const std::string& path, float value)>;
+  using Callback = std::function<void(const std::string&, float)>;
 
-  OscListener(int port, Callback callback) : port_(port), callback_(callback) {}
+  OscListener(int port, Callback cb) : port_(port), callback_(cb) {}
 
   bool start() {
-    WSADATA wsa;
-    WSAStartup(MAKEWORD(2, 2), &wsa);
-
+    sock_init();
     sock_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock_ == INVALID_SOCKET) return false;
-
-    BOOL reuse = TRUE;
+    if (sock_ == SOCK_INVAL) return false;
+    int reuse = 1;
     setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse));
-
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port_);
     addr.sin_addr.s_addr = INADDR_ANY;
-
     if (bind(sock_, (sockaddr*)&addr, sizeof(addr)) != 0) {
-      closesocket(sock_);
+      sock_close(sock_);
       return false;
     }
-
     running_ = true;
-    thread_ = std::thread([this]() { loop(); });
-    logMsg("[OSC] Listening on UDP port {}\n", port_);
+    thread_ = std::thread([this] { loop(); });
+    logMsg("[OSC] Listening on UDP port {}", port_);
     return true;
   }
 
   void stop() {
     running_ = false;
-    closesocket(sock_);
+    sock_close(sock_);
     if (thread_.joinable()) thread_.join();
   }
 
  private:
   int port_;
   Callback callback_;
-  SOCKET sock_ = INVALID_SOCKET;
+  sock_t sock_ = SOCK_INVAL;
   std::atomic<bool> running_{false};
   std::thread thread_;
 
-  static std::string readOscString(const uint8_t* data, size_t len,
-                                   size_t& offset) {
-    std::string result;
-    size_t start = offset;
-
-    while (offset < len && data[offset] != 0) {
-      result += (char)data[offset];
-      offset++;
-    }
-
-    size_t lengthIncludingNull = (offset - start) + 1;
-    offset = start + ((lengthIncludingNull + 3) & ~3);
-
-    return result;
+  static std::string readOscString(const uint8_t* d, size_t len, size_t& off) {
+    std::string s;
+    size_t start = off;
+    while (off < len && d[off] != 0) s += (char)d[off++];
+    off = start + (((off - start) + 1 + 3) & ~3);
+    return s;
   }
 
-  void parseMessage(const uint8_t* data, size_t len) {
+  void parseMessage(const uint8_t* d, size_t len) {
     if (len < 8) return;
-
-    size_t offset = 0;
-
-    // First field is the OSC address/path (e.g. "/avatar/parameters/Shock")
-    std::string path = readOscString(data, len, offset);
-
-    if (offset >= len || data[offset] != ',') return;
-    std::string typeTags = readOscString(data, len, offset);
-
-    for (int i = 1; i < (int)typeTags.size(); i++) {
-      char tag = typeTags[i];
-
-      if (tag == 'f') {
-        // Float: 4 bytes
-        if (offset + 4 > len) return;
-        uint32_t raw = ((uint32_t)data[offset] << 24) |
-                       ((uint32_t)data[offset + 1] << 16) |
-                       ((uint32_t)data[offset + 2] << 8) |
-                       (uint32_t)data[offset + 3];
-        float value;
-        memcpy(&value, &raw, 4);
-        offset += 4;
-        callback_(path, value);
-
-      } else if (tag == 'T') {
-        // Bool true
-        callback_(path, 1.0f);
-
-      } else if (tag == 'F') {
-        // Bool false
-        callback_(path, 0.0f);
-
-      } else if (tag == 'i') {
-        // Int32: 4 bytes
-        if (offset + 4 > len) return;
-        uint32_t raw = ((uint32_t)data[offset] << 24) |
-                       ((uint32_t)data[offset + 1] << 16) |
-                       ((uint32_t)data[offset + 2] << 8) |
-                       (uint32_t)data[offset + 3];
-        offset += 4;
-        callback_(path, (float)(int32_t)raw);
-
-      } else if (tag == 's') {
-        // String: Skip it, we don't use strings
-        readOscString(data, len, offset);
+    size_t off = 0;
+    std::string path = readOscString(d, len, off);
+    if (off >= len || d[off] != ',') return;
+    std::string tags = readOscString(d, len, off);
+    for (int i = 1; i < (int)tags.size(); i++) {
+      char t = tags[i];
+      if (t == 'f') {
+        if (off + 4 > len) return;
+        uint32_t r = ((uint32_t)d[off] << 24) | ((uint32_t)d[off + 1] << 16) |
+                     ((uint32_t)d[off + 2] << 8) | (uint32_t)d[off + 3];
+        float v;
+        memcpy(&v, &r, 4);
+        off += 4;
+        callback_(path, v);
+      } else if (t == 'T') {
+        callback_(path, 1.f);
+      } else if (t == 'F') {
+        callback_(path, 0.f);
+      } else if (t == 'i') {
+        if (off + 4 > len) return;
+        uint32_t r = ((uint32_t)d[off] << 24) | ((uint32_t)d[off + 1] << 16) |
+                     ((uint32_t)d[off + 2] << 8) | (uint32_t)d[off + 3];
+        off += 4;
+        callback_(path, (float)(int32_t)r);
+      } else if (t == 's') {
+        readOscString(d, len, off);
       }
     }
   }
 
-  void parseBundle(const uint8_t* data, size_t len) {
+  void parseBundle(const uint8_t* d, size_t len) {
     if (len < 16) return;
-    size_t offset = 16;
-
-    while (offset + 4 <= len) {
-      uint32_t messageSize =
-          ((uint32_t)data[offset] << 24) | ((uint32_t)data[offset + 1] << 16) |
-          ((uint32_t)data[offset + 2] << 8) | (uint32_t)data[offset + 3];
-      offset += 4;
-
-      if (offset + messageSize > len) break;
-      if (messageSize > 0) {
-        if (data[offset] == '#') {
-          parseBundle(data + offset, messageSize);
-        } else {
-          parseMessage(data + offset, messageSize);
-        }
-      }
-      offset += messageSize;
+    size_t off = 16;
+    while (off + 4 <= len) {
+      uint32_t msz = ((uint32_t)d[off] << 24) | ((uint32_t)d[off + 1] << 16) |
+                     ((uint32_t)d[off + 2] << 8) | (uint32_t)d[off + 3];
+      off += 4;
+      if (off + msz > len) break;
+      if (msz > 0)
+        (d[off] == '#') ? parseBundle(d + off, msz)
+                        : parseMessage(d + off, msz);
+      off += msz;
     }
   }
 
@@ -156,24 +136,17 @@ class OscListener {
     uint8_t buf[4096];
     sockaddr_in src{};
     int srcLen = sizeof(src);
-
     while (running_) {
       fd_set fds;
       FD_ZERO(&fds);
       FD_SET(sock_, &fds);
-      timeval timeout{0, 200000};
-      if (select(0, &fds, nullptr, nullptr, &timeout) <= 0) continue;
-
-      int bytesReceived =
-          recvfrom(sock_, (char*)buf, sizeof(buf), 0, (sockaddr*)&src, &srcLen);
-      if (bytesReceived <= 0) continue;
-
-      bool isBundle = bytesReceived >= 8 && memcmp(buf, "#bundle", 7) == 0;
-      if (isBundle) {
-        parseBundle(buf, bytesReceived);
-      } else {
-        parseMessage(buf, bytesReceived);
-      }
+      timeval tv{0, 200000};
+      if (select(SOCK_NFDS(sock_), &fds, nullptr, nullptr, &tv) <= 0) continue;
+      int n = recvfrom(sock_, (char*)buf, sizeof(buf), 0, (sockaddr*)&src,
+                       (socklen_t*)&srcLen);
+      if (n <= 0) continue;
+      (n >= 8 && memcmp(buf, "#bundle", 7) == 0) ? parseBundle(buf, n)
+                                                 : parseMessage(buf, n);
     }
   }
 };
@@ -182,39 +155,34 @@ class OscQueryServer {
  public:
   std::mutex shockMutex;
   std::condition_variable shockCV;
-  bool shockPending = false;
-  bool secondShockPending = false;
+  bool shockPending = false, secondShockPending = false;
 
-  OscQueryServer(int oscPort, const std::string& serviceName)
+  OscQueryServer(int oscPort, const std::string& sn)
       : oscPort_(oscPort),
-        serviceName_(serviceName),
-        oscListener_(oscPort, [this](const std::string& path, float value) {
-          onOscMessage(path, value);
+        serviceName_(sn),
+        oscListener_(oscPort, [this](const std::string& p, float v) {
+          onOscMessage(p, v);
         }) {}
 
-  void setShockPath(const std::string& path) { shockPath_ = path; }
-  void setSecondShockPath(const std::string& path) { secondShockPath_ = path; }
+  void setShockPath(const std::string& p) { shockPath_ = p; }
+  void setSecondShockPath(const std::string& p) { secondShockPath_ = p; }
 
   bool start() {
     httpServer_.Get(
         ".*", [this](const httplib::Request& req, httplib::Response& res) {
           handleHttpRequest(req, res);
         });
-
     httpPort_ = httpServer_.bind_to_any_port("127.0.0.1");
     if (httpPort_ < 0) {
-      logMsg("[OSCQuery] Failed to bind HTTP server\n");
+      logMsg("[OSCQuery] Failed to bind HTTP server");
       return false;
     }
-    logMsg("[OSCQuery] HTTP server on port {}\n", httpPort_);
-
-    httpThread_ = std::thread([this]() { httpServer_.listen_after_bind(); });
-
+    logMsg("[OSCQuery] HTTP server on port {}", httpPort_);
+    httpThread_ = std::thread([this] { httpServer_.listen_after_bind(); });
     if (!oscListener_.start()) {
-      logMsg("[OSCQuery] Failed to start OSC listener\n");
+      logMsg("[OSCQuery] Failed to start OSC listener");
       return false;
     }
-
     mdns_ = std::make_unique<MdnsAdvertiser>(serviceName_, httpPort_);
     return mdns_->start();
   }
@@ -227,42 +195,34 @@ class OscQueryServer {
   }
 
  private:
-  int oscPort_;
-  int httpPort_ = -1;
+  int oscPort_, httpPort_ = -1;
   std::string serviceName_;
-  std::string shockPath_ = "/avatar/parameters/Shock";
-  std::string secondShockPath_;
-
+  std::string shockPath_ = "/avatar/parameters/Shock", secondShockPath_;
   httplib::Server httpServer_;
   std::thread httpThread_;
   OscListener oscListener_;
   std::unique_ptr<MdnsAdvertiser> mdns_;
-
   std::mutex lastValuesMutex_;
-
-  // Remembers the last value for each OSC path so we can ignore duplicates
   std::unordered_map<std::string, float> lastValues_;
 
   void handleHttpRequest(const httplib::Request& req, httplib::Response& res) {
     bool isHostInfo = req.params.find("HOST_INFO") != req.params.end() ||
                       req.target.find("HOST_INFO") != std::string::npos;
-
     if (isHostInfo) {
-      nlohmann::json response = {{"NAME", serviceName_},
-                                 {"OSC_PORT", oscPort_},
-                                 {"OSC_IP", "127.0.0.1"},
-                                 {"OSC_TRANSPORT", "UDP"},
-                                 {"EXTENSIONS",
-                                  {{"ACCESS", true},
-                                   {"CLIPMODE", false},
-                                   {"RANGE", true},
-                                   {"TYPE", true},
-                                   {"VALUE", true}}}};
-      res.set_content(response.dump(), "application/json");
-
+      nlohmann::json r = {{"NAME", serviceName_},
+                          {"OSC_PORT", oscPort_},
+                          {"OSC_IP", "127.0.0.1"},
+                          {"OSC_TRANSPORT", "UDP"},
+                          {"EXTENSIONS",
+                           {{"ACCESS", true},
+                            {"CLIPMODE", false},
+                            {"RANGE", true},
+                            {"TYPE", true},
+                            {"VALUE", true}}}};
+      res.set_content(r.dump(), "application/json");
     } else {
-      std::string paramName = shockPath_.substr(shockPath_.rfind('/') + 1);
-      nlohmann::json contents = {{paramName,
+      std::string pn = shockPath_.substr(shockPath_.rfind('/') + 1);
+      nlohmann::json contents = {{pn,
                                   {{"FULL_PATH", shockPath_},
                                    {"ACCESS", 2},
                                    {"TYPE", "T"},
@@ -273,19 +233,19 @@ class OscQueryServer {
         contents[p2] = {
             {"FULL_PATH", secondShockPath_}, {"ACCESS", 2}, {"TYPE", "T"}};
       }
-      nlohmann::json response = {{"FULL_PATH", "/"},
-                                 {"ACCESS", 0},
-                                 {"DESCRIPTION", "root note"},
-                                 {"CONTENTS",
-                                  {{"avatar",
-                                    {{"FULL_PATH", "/avatar"},
-                                     {"ACCESS", 0},
-                                     {"CONTENTS",
-                                      {{"parameters",
-                                        {{"FULL_PATH", "/avatar/parameters"},
-                                         {"ACCESS", 0},
-                                         {"CONTENTS", contents}}}}}}}}}};
-      res.set_content(response.dump(), "application/json");
+      nlohmann::json r = {{"FULL_PATH", "/"},
+                          {"ACCESS", 0},
+                          {"DESCRIPTION", "root note"},
+                          {"CONTENTS",
+                           {{"avatar",
+                             {{"FULL_PATH", "/avatar"},
+                              {"ACCESS", 0},
+                              {"CONTENTS",
+                               {{"parameters",
+                                 {{"FULL_PATH", "/avatar/parameters"},
+                                  {"ACCESS", 0},
+                                  {"CONTENTS", contents}}}}}}}}}};
+      res.set_content(r.dump(), "application/json");
     }
   }
 
@@ -296,8 +256,7 @@ class OscQueryServer {
       if (it != lastValues_.end() && it->second == value) return;
       lastValues_[path] = value;
     }
-
-    if (value > 0.0f) {
+    if (value > 0.f) {
       if (path == shockPath_) {
         std::lock_guard<std::mutex> lock(shockMutex);
         shockPending = true;
@@ -310,21 +269,3 @@ class OscQueryServer {
     }
   }
 };
-#else
-// Linux
-
-#include <condition_variable>
-#include <mutex>
-#include <string>
-class OscQueryServer {
- public:
-  std::mutex shockMutex;
-  std::condition_variable shockCV;
-  bool shockPending = false, secondShockPending = false;
-  OscQueryServer(int, const std::string&) {}
-  void setShockPath(const std::string&) {}
-  void setSecondShockPath(const std::string&) {}
-  bool start() { return true; }
-  void stop() {}
-};
-#endif

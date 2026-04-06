@@ -1319,6 +1319,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::Spacing();
 
       ImGui::SeparatorText("Notifications");
+#ifdef _WIN32
       ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
       if (stgNotifEnabled) {
         ImGui::SameLine();
@@ -1342,6 +1343,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         if (ImGui::Button("OVRToolkit##np", {90, 0})) stgNotifUseOvr = true;
         ImGui::PopStyleColor();
       }
+#else
+      ImGui::Text(
+          "Unavailable\nXSOverlay and OVRToolkit are windows only tools.");
+#endif
       ImGui::Spacing();
 
       ImGui::SeparatorText("Hotkey");
