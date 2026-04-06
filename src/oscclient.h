@@ -168,6 +168,8 @@ class OscQueryServer {
   void setSecondShockPath(const std::string& p) { secondShockPath_ = p; }
 
   bool start() {
+    httpServer_.set_read_timeout(1, 0);
+    httpServer_.set_write_timeout(1, 0);
     httpServer_.Get(
         ".*", [this](const httplib::Request& req, httplib::Response& res) {
           handleHttpRequest(req, res);

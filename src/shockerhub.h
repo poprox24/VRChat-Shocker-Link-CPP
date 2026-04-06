@@ -269,23 +269,6 @@ class ShockerHub {
   std::vector<double> shockTimestamps;
   serialib serial;
 
-  // Duration, useUpperHalf, vibrate
-  std::queue<std::tuple<std::optional<int>, bool, bool>> shockQueue;
-  std::condition_variable queueCV;
-  std::thread workerThread;
-  std::atomic<bool> stopWorker = false;
-
-  int pishockUserId_ = -1;
-  // shockerId -> clientId
-  std::unordered_map<int, int> pishockShockerToClient;
-  bool pishockResolved = false;
-
- private:
-  Settings& settings;
-  int lastShockerIndex = -1;
-  std::vector<double> shockTimestamps;
-  serialib serial;
-
   std::queue<std::tuple<std::optional<int>, bool, bool>> shockQueue;
   std::condition_variable queueCV;
   std::thread workerThread;
@@ -301,7 +284,6 @@ class ShockerHub {
     return sz * n;
   }
 
-  // CHANGED: replaced WinINet httpGet with curl
   static std::string httpGet(
       const std::string& url,
       const std::vector<std::string>& extraHeaders = {}) {
@@ -321,7 +303,6 @@ class ShockerHub {
     return result;
   }
 
-  // CHANGED: replaced WinHTTP winHttpRequest with curl
   static std::string winHttpRequest(
       const std::string& method, const std::string& url,
       const std::string& body = {},
@@ -349,8 +330,6 @@ class ShockerHub {
     return result;
   }
 
-  // CHANGED: replaced WinHTTP WebSocket with curl WebSocket (requires libcurl
-  // >= 7.86)
   bool sendPiShockWs(int durationMs, int strength, int shockerId, int clientId,
                      bool vibrate) {
     nlohmann::json body = {{"id", shockerId},
@@ -422,7 +401,6 @@ class ShockerHub {
     return ok;
   }
 
-  // CHANGED: cross-platform serial port scan helpers
   static std::vector<std::string> serialCandidates() {
 #ifdef _WIN32
     std::vector<std::string> ports;
@@ -438,7 +416,6 @@ class ShockerHub {
 #endif
   }
 
-  // CHANGED: use serialCandidates() instead of hardcoded COM loop
   bool scanForPishock() {
     for (auto& port : serialCandidates()) {
       settings.serialPort = port;
@@ -501,79 +478,6 @@ class ShockerHub {
     logMsg(
         "[ShockerHub] Couldn't connect to OpenShock HUB, check connection and "
         "press reconnect.\n");
-    return false;
-  }
-
-  bool scanForPishock() {
-    for (int i = 1; i <= 24; i++) {
-      settings.serialPort = "COM" + std::to_string(i);
-      if (serial.openDevice(settings.serialPort.c_str(), settings.baudRate) !=
-          1)
-        continue;
-
-      serial.writeString("{\"cmd\": \"info\"}\n");
-
-      bool found = false;
-      for (int attempt = 0; attempt < 20; attempt++) {
-        char buf[1024] = {0};
-        serial.readString(buf, '\n', 1024, 500);
-        std::string response(buf);
-        if (response.starts_with("TERMINALINFO: ") &&
-            response.find("pishock") != std::string::npos) {
-          found = true;
-          if (settings.shockerIDs.empty()) {
-            auto json = nlohmann::json::parse(response.substr(14), nullptr,
-                                              false);  // strip "TERMINALINFO: "
-            if (!json.is_discarded() && json.contains("shockers"))
-              for (auto& s : json["shockers"])
-                settings.pushShockerId(std::to_string(s["id"].get<int>()));
-          }
-          break;
-        }
-      }
-
-      if (found) {
-        startWorkerThread();
-        return true;
-      }
-      serial.closeDevice();
-    }
-
-    logMsg(
-        "[ShockerHub] Couldn't connect to PiShock HUB, check connection and "
-        "reconnect.\n");
-    return false;
-  }
-
-  bool scanForOpenshock() {
-    for (int i = 1; i <= 24; i++) {
-      settings.serialPort = "COM" + std::to_string(i);
-      if (serial.openDevice(settings.serialPort.c_str(), settings.baudRate) !=
-          1)
-        continue;
-
-      serial.writeString("domain\n");
-
-      bool found = false;
-      for (int attempt = 0; attempt < 5; attempt++) {
-        char buf[64] = {0};
-        serial.readString(buf, '\n', 64, 1000);
-        if (std::string(buf).find("openshock") != std::string::npos) {
-          found = true;
-          break;
-        }
-      }
-
-      if (found) {
-        startWorkerThread();
-        return true;
-      }
-      serial.closeDevice();
-    }
-
-    logMsg(
-        "[ShockerHub] Couldn't connect to OpenShock HUB, check connection and "
-        "press the reconnect button.\n");
     return false;
   }
 

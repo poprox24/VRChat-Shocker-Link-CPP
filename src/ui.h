@@ -1671,7 +1671,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     stateChangedPreviousFrame = isEditingThisFrame;
 
-    // CHANGED: OpenGL render instead of D3D11
     ImGui::Render();
     int fb_w, fb_h;
     glfwGetFramebufferSize(g_window, &fb_w, &fb_h);

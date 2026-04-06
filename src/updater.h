@@ -162,7 +162,6 @@ inline void applyAndRestart(HWND hwnd) {
 
 }  // namespace Updater
 #else
-// CHANGED: Linux implementation using curl + exec
 
 #include <curl/curl.h>
 #include <sys/stat.h>
@@ -302,8 +301,6 @@ inline void applyAndRestart() {
       execl(pendingExePath.c_str(), pendingExePath.c_str(), nullptr);
     _exit(1);
   }
-  // Parent exits normally (GLFW close is called by the caller via
-  // shouldRestart)
 }
 
 }  // namespace Updater

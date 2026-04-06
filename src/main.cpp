@@ -111,6 +111,7 @@ int main() {
         _exit(1);
       }
     }
+    _exit(0);
 #endif
   }
   return 0;
