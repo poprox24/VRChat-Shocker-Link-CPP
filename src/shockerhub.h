@@ -296,10 +296,14 @@ class ShockerHub {
     curl_easy_setopt(c, CURLOPT_URL, url.c_str());
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, curlWrite);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, &result);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 3L);
-    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 3L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 5L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(c, CURLOPT_SSL_OPTIONS,
+                     CURLSSLOPT_NATIVE_CA);  // ADDED: use Windows cert store
     if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
-    curl_easy_perform(c);
+    CURLcode res = curl_easy_perform(c);  // CHANGED: capture return value
+    if (res != CURLE_OK)                  // ADDED: log failures
+      logMsg("[HTTP] GET failed: {}\n", curl_easy_strerror(res));
     if (hdrs) curl_slist_free_all(hdrs);
     curl_easy_cleanup(c);
     return result;
@@ -313,21 +317,28 @@ class ShockerHub {
     if (!c) return "";
     std::string result;
     curl_slist* hdrs = nullptr;
+    hdrs = curl_slist_append(hdrs, "Accept: application/json");
     if (!body.empty())
       hdrs = curl_slist_append(hdrs, "Content-Type: application/json");
     for (auto& h : extraHeaders) hdrs = curl_slist_append(hdrs, h.c_str());
     curl_easy_setopt(c, CURLOPT_URL, url.c_str());
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, curlWrite);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, &result);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 3L);
-    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 3L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 5L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(c, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+    curl_easy_setopt(
+        c, CURLOPT_USERAGENT,
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
     if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
     if (method == "POST") {
       curl_easy_setopt(c, CURLOPT_POST, 1L);
       curl_easy_setopt(c, CURLOPT_POSTFIELDS, body.c_str());
       curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)body.size());
     }
-    curl_easy_perform(c);
+    CURLcode res = curl_easy_perform(c);  // CHANGED: capture return value
+    if (res != CURLE_OK)                  // ADDED: log failures
+      logMsg("[HTTP] {} {} failed: {}\n", method, url, curl_easy_strerror(res));
     if (hdrs) curl_slist_free_all(hdrs);
     curl_easy_cleanup(c);
     return result;
