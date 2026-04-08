@@ -56,6 +56,11 @@ if(WIN32)
     )
     add_executable(ShockerLink WIN32 ${SHOCKER_COMMON_SOURCES})
     set_target_properties(ShockerLink PROPERTIES WIN32_EXECUTABLE TRUE OUTPUT_NAME "Shocker_Link")
+
+    # === MinGW-specific safety flags ===
+    target_compile_definitions(ShockerLink PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_options(ShockerLink PRIVATE -Wno-narrowing -Wno-shift-count-overflow -Wno-template-body)
+
     target_link_libraries(ShockerLink PUBLIC
         yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib CURL::libcurl
         ws2_32 comdlg32 shell32 dwmapi wininet glfw opengl32
@@ -71,6 +76,7 @@ else()
     )
     add_executable(ShockerLink ${SHOCKER_COMMON_SOURCES})
     set_target_properties(ShockerLink PROPERTIES OUTPUT_NAME "Shocker_Link")
+
     target_link_libraries(ShockerLink PUBLIC
         yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib
         glfw OpenGL::GL Threads::Threads CURL::libcurl PNG::PNG

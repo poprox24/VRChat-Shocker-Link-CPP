@@ -31,7 +31,11 @@ inline bool newerThan(const std::string& remote, const std::string& local) {
   auto parse = [](const std::string& v) {
     std::string s = (!v.empty() && v[0] == 'v') ? v.substr(1) : v;
     int a = 0, b = 0, c = 0;
+#if defined(_WIN32) && !defined(__MINGW32__)
     sscanf_s(s.c_str(), "%d.%d.%d", &a, &b, &c);
+#else
+    sscanf(s.c_str(), "%d.%d.%d", &a, &b, &c);
+#endif
     return std::make_tuple(a, b, c);
   };
   return parse(remote) > parse(local);
