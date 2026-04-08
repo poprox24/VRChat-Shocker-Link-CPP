@@ -75,7 +75,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 - Bezier intensity curve with weighted random sampling
 - Dynamic cooldown system
 - Presets with per-preset curve and view state
-- VRChat chatbox output and VR notifications (XSOverlay / OVRToolkit)
+- VRChat chatbox output and VR notifications (XSOverlay / OVRToolkit / WayVR)
 - Stats tracking: shock count, duration, intensity, and daily history
 
 ---
