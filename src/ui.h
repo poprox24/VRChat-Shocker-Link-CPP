@@ -799,9 +799,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf", nullptr};
     const char* symPaths[] = {
         "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
-        "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"
-        "C:\\Windows\\Fonts\\seguisym.ttf",
-        nullptr};
+        "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf",
+        "C:\\Windows\\Fonts\\seguisym.ttf", nullptr};
 
     for (auto p = regularPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
