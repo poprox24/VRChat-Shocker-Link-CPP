@@ -546,7 +546,7 @@ class ShockerHub {
         activeCooldownDuration.store(dynamicCooldown);
         if (remaining > 0) {
           std::string cooldownMsg =
-              fmt::format("[ShockerHub] On cooldown: {:.1f}s", remaining);
+              fmt::format("On cooldown: {:.1f}s", remaining);
           logMsg("{}\n", cooldownMsg);
           chatbox.send(cooldownMsg);
 
