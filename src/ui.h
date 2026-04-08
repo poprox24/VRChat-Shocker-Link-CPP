@@ -799,7 +799,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf", nullptr};
     const char* symPaths[] = {
         "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
-        "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf", nullptr};
+        "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"
+        "C:\\Windows\\Fonts\\seguisym.ttf",
+        nullptr};
 
     for (auto p = regularPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
@@ -1410,14 +1412,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::TextDisabled("|");
       ImGui::SameLine(0, 12);
 
-// Shock counter
-// \xe2\x9a\xa1 = ⚡ symbol
-#ifdef _WIN32
+      // Shock counter
+      // \xe2\x9a\xa1 = ⚡ symbol
       ImGui::Text("\xe2\x9a\xa1 %d", gStats.sessionShocks);
-#else
-      ImGui::Text("Shocks:  %d",
-                  gStats.sessionShocks);  // CBA to fix the symbol on linux
-#endif
 
       ImGui::SameLine(0, 12);
       ImGui::TextDisabled("|");
@@ -1704,33 +1701,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 #else
       // Linux: Force XSOverlay, grey out OVRToolkit(WayVR uses XSOverlays
       // notification system)
-      ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
+      ImGui::Checkbox("Enable WayVR Notifications##notif", &stgNotifEnabled);
       ImGui::SetItemTooltip(
           "Send a VR notification showing shock strength and duration");
 
       if (stgNotifEnabled) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("Provider:");
-
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-        ImGui::Button("XSOverlay##np", {90, 0});  // Active / selected
-        ImGui::PopStyleColor();
-
-        ImGui::SameLine(0, 0);
-
-        // Greyed out OVRToolkit (disabled)
-        ImGui::BeginDisabled();
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
-        ImGui::Button("OVRToolkit##np", {90, 0});
-        ImGui::PopStyleColor();
-        ImGui::EndDisabled();
-
-        ImGui::Text(
-            "XSOverlay notifications work with WayVR\nXSOverlay and OVRToolkit "
-            "don't work on linux");
+        ImGui::TextDisabled("Example notification:");
+        ImGui::TextDisabled("⚡ Shock");
+        ImGui::TextDisabled("37%% | 1.3s");
       }
 
       // Force XSOverlay on Linux

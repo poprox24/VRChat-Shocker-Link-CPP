@@ -100,11 +100,43 @@ inline void sendOVRToolkit(const std::string& title,
 
 }  // namespace Notifications
 #else
-// Linux
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <nlohmann/json.hpp>
+#include <string>
+
+#include "httplib.h"
+#include "logger.h"
 
 namespace Notifications {
-inline void sendXSOverlay(const std::string&, const std::string&, float = 3.f) {
+
+// Linux does not have XSOverlay but WayVR uses its notification system
+inline void sendXSOverlay(const std::string& title, const std::string& content,
+                          float timeout = 3.f) {
+  // POSIX UDP implementation - identical JSON payload to Windows
+  int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (sock < 0) return;
+
+  nlohmann::json j = {
+      {"messageType", 1},       {"index", 1},     {"timeout", timeout},
+      {"height", 110.0},        {"opacity", 1.0}, {"volume", 0.5},
+      {"audioPath", ""},        {"title", title}, {"content", content},
+      {"useBase64Icon", false}, {"icon", ""},     {"sourceApp", "ShockerLink"}};
+
+  std::string payload = j.dump();
+  sockaddr_in dest{};
+  dest.sin_family = AF_INET;
+  dest.sin_port = htons(42069);
+  inet_pton(AF_INET, "127.0.0.1", &dest.sin_addr);
+  sendto(sock, payload.c_str(), (int)payload.size(), 0, (sockaddr*)&dest,
+         sizeof(dest));
+  close(sock);
 }
+
 inline void sendOVRToolkit(const std::string&, const std::string&) {}
+
 }  // namespace Notifications
 #endif
