@@ -122,7 +122,7 @@ Poprox24 - [@poprox422](https://twitter.com/poprox422) - poprox24.roxy@gmail.com
 
 Project: [VRChat-Shocker-Link-CPP](https://github.com/poprox24/VRChat-Shocker-Link-CPP)
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+<p align="right">(<a href="#readme-top">Back to top</a>)</p>
 
 [contributors-shield]: https://img.shields.io/github/contributors/poprox24/VRChat-Shocker-Link-CPP.svg?style=for-the-badge
 [contributors-url]: https://github.com/poprox24/VRChat-Shocker-Link-CPP/graphs/contributors
