@@ -12,7 +12,6 @@
 #include <future>
 
 #include "logger.h"
-#include "migration.h"
 #include "oscclient.h"
 #include "settings.h"
 #include "shockerhub.h"
@@ -30,8 +29,6 @@ int main() {
   // STARUP
   Settings settings(settingsLocation);
   gStats.load("stats.json");
-
-  migrateConfigYmlIfPresent(settings, settingsLocation);
 
   ShockerHub hub(settings);
 
