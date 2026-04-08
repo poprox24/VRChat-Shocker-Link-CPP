@@ -2,9 +2,12 @@
 #ifdef _WIN32
 // Windows
 
+// clang-format off
 #include <windows.h>
+#include <shellapi.h>
 #include <wininet.h>
 #include <winsock2.h>
+// clang-format on
 
 #include <atomic>
 #include <nlohmann/json.hpp>

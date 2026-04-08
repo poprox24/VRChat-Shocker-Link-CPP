@@ -1,6 +1,10 @@
 #ifdef _WIN32
 #pragma comment(linker, "/ENTRY:mainCRTStartup")
+// clang-format off
 #include <unistd.h>
+#include <windows.h>
+#include <shellapi.h>
+// clang-format on
 #endif
 
 #include <atomic>

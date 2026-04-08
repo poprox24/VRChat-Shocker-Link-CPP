@@ -10,6 +10,10 @@
 #include "imgui.h"
 #include "logger.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 struct Preset {
   std::string name;
   float minShockDuration = 1.f;

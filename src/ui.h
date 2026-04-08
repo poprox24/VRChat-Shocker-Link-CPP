@@ -1259,7 +1259,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::End();
 
     if (updateReady.exchange(false)) {
+#ifdef _WIN32
+      Updater::applyAndRestart(nullptr);
+#else
       Updater::applyAndRestart();
+#endif
       glfwSetWindowShouldClose(g_window, 1);
     }
 

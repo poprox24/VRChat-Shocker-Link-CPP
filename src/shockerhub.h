@@ -336,8 +336,8 @@ class ShockerHub {
       curl_easy_setopt(c, CURLOPT_POSTFIELDS, body.c_str());
       curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)body.size());
     }
-    CURLcode res = curl_easy_perform(c);  // CHANGED: capture return value
-    if (res != CURLE_OK)                  // ADDED: log failures
+    CURLcode res = curl_easy_perform(c);
+    if (res != CURLE_OK)
       logMsg("[HTTP] {} {} failed: {}\n", method, url, curl_easy_strerror(res));
     if (hdrs) curl_slist_free_all(hdrs);
     curl_easy_cleanup(c);
