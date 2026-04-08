@@ -1,4 +1,5 @@
 #pragma once
+
 #ifdef _WIN32
 // Windows
 
@@ -110,6 +111,11 @@ inline void checkAsync() {
 
     try {
       auto j = nlohmann::json::parse(resp);
+      if (!j.contains("tag_name") || j["tag_name"].is_null()) {
+        logMsg("[Update] GitHub response has no tag_name: {}",
+               resp.substr(0, 200));
+        return;
+      }
       std::string tag = j["tag_name"].get<std::string>();
 
       if (!newerThan(tag, APP_VERSION)) {
@@ -229,7 +235,13 @@ inline void checkAsync() {
 
     try {
       auto j = nlohmann::json::parse(resp);
+      if (!j.contains("tag_name") || j["tag_name"].is_null()) {
+        logMsg("[Update] GitHub response has no tag_name: {}",
+               resp.substr(0, 200));
+        return;
+      }
       std::string tag = j["tag_name"].get<std::string>();
+
       if (!newerThan(tag, APP_VERSION)) {
         logMsg("[Update] Up to date ({})", APP_VERSION);
         return;
