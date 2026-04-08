@@ -790,21 +790,27 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   ImFont* boldFont = nullptr;
   {
     const char* regularPaths[] = {
+        "/usr/share/fonts/truetype/cantarell/Cantarell-Regular.otf",
+        "/usr/share/fonts/cantarell/Cantarell-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf", nullptr};
+        nullptr};
     const char* boldPaths[] = {
+        "/usr/share/fonts/truetype/cantarell/Cantarell-Bold.otf",
+        "/usr/share/fonts/cantarell/Cantarell-Bold.otf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+        "/usr/share/fonts/noto/NotoSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf", nullptr};
+        nullptr};
     const char* symPaths[] = {
         "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
         "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
         "/usr/share/fonts/noto-fonts/NotoSansSymbols2-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
         "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "C:\\Windows\\Fonts\\seguisym.ttf",
         nullptr};
 
     for (auto p = regularPaths; *p; ++p) {
@@ -815,10 +821,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
 
+    // Merge symbol font for ⚡ (U+26A1)
     for (auto p = symPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
         ImFontConfig cfg;
         cfg.MergeMode = true;
+        cfg.GlyphOffset = {0, 0.f};
         static const ImWchar ranges[] = {0x2600, 0x27FF, 0};
         io.Fonts->AddFontFromFileTTF(*p, 18.0f, &cfg, ranges);
         break;
@@ -1084,9 +1092,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     // Compute panel width from the font size so it scales with DPI
     float fontSize = ImGui::GetFontSize();
-    float leftPanelWidth = std::max(180.f, fontSize * 11.5f);
 
     // Left panel
+    float leftPanelWidth = std::max(180.f, fontSize * 10.0f);
+
     float lineH = ImGui::GetTextLineHeightWithSpacing();
     float logH = lineH * 3.f + ImGui::GetStyle().WindowPadding.y * 2.f;
     float rowH = ImGui::GetTextLineHeightWithSpacing() + 3.f;
@@ -1189,7 +1198,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (ImGui::Button("Test Vibrate", {77.5f, 0})) hub.queueShock(-1, true);
+    if (ImGui::Button("Test Vibrate", {80.0f, 0})) hub.queueShock(-1, true);
     ImGui::SetItemTooltip("Sends a vibration command");
     ImGui::SameLine();
     if (ImGui::Button("Test Shock", {-1, 0})) hub.queueShock(-1, false);
