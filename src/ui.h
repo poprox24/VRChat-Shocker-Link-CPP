@@ -869,6 +869,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   float settingsAnim = 0.f, statsAnim = 0.f;
   if (settings.showStats) statsAnim = 1.f;
 
+  // Fixes launching the app when stats is saved open
+  {
+    int sw = (int)roundf(statsAnim * 280.f);
+    int settW = (int)roundf(settingsAnim * 550.f);
+    glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
+    glfwSetWindowSize(g_window, settings.windowW + sw + settW,
+                      settings.windowH);
+  }
+
   // Editable staging copies (only written back on save)
   char stgShockParam[64] = {}, stgSecondParam[64] = {}, stgShockerIDs[256] = {},
        stgSerialPort[64] = {}, stgVrchatHost[64] = {};
