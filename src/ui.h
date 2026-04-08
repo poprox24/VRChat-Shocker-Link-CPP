@@ -423,15 +423,17 @@ inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
   if (mods & 2) s += "Ctrl+";
   if (mods & 1) s += "Alt+";
   if (mods & 4) s += "Shift+";
-  const char* name = glfwGetKeyName(glfwKey, 0);
-  if (name) {
-    std::string n = name;
-    if (!n.empty()) n[0] = (char)toupper((unsigned char)n[0]);
-    s += n;
-  } else if (glfwKey >= GLFW_KEY_F1 && glfwKey <= GLFW_KEY_F25) {
+  if (glfwKey >= GLFW_KEY_F1 && glfwKey <= GLFW_KEY_F25) {
     s += "F" + std::to_string(glfwKey - GLFW_KEY_F1 + 1);
   } else if (glfwKey != 0) {
-    s += "Key(" + std::to_string(glfwKey) + ")";
+    const char* name = glfwGetKeyName(glfwKey, 0);
+    if (name) {
+      std::string n = name;
+      if (!n.empty()) n[0] = (char)toupper((unsigned char)n[0]);
+      s += n;
+    } else {
+      s += "Key(" + std::to_string(glfwKey) + ")";
+    }
   } else {
     s += "None";
   }
