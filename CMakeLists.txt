@@ -59,7 +59,6 @@ if(WIN32)
 
     # === MinGW-specific safety flags ===
     target_compile_definitions(ShockerLink PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_compile_options(ShockerLink PRIVATE -Wno-narrowing -Wno-shift-count-overflow -Wno-template-body)
 
     target_link_libraries(ShockerLink PUBLIC
         yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib CURL::libcurl
