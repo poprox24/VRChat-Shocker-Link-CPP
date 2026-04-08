@@ -1856,15 +1856,16 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::Spacing();
       ImGui::Separator();
 
-      ImGui::Spacing();
-      if (ImGui::Button("Import Python cfg", {ImGui::CalcItemWidth(), 0}))
-        importLegacyPythonConfig(settings, hub, minDur, maxDur, xViewMin,
-                                 xViewMax, settingsPath);
-      ImGui::SetItemTooltip(
-          "Select the folder of your python installation.\nUseless for most, "
-          "imports config from the old python build.");
+      static char importPathBuf[512] = {};
+      ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - 135.f);
+      ImGui::InputTextWithHint("##importpath", "/path/to/python/shocker-link",
+                               importPathBuf, sizeof(importPathBuf));
+
       ImGui::SameLine();
-      ImGui::Text("Import old python config");
+      if (ImGui::Button("Import Python cfg"))
+        importLegacyPythonConfig(settings, hub, minDur, maxDur, xViewMin,
+                                 xViewMax, settingsPath, importPathBuf);
+      ImGui::SetItemTooltip("Point at your old Python ShockerLink folder");
       ImGui::Spacing();
 
       ImGui::EndChild();
