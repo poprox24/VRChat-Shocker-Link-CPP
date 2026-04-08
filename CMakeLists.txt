@@ -78,7 +78,7 @@ else()
 
     target_link_libraries(ShockerLink PUBLIC
         yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib
-        glfw OpenGL::GL Threads::Threads CURL::libcurl PNG::PNG
+        glfw OpenGL::GL Threads::Threads CURL::libcurl PNG::PNG X11
     )
 endif()
 

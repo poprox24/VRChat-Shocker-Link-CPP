@@ -100,6 +100,140 @@ static GLFWwindow* g_window = nullptr;
 static ShockerHub* g_hub = nullptr;
 static Settings* g_settingsForHotkey = nullptr;
 
+// Hotkey Manager
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
+static WNDPROC g_origWndProc = nullptr;
+
+static LRESULT CALLBACK hotkeyWndProc(HWND hwnd, UINT msg, WPARAM wp,
+                                      LPARAM lp) {
+  if (msg == WM_HOTKEY && g_hub) {
+    g_hub->shocksDisabled = true;
+    logMsg("[Hotkey] Shocks disabled.");
+    if (g_wakeUiFunc) g_wakeUiFunc();
+  }
+  return CallWindowProc(g_origWndProc, hwnd, msg, wp, lp);
+}
+
+static void registerGlobalHotkey(int glfwKey, int mods) {
+  if (!g_window || !glfwKey) return;
+  HWND hwnd = glfwGetWin32Window(g_window);
+  UINT winMods = MOD_NOREPEAT;
+  if (mods & 1) winMods |= MOD_ALT;
+  if (mods & 2) winMods |= MOD_CONTROL;
+  if (mods & 4) winMods |= MOD_SHIFT;
+  UnregisterHotKey(hwnd, 1);
+  if (glfwKey) RegisterHotKey(hwnd, 1, winMods, glfwKey);
+  if (!g_origWndProc)
+    g_origWndProc =
+        (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)hotkeyWndProc);
+}
+
+#else #else
+#include <X11/Xlib.h>
+#define GLFW_EXPOSE_NATIVE_X11
+#include <GLFW/glfw3native.h>
+
+static Display* g_x11HotkeyDisplay =
+    nullptr;  // CHANGED: separate connection, not GLFW's
+static Window g_x11Root = 0;
+static KeyCode g_x11GrabbedKey = 0;
+static unsigned int g_x11GrabbedMods = 0;
+static std::thread g_hotkeyThread;
+static std::atomic<bool> g_hotkeyThreadRunning{false};
+
+static int glfwKeyToKeysym(int glfwKey) {
+  if (glfwKey >= GLFW_KEY_F1 && glfwKey <= GLFW_KEY_F25)
+    return XK_F1 + (glfwKey - GLFW_KEY_F1);
+  if (glfwKey >= GLFW_KEY_A && glfwKey <= GLFW_KEY_Z)
+    return XK_a + (glfwKey - GLFW_KEY_A);
+  if (glfwKey >= GLFW_KEY_0 && glfwKey <= GLFW_KEY_9)
+    return XK_0 + (glfwKey - GLFW_KEY_0);
+  return 0;
+}
+
+static void unregisterGlobalHotkeyLinux() {
+  if (!g_x11HotkeyDisplay || !g_x11GrabbedKey) return;
+  unsigned int ignoreMasks[] = {0, LockMask, Mod2Mask, LockMask | Mod2Mask};
+  for (auto ig : ignoreMasks)
+    XUngrabKey(g_x11HotkeyDisplay, g_x11GrabbedKey, g_x11GrabbedMods | ig,
+               g_x11Root);
+  XFlush(g_x11HotkeyDisplay);
+  g_x11GrabbedKey = 0;
+}
+
+static void registerGlobalHotkey(int glfwKey, int mods) {
+  // CHANGED: open dedicated display connection
+  if (!g_x11HotkeyDisplay) {
+    g_x11HotkeyDisplay = XOpenDisplay(nullptr);
+    if (!g_x11HotkeyDisplay) {
+      logMsg("[Hotkey] XOpenDisplay failed");
+      return;
+    }
+    g_x11Root = DefaultRootWindow(g_x11HotkeyDisplay);
+  }
+
+  if (!glfwKey) {
+    unregisterGlobalHotkeyLinux();
+    return;
+  }
+
+  int keysym = glfwKeyToKeysym(glfwKey);
+  if (!keysym) return;
+  KeyCode kc = XKeysymToKeycode(g_x11HotkeyDisplay, keysym);
+  if (!kc) return;
+
+  unregisterGlobalHotkeyLinux();
+
+  unsigned int x11Mods = 0;
+  if (mods & 1) x11Mods |= Mod1Mask;
+  if (mods & 2) x11Mods |= ControlMask;
+  if (mods & 4) x11Mods |= ShiftMask;
+
+  unsigned int ignoreMasks[] = {0, LockMask, Mod2Mask, LockMask | Mod2Mask};
+  XSetErrorHandler([](Display*, XErrorEvent*) -> int {
+    return 0;
+  });  // ADDED: suppress grab-failed errors
+  for (auto ig : ignoreMasks)
+    XGrabKey(g_x11HotkeyDisplay, kc, x11Mods | ig, g_x11Root, True,
+             GrabModeAsync, GrabModeAsync);
+  XFlush(g_x11HotkeyDisplay);
+
+  g_x11GrabbedKey = kc;
+  g_x11GrabbedMods = x11Mods;
+  logMsg("[Hotkey] Registered global hotkey (X11)");
+
+  if (g_hotkeyThreadRunning) return;
+  g_hotkeyThreadRunning = true;
+  g_hotkeyThread = std::thread([] {
+    while (g_hotkeyThreadRunning) {
+      if (!g_x11HotkeyDisplay) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        continue;
+      }
+      // CHANGED: use select() so we don't block forever on XNextEvent
+      int fd = ConnectionNumber(g_x11HotkeyDisplay);
+      fd_set fds;
+      FD_ZERO(&fds);
+      FD_SET(fd, &fds);
+      struct timeval tv{0, 100000};
+      if (select(fd + 1, &fds, nullptr, nullptr, &tv) <= 0) continue;
+      while (XPending(g_x11HotkeyDisplay)) {
+        XEvent ev;
+        XNextEvent(g_x11HotkeyDisplay, &ev);
+        if (ev.type == KeyPress && g_hub) {
+          g_hub->shocksDisabled = true;
+          logMsg("[Hotkey] Shocks disabled.");
+          if (g_wakeUiFunc) g_wakeUiFunc();
+        }
+      }
+    }
+  });
+}
+#endif
+
 extern std::atomic<bool> shouldRestart;
 
 static constexpr size_t kMaxUndoRedoStates = 128;
@@ -416,7 +550,9 @@ inline void applyUiTheme(Settings& settings) {
                                                    bgColor.z, 0.84f};
 }
 
-static void registerPanicHotkey(const Settings&) {}
+static void registerPanicHotkey(const Settings& settings) {
+  registerGlobalHotkey(settings.hotkeyVk, settings.hotkeyMods);
+}
 
 inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
   std::string s;
@@ -625,6 +761,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
   g_hub = &hub;
   g_settingsForHotkey = &settings;
+  registerPanicHotkey(settings);
   g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
 
   glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
@@ -1482,10 +1619,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
               : (settings.hotkeyVk ? formatKeyNameFromVk(settings.hotkeyVk,
                                                          settings.hotkeyMods)
                                    : "None");
-      if (ImGui::Button(keyLabel.c_str(), {160, 0})) capturingHotkey = true;
-      ImGui::SetItemTooltip(
-          "Disables shocks when window is focused\n(global hotkeys not "
-          "supported on Linux)");
+      if (ImGui::Button(keyLabel.c_str(), {160, 0})) {
+        capturingHotkey = true;
+#ifndef _WIN32
+        unregisterGlobalHotkeyLinux();
+#endif
+      }
+      ImGui::SetItemTooltip("Disables shocks when window is focused");
       ImGui::SameLine();
       if (ImGui::Button("Clear##hk")) {
         settings.hotkeyVk = 0;
@@ -1511,6 +1651,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             settings.hotkeyMods = mods;
             capturingHotkey = false;
             captured = true;
+#ifndef _WIN32
+            registerGlobalHotkey(k, mods);
+#endif
           }
         };
         for (int k = GLFW_KEY_F1; k <= GLFW_KEY_F25; k++) tryKey(k);
@@ -1823,6 +1966,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   ImGui_ImplGlfw_Shutdown();
   ImPlot::DestroyContext();
   ImGui::DestroyContext();
+
+#ifndef _WIN32
+  g_hotkeyThreadRunning = false;
+  unregisterGlobalHotkeyLinux();
+  if (g_hotkeyThread.joinable()) g_hotkeyThread.join();
+#endif
+
   glfwDestroyWindow(g_window);
   glfwTerminate();
 }
