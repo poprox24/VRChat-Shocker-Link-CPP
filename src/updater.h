@@ -165,12 +165,26 @@ inline void checkAsync() {
 }
 
 inline void applyAndRestart(HWND hwnd) {
+  std::string oldPath = pendingExePath;
   std::string newPath = pendingExePath + ".new";
-  std::string cmd = "/c timeout /t 1 /nobreak && move /y \"" + newPath +
-                    "\" \"" + pendingExePath + "\" && start \"\" \"" +
-                    pendingExePath + "\"";
+  std::string bakPath = pendingExePath + ".old";
+
+  std::string cmd = fmt::format(
+      "/c timeout /t 2 /nobreak >nul && "
+      "move /y \"{}\" \"{}\" && "
+      "move /y \"{}\" \"{}\" && "
+      "start \"\" \"{}\"",
+      oldPath, bakPath, newPath, oldPath, oldPath);
+
+  logMsg("[Updater] Replacing binary:\n  {} → {}\n  {} → {}", newPath, oldPath,
+         oldPath, bakPath);
+
   ShellExecuteA(nullptr, "open", "cmd.exe", cmd.c_str(), nullptr, SW_HIDE);
-  PostMessage(hwnd, WM_CLOSE, 0, 0);
+
+  if (hwnd)
+    PostMessage(hwnd, WM_CLOSE, 0, 0);
+  else
+    PostQuitMessage(0);
 }
 
 }  // namespace Updater
@@ -311,15 +325,33 @@ inline void checkAsync() {
 }
 
 inline void applyAndRestart() {
+  std::string oldPath = pendingExePath;
   std::string newPath = pendingExePath + ".new";
+  std::string bakPath = pendingExePath + ".old";
+
   chmod(newPath.c_str(), 0755);
-  // Fork a short-lived child: sleep, replace, relaunch
+
+  logMsg("[Updater] Replacing binary:\n  {} → {}\n  {} → {}", newPath, oldPath,
+         oldPath, bakPath);
+
+  // Fork so the current process can exit cleanly
   if (fork() == 0) {
-    sleep(1);
-    if (rename(newPath.c_str(), pendingExePath.c_str()) == 0)
-      execl(pendingExePath.c_str(), pendingExePath.c_str(), nullptr);
+    sleep(2);
+    if (rename(oldPath.c_str(), bakPath.c_str()) != 0) {
+      logMsg("[Updater] rename old→bak failed");
+      _exit(1);
+    }
+    if (rename(newPath.c_str(), oldPath.c_str()) != 0) {
+      logMsg("[Updater] rename new→old failed");
+      _exit(1);
+    }
+    execl(oldPath.c_str(), oldPath.c_str(), nullptr);
+    logMsg("[Updater] execl failed");
     _exit(1);
   }
+
+  // Parent exits immediately
+  _exit(0);
 }
 
 }  // namespace Updater
