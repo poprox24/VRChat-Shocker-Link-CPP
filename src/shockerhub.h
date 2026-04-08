@@ -1,9 +1,8 @@
 #pragma once
 
+#include <curl/curl.h>
 #include <fmt/ranges.h>
 #include <serialib.h>
-#include <winhttp.h>
-#include <wininet.h>
 
 #include <algorithm>
 #include <chrono>
@@ -35,6 +34,8 @@ class ShockerHub {
   std::atomic<double> cooldownUntil{0.0};
   std::atomic<double> lastTriggerTimeAtomic{0.0};
   std::atomic<double> activeCooldownDuration{0.0};
+
+  std::condition_variable queueCV;
 
   ChatboxSender chatbox;
 
@@ -270,130 +271,79 @@ class ShockerHub {
   std::vector<double> shockTimestamps;
   serialib serial;
 
-  // Duration, useUpperHalf, vibrate
   std::queue<std::tuple<std::optional<int>, bool, bool>> shockQueue;
-  std::condition_variable queueCV;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
 
   int pishockUserId_ = -1;
-  // shockerId -> clientId
   std::unordered_map<int, int> pishockShockerToClient;
   bool pishockResolved = false;
 
-  // WinINet GET - used for PiShock endpoints
+  // ADDED: curl write callback
+  static size_t curlWrite(void* ptr, size_t sz, size_t n, std::string* out) {
+    out->append(static_cast<char*>(ptr), sz * n);
+    return sz * n;
+  }
+
   static std::string httpGet(
       const std::string& url,
       const std::vector<std::string>& extraHeaders = {}) {
-    HINTERNET hNet =
-        InternetOpenA("ShockerLink/" APP_VERSION, 0, nullptr, nullptr, 0);
-    if (!hNet) return "";
-    std::string hdrs;
-    for (auto& h : extraHeaders) hdrs += h + "\r\n";
-    HINTERNET hUrl = InternetOpenUrlA(
-        hNet, url.c_str(), hdrs.empty() ? nullptr : hdrs.c_str(),
-        hdrs.empty() ? 0 : (DWORD)hdrs.size(),
-        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD |
-            INTERNET_FLAG_NO_CACHE_WRITE,
-        0);
-    if (!hUrl) {
-      InternetCloseHandle(hNet);
-      return "";
-    }
+    CURL* c = curl_easy_init();
+    if (!c) return "";
     std::string result;
-    char buf[4096];
-    DWORD read;
-    while (InternetReadFile(hUrl, buf, sizeof(buf), &read) && read > 0)
-      result.append(buf, read);
-    InternetCloseHandle(hUrl);
-    InternetCloseHandle(hNet);
+    curl_slist* hdrs = nullptr;
+    for (auto& h : extraHeaders) hdrs = curl_slist_append(hdrs, h.c_str());
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, curlWrite);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &result);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 5L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(c, CURLOPT_SSL_OPTIONS,
+                     CURLSSLOPT_NATIVE_CA);  // ADDED: use Windows cert store
+    if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
+    CURLcode res = curl_easy_perform(c);  // CHANGED: capture return value
+    if (res != CURLE_OK)                  // ADDED: log failures
+      logMsg("[HTTP] GET failed: {}\n", curl_easy_strerror(res));
+    if (hdrs) curl_slist_free_all(hdrs);
+    curl_easy_cleanup(c);
     return result;
   }
 
-  // OpenSchock GET and POST functions
   static std::string winHttpRequest(
       const std::string& method, const std::string& url,
-      const std::string& body = "",
+      const std::string& body = {},
       const std::vector<std::string>& extraHeaders = {}) {
-    HINTERNET hSession = WinHttpOpen(
-        L"ShockerLink/" APP_VERSION, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!hSession) return "";
-
-    URL_COMPONENTSA uc{};
-    uc.dwStructSize = sizeof(uc);
-    char host[256] = {}, path[512] = {};
-    uc.lpszHostName = host;
-    uc.dwHostNameLength = sizeof(host);
-    uc.lpszUrlPath = path;
-    uc.dwUrlPathLength = sizeof(path);
-    if (!InternetCrackUrlA(url.c_str(), 0, 0, &uc)) {
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    HINTERNET hConnect = WinHttpConnect(
-        hSession, std::wstring(host, host + uc.dwHostNameLength).c_str(),
-        uc.nPort, 0);
-    if (!hConnect) {
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    DWORD flags = WINHTTP_FLAG_REFRESH;
-    if (url.rfind("https://", 0) == 0) flags |= WINHTTP_FLAG_SECURE;
-    std::wstring wmethod(method.begin(), method.end());
-    HINTERNET hRequest = WinHttpOpenRequest(
-        hConnect, wmethod.c_str(),
-        std::wstring(path, path + uc.dwUrlPathLength).c_str(), nullptr,
-        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hRequest) {
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
-    DWORD timeout = 5000;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout,
-                     sizeof(timeout));
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_SEND_TIMEOUT, &timeout,
-                     sizeof(timeout));
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout,
-                     sizeof(timeout));
-
-    std::string hdrStr =
-        body.empty() ? "" : "Content-Type: application/json\r\n";
-    for (auto& h : extraHeaders) hdrStr += h + "\r\n";
-    if (!hdrStr.empty()) {
-      std::wstring whdr(hdrStr.begin(), hdrStr.end());
-      WinHttpAddRequestHeaders(hRequest, whdr.c_str(), (DWORD)whdr.size(),
-                               WINHTTP_ADDREQ_FLAG_ADD);
-    }
-
-    LPVOID bodyPtr = body.empty() ? nullptr : (LPVOID)body.c_str();
-    DWORD bodyLen = (DWORD)body.size();
-    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, bodyPtr,
-                            bodyLen, bodyLen, 0) ||
-        !WinHttpReceiveResponse(hRequest, nullptr)) {
-      WinHttpCloseHandle(hRequest);
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      return "";
-    }
-
+    CURL* c = curl_easy_init();
+    if (!c) return "";
     std::string result;
-    char buf[4096];
-    DWORD read;
-    while (WinHttpReadData(hRequest, buf, sizeof(buf), &read) && read > 0)
-      result.append(buf, read);
-
-    WinHttpCloseHandle(hRequest);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
+    curl_slist* hdrs = nullptr;
+    hdrs = curl_slist_append(hdrs, "Accept: application/json");
+    if (!body.empty())
+      hdrs = curl_slist_append(hdrs, "Content-Type: application/json");
+    for (auto& h : extraHeaders) hdrs = curl_slist_append(hdrs, h.c_str());
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, curlWrite);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &result);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 5L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(c, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+    curl_easy_setopt(
+        c, CURLOPT_USERAGENT,
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+    if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
+    if (method == "POST") {
+      curl_easy_setopt(c, CURLOPT_POST, 1L);
+      curl_easy_setopt(c, CURLOPT_POSTFIELDS, body.c_str());
+      curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)body.size());
+    }
+    CURLcode res = curl_easy_perform(c);
+    if (res != CURLE_OK)
+      logMsg("[HTTP] {} {} failed: {}\n", method, url, curl_easy_strerror(res));
+    if (hdrs) curl_slist_free_all(hdrs);
+    curl_easy_cleanup(c);
     return result;
   }
 
-  // PiShock WebSocket send
   bool sendPiShockWs(int durationMs, int strength, int shockerId, int clientId,
                      bool vibrate) {
     nlohmann::json body = {{"id", shockerId},
@@ -414,108 +364,79 @@ class ShockerHub {
            {"Body", body}}}}};
     std::string msgStr = cmd.dump();
 
-    std::wstring wUser(settings.pishockUsername.begin(),
-                       settings.pishockUsername.end());
-    std::wstring wKey(settings.pishockApiKey.begin(),
-                      settings.pishockApiKey.end());
-    std::wstring path = L"/v2?Username=" + wUser + L"&ApiKey=" + wKey;
-
-    HINTERNET hSession =
-        WinHttpOpen(L"ShockerLink", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!hSession) {
-      logMsg("[PiShock] WinHttpOpen failed ({})\n", GetLastError());
+    CURL* c = curl_easy_init();
+    if (!c) {
+      logMsg("[PiShock] curl init failed");
       return false;
     }
 
-    HINTERNET hConnect = WinHttpConnect(hSession, L"broker.pishock.com",
-                                        INTERNET_DEFAULT_HTTPS_PORT, 0);
-    if (!hConnect) {
-      WinHttpCloseHandle(hSession);
-      logMsg("[PiShock] WinHttpConnect failed ({})\n", GetLastError());
+    char* eu = curl_easy_escape(c, settings.pishockUsername.c_str(), 0);
+    char* ek = curl_easy_escape(c, settings.pishockApiKey.c_str(), 0);
+    std::string url = std::string("wss://broker.pishock.com/v2?Username=") +
+                      eu + "&ApiKey=" + ek;
+    curl_free(eu);
+    curl_free(ek);
+
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_CONNECT_ONLY, 2L);  // WebSocket mode
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 3L);
+
+    CURLcode res = curl_easy_perform(c);
+    if (res != CURLE_OK) {
+      logMsg("[PiShock] WS connect failed: {}", curl_easy_strerror(res));
+      curl_easy_cleanup(c);
       return false;
     }
 
-    HINTERNET hRequest = WinHttpOpenRequest(
-        hConnect, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
-        WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
-    if (!hRequest) {
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      logMsg("[PiShock] WinHttpOpenRequest failed ({})\n", GetLastError());
+    size_t sent = 0;
+    res = curl_ws_send(c, msgStr.c_str(), msgStr.size(), &sent, 0, CURLWS_TEXT);
+    if (res != CURLE_OK) {
+      logMsg("[PiShock] WS send failed: {}", curl_easy_strerror(res));
+      curl_easy_cleanup(c);
       return false;
     }
 
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr,
-                     0);
-
-    DWORD timeout = 5000;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout,
-                     sizeof(timeout));
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_SEND_TIMEOUT, &timeout,
-                     sizeof(timeout));
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout,
-                     sizeof(timeout));
-
-    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr,
-                            0, 0, 0) ||
-        !WinHttpReceiveResponse(hRequest, nullptr)) {
-      logMsg("[PiShock] WS handshake failed ({})\n", GetLastError());
-      WinHttpCloseHandle(hRequest);
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      return false;
-    }
-
-    HINTERNET hWs = WinHttpWebSocketCompleteUpgrade(hRequest, 0);
-    WinHttpCloseHandle(hRequest);
-    if (!hWs) {
-      logMsg("[PiShock] WS upgrade failed ({})\n", GetLastError());
-      WinHttpCloseHandle(hConnect);
-      WinHttpCloseHandle(hSession);
-      return false;
-    }
-
-    DWORD sendErr =
-        WinHttpWebSocketSend(hWs, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
-                             (PVOID)msgStr.data(), (DWORD)msgStr.size());
-
-    bool ok = (sendErr == ERROR_SUCCESS);
-    if (!ok) {
-      logMsg("[PiShock] WS send failed ({})\n", sendErr);
-    } else {
-      char recvBuf[4096] = {};
-      DWORD bytesRead = 0;
-      WINHTTP_WEB_SOCKET_BUFFER_TYPE bufType{};
-      DWORD recvErr = WinHttpWebSocketReceive(
-          hWs, recvBuf, (DWORD)sizeof(recvBuf) - 1, &bytesRead, &bufType);
-      if (recvErr == ERROR_SUCCESS && bytesRead > 0) {
-        std::string resp(recvBuf, bytesRead);
-        auto rj = nlohmann::json::parse(resp, nullptr, false);
-        if (!rj.is_discarded() && rj.value("IsError", false)) {
-          logMsg("[PiShock] Broker error: {}\n", rj.value("Message", resp));
-          ok = false;
-        }
+    char rbuf[4096] = {};
+    size_t rlen = 0;
+    const struct curl_ws_frame* frame = nullptr;
+    res = curl_ws_recv(c, rbuf, sizeof(rbuf) - 1, &rlen, &frame);
+    bool ok = true;
+    if (res == CURLE_OK && rlen > 0) {
+      auto rj = nlohmann::json::parse(std::string(rbuf, rlen), nullptr, false);
+      if (!rj.is_discarded() && rj.value("IsError", false)) {
+        logMsg("[PiShock] Broker error: {}",
+               rj.value("Message", std::string("?")));
+        ok = false;
       }
     }
 
-    WinHttpWebSocketClose(hWs, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr,
-                          0);
-    WinHttpCloseHandle(hWs);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
+    curl_ws_send(c, "", 0, &sent, 0, CURLWS_CLOSE);
+    curl_easy_cleanup(c);
     return ok;
   }
 
+  static std::vector<std::string> serialCandidates() {
+#ifdef _WIN32
+    std::vector<std::string> ports;
+    for (int i = 1; i <= 24; i++) ports.push_back("COM" + std::to_string(i));
+    return ports;
+#else
+    std::vector<std::string> ports;
+    for (int i = 0; i < 8; i++) {
+      ports.push_back("/dev/ttyUSB" + std::to_string(i));
+      ports.push_back("/dev/ttyACM" + std::to_string(i));
+    }
+    return ports;
+#endif
+  }
+
   bool scanForPishock() {
-    for (int i = 1; i <= 24; i++) {
-      settings.serialPort = "COM" + std::to_string(i);
+    for (auto& port : serialCandidates()) {
+      settings.serialPort = port;
       if (serial.openDevice(settings.serialPort.c_str(), settings.baudRate) !=
           1)
         continue;
-
       serial.writeString("{\"cmd\": \"info\"}\n");
-
       bool found = false;
       for (int attempt = 0; attempt < 20; attempt++) {
         char buf[1024] = {0};
@@ -525,8 +446,8 @@ class ShockerHub {
             response.find("pishock") != std::string::npos) {
           found = true;
           if (settings.shockerIDs.empty()) {
-            auto json = nlohmann::json::parse(response.substr(14), nullptr,
-                                              false);  // strip "TERMINALINFO: "
+            auto json =
+                nlohmann::json::parse(response.substr(14), nullptr, false);
             if (!json.is_discarded() && json.contains("shockers"))
               for (auto& s : json["shockers"])
                 settings.pushShockerId(std::to_string(s["id"].get<int>()));
@@ -534,14 +455,12 @@ class ShockerHub {
           break;
         }
       }
-
       if (found) {
         startWorkerThread();
         return true;
       }
       serial.closeDevice();
     }
-
     logMsg(
         "[ShockerHub] Couldn't connect to PiShock HUB, check connection and "
         "reconnect.\n");
@@ -549,14 +468,12 @@ class ShockerHub {
   }
 
   bool scanForOpenshock() {
-    for (int i = 1; i <= 24; i++) {
-      settings.serialPort = "COM" + std::to_string(i);
+    for (auto& port : serialCandidates()) {
+      settings.serialPort = port;
       if (serial.openDevice(settings.serialPort.c_str(), settings.baudRate) !=
           1)
         continue;
-
       serial.writeString("domain\n");
-
       bool found = false;
       for (int attempt = 0; attempt < 5; attempt++) {
         char buf[64] = {0};
@@ -566,17 +483,15 @@ class ShockerHub {
           break;
         }
       }
-
       if (found) {
         startWorkerThread();
         return true;
       }
       serial.closeDevice();
     }
-
     logMsg(
         "[ShockerHub] Couldn't connect to OpenShock HUB, check connection and "
-        "press the reconnect button.\n");
+        "press reconnect.\n");
     return false;
   }
 

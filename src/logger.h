@@ -3,14 +3,24 @@
 #include <fmt/base.h>
 #include <fmt/chrono.h>
 #include <fmt/format.h>
-#include <windows.h>
 
 #include <chrono>
 #include <deque>
 #include <fstream>
 #include <mutex>
 #include <string>
-extern HWND g_hwnd;
+
+inline void (*g_wakeUiFunc)() = nullptr;
+
+inline void safeWakeUi() {
+  if (g_wakeUiFunc) {
+    static std::atomic<bool> waking{false};
+    if (waking.exchange(true)) return;
+
+    g_wakeUiFunc();
+    waking = false;
+  }
+}
 
 struct Logger {
   static constexpr int MAX_LINES = 100;
@@ -22,10 +32,15 @@ struct Logger {
 
   void add(std::string msg) {
     if (!msg.empty() && msg.back() == '\n') msg.pop_back();
+
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
     std::tm tm{};
+#if defined(_WIN32)
     localtime_s(&tm, &time);
+#else
+    localtime_r(&time, &tm);
+#endif
     std::string stamped = fmt::format("[{:02d}:{:02d}:{:02d}] {}", tm.tm_hour,
                                       tm.tm_min, tm.tm_sec, msg);
     std::lock_guard<std::mutex> lock(mtx);
@@ -35,8 +50,7 @@ struct Logger {
       logFile << stamped << '\n';
       logFile.flush();
     }
-    // Wake the UI to render
-    if (g_hwnd) PostMessage(g_hwnd, WM_NULL, 0, 0);
+    if (g_wakeUiFunc) safeWakeUi();
   }
 };
 

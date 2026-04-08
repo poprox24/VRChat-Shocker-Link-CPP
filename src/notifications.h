@@ -1,4 +1,8 @@
 #pragma once
+
+#ifdef _WIN32
+// Windows
+
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -95,3 +99,12 @@ inline void sendOVRToolkit(const std::string& title,
 }
 
 }  // namespace Notifications
+#else
+// Linux
+
+namespace Notifications {
+inline void sendXSOverlay(const std::string&, const std::string&, float = 3.f) {
+}
+inline void sendOVRToolkit(const std::string&, const std::string&) {}
+}  // namespace Notifications
+#endif

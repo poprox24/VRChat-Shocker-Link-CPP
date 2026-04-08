@@ -1,4 +1,5 @@
 #pragma once
+
 #include <array>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -9,6 +10,10 @@
 #include "curve.h"
 #include "imgui.h"
 #include "logger.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 struct Preset {
   std::string name;
@@ -62,7 +67,7 @@ class Settings {
   bool cooldownEnabled = true;
 
   // Panic hotkey
-  int hotkeyVk = VK_F9;
+  int hotkeyVk = 298;  // GLFW_KEY_F9
   int hotkeyMods = 0;  // Alt = 1, Control = 2, Shift = 4
 
   // Notification Config
@@ -99,7 +104,10 @@ class Settings {
     try {
       std::ifstream file(path);
       if (!file.is_open()) return;
-      nlohmann::json j = nlohmann::json::parse(file);
+      std::string content((std::istreambuf_iterator<char>(file)),
+                          std::istreambuf_iterator<char>());
+      if (content.empty()) return;
+      nlohmann::json j = nlohmann::json::parse(content);
 
       windowX = j.value("windowX", 100);
       windowY = j.value("windowY", 100);
@@ -134,7 +142,7 @@ class Settings {
       cooldownEnabled = j.value("cooldownEnabled", true);
 
       // Panic hotkey
-      hotkeyVk = j.value("hotkeyVk", VK_F9);
+      hotkeyVk = j.value("hotkeyVk", 298);  // GLFW_KEY_F9
       hotkeyMods = j.value("hotkeyMods", 0);
 
       // Notification Config (migrate if old values are present)

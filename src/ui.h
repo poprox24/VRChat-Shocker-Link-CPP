@@ -1,23 +1,33 @@
 #pragma once
 
-#include <commdlg.h>
-#include <d3d11.h>
-#include <dwmapi.h>
-#include <dxgi.h>
-#include <shellapi.h>
-#include <shlobj.h>
-#include <windows.h>
+#define GLFW_INCLUDE_NONE
+#include <GL/gl.h>
+#include <GLFW/glfw3.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <deque>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <thread>
+#include <vector>
 using namespace std::chrono;
+
+#ifndef _WIN32
+#include <png.h>
+#endif
+
+#include <yaml-cpp/yaml.h>
+
+#include <nlohmann/json.hpp>
 
 #include "curve.h"
 #include "imgui.h"
-#include "imgui_impl_dx11.h"
-#include "imgui_impl_win32.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
 #include "implot.h"
 #include "logger.h"
@@ -26,109 +36,264 @@ using namespace std::chrono;
 #include "stats.h"
 #include "updater.h"
 
-static constexpr wchar_t kWindowTitle[] = L"Shocker Link";
+static constexpr const char* kWindowTitle = "Shocker Link";
 
-static ID3D11Device* g_pd3dDevice = nullptr;
-static ID3D11DeviceContext* g_pd3dContext = nullptr;
-static IDXGISwapChain* g_pSwapChain = nullptr;
-static ID3D11RenderTargetView* g_mainRTV = nullptr;
-static HWND g_hwnd = nullptr;
+#ifndef _WIN32
+static bool loadPngRgbaFromFile(const std::filesystem::path& pngPath,
+                                int& width, int& height,
+                                std::vector<uint8_t>& pixels) {
+  std::ifstream file(pngPath, std::ios::binary);
+  if (!file) return false;
+  std::vector<uint8_t> pngData((std::istreambuf_iterator<char>(file)), {});
+  if (pngData.empty()) return false;
 
+  png_image image;
+  memset(&image, 0, sizeof(image));
+  image.version = PNG_IMAGE_VERSION;
+  if (!png_image_begin_read_from_memory(&image, pngData.data(), pngData.size()))
+    return false;
+
+  image.format = PNG_FORMAT_RGBA;
+  size_t size = PNG_IMAGE_SIZE(image);
+  pixels.assign(size, 0);
+  if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr))
+    return false;
+
+  width = static_cast<int>(image.width);
+  height = static_cast<int>(image.height);
+  return true;
+}
+
+static bool setWindowIcon(GLFWwindow* window) {
+  std::filesystem::path sourcePath =
+      std::filesystem::path(__FILE__).parent_path() / "icon.png";
+  std::filesystem::path buildPath =
+      std::filesystem::current_path() / "src" / "icon.png";
+  std::filesystem::path rootBuildPath =
+      std::filesystem::current_path().parent_path() / "src" / "icon.png";
+
+  std::vector<std::filesystem::path> candidates = {sourcePath, buildPath,
+                                                   rootBuildPath};
+  std::filesystem::path pngPath;
+  for (auto& path : candidates) {
+    if (std::filesystem::exists(path)) {
+      pngPath = path;
+      break;
+    }
+  }
+  if (pngPath.empty()) return false;
+
+  std::vector<uint8_t> pixels;
+  int width = 0, height = 0;
+  if (!loadPngRgbaFromFile(pngPath, width, height, pixels)) return false;
+
+  GLFWimage icon;
+  icon.width = width;
+  icon.height = height;
+  icon.pixels = pixels.data();
+  glfwSetWindowIcon(window, 1, &icon);
+  return true;
+}
+#endif
+
+static GLFWwindow* g_window = nullptr;
 static ShockerHub* g_hub = nullptr;
+static Settings* g_settingsForHotkey = nullptr;
+
+// Hotkey Manager
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
+static WNDPROC g_origWndProc = nullptr;
+
+static LRESULT CALLBACK hotkeyWndProc(HWND hwnd, UINT msg, WPARAM wp,
+                                      LPARAM lp) {
+  if (msg == WM_HOTKEY && g_hub) {
+    g_hub->shocksDisabled = true;
+    logMsg("[Hotkey] Shocks disabled.");
+    if (g_wakeUiFunc) g_wakeUiFunc();
+  }
+  return CallWindowProc(g_origWndProc, hwnd, msg, wp, lp);
+}
+
+static void registerGlobalHotkey(int glfwKey, int mods) {
+  if (!g_window || !glfwKey) return;
+  HWND hwnd = glfwGetWin32Window(g_window);
+  UINT winMods = MOD_NOREPEAT;
+  if (mods & 1) winMods |= MOD_ALT;
+  if (mods & 2) winMods |= MOD_CONTROL;
+  if (mods & 4) winMods |= MOD_SHIFT;
+  UnregisterHotKey(hwnd, 1);
+  if (glfwKey) RegisterHotKey(hwnd, 1, winMods, glfwKey);
+  if (!g_origWndProc)
+    g_origWndProc =
+        (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)hotkeyWndProc);
+}
+
+#else
+#include <X11/Xlib.h>
+#define GLFW_EXPOSE_NATIVE_X11
+#include <GLFW/glfw3native.h>
+
+static Display* g_x11HotkeyDisplay =
+    nullptr;  // CHANGED: separate connection, not GLFW's
+static Window g_x11Root = 0;
+static KeyCode g_x11GrabbedKey = 0;
+static unsigned int g_x11GrabbedMods = 0;
+static std::thread g_hotkeyThread;
+static std::atomic<bool> g_hotkeyThreadRunning{false};
+
+static int glfwKeyToKeysym(int glfwKey) {
+  if (glfwKey >= GLFW_KEY_F1 && glfwKey <= GLFW_KEY_F25)
+    return XK_F1 + (glfwKey - GLFW_KEY_F1);
+  if (glfwKey >= GLFW_KEY_A && glfwKey <= GLFW_KEY_Z)
+    return XK_a + (glfwKey - GLFW_KEY_A);
+  if (glfwKey >= GLFW_KEY_0 && glfwKey <= GLFW_KEY_9)
+    return XK_0 + (glfwKey - GLFW_KEY_0);
+  return 0;
+}
+
+static void unregisterGlobalHotkeyLinux() {
+  if (!g_x11HotkeyDisplay || !g_x11GrabbedKey) return;
+  unsigned int ignoreMasks[] = {0, LockMask, Mod2Mask, LockMask | Mod2Mask};
+  for (auto ig : ignoreMasks)
+    XUngrabKey(g_x11HotkeyDisplay, g_x11GrabbedKey, g_x11GrabbedMods | ig,
+               g_x11Root);
+  XFlush(g_x11HotkeyDisplay);
+  g_x11GrabbedKey = 0;
+}
+
+static void registerGlobalHotkey(int glfwKey, int mods) {
+  // CHANGED: open dedicated display connection
+  if (!g_x11HotkeyDisplay) {
+    g_x11HotkeyDisplay = XOpenDisplay(nullptr);
+    if (!g_x11HotkeyDisplay) {
+      logMsg("[Hotkey] XOpenDisplay failed");
+      return;
+    }
+    g_x11Root = DefaultRootWindow(g_x11HotkeyDisplay);
+  }
+
+  if (!glfwKey) {
+    unregisterGlobalHotkeyLinux();
+    return;
+  }
+
+  int keysym = glfwKeyToKeysym(glfwKey);
+  if (!keysym) return;
+  KeyCode kc = XKeysymToKeycode(g_x11HotkeyDisplay, keysym);
+  if (!kc) return;
+
+  unregisterGlobalHotkeyLinux();
+
+  unsigned int x11Mods = 0;
+  if (mods & 1) x11Mods |= Mod1Mask;
+  if (mods & 2) x11Mods |= ControlMask;
+  if (mods & 4) x11Mods |= ShiftMask;
+
+  unsigned int ignoreMasks[] = {0, LockMask, Mod2Mask, LockMask | Mod2Mask};
+  XSetErrorHandler([](Display*, XErrorEvent*) -> int {
+    return 0;
+  });  // ADDED: suppress grab-failed errors
+  for (auto ig : ignoreMasks)
+    XGrabKey(g_x11HotkeyDisplay, kc, x11Mods | ig, g_x11Root, True,
+             GrabModeAsync, GrabModeAsync);
+  XFlush(g_x11HotkeyDisplay);
+
+  g_x11GrabbedKey = kc;
+  g_x11GrabbedMods = x11Mods;
+  logMsg("[Hotkey] Registered global hotkey (X11)");
+
+  if (g_hotkeyThreadRunning) return;
+  g_hotkeyThreadRunning = true;
+  g_hotkeyThread = std::thread([] {
+    while (g_hotkeyThreadRunning) {
+      if (!g_x11HotkeyDisplay) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        continue;
+      }
+      // CHANGED: use select() so we don't block forever on XNextEvent
+      int fd = ConnectionNumber(g_x11HotkeyDisplay);
+      fd_set fds;
+      FD_ZERO(&fds);
+      FD_SET(fd, &fds);
+      struct timeval tv{0, 100000};
+      if (select(fd + 1, &fds, nullptr, nullptr, &tv) <= 0) continue;
+      while (XPending(g_x11HotkeyDisplay)) {
+        XEvent ev;
+        XNextEvent(g_x11HotkeyDisplay, &ev);
+        if (ev.type == KeyPress && g_hub) {
+          g_hub->shocksDisabled = true;
+          logMsg("[Hotkey] Shocks disabled.");
+          if (g_wakeUiFunc) g_wakeUiFunc();
+        }
+      }
+    }
+  });
+}
+#endif
 
 extern std::atomic<bool> shouldRestart;
 
 static constexpr size_t kMaxUndoRedoStates = 128;
 
-static void createRenderTargetView() {
-  ID3D11Texture2D* buf = nullptr;
-  g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&buf));
-  g_pd3dDevice->CreateRenderTargetView(buf, nullptr, &g_mainRTV);
-  buf->Release();
-}
-static void destroyRenderTargetView() {
-  if (g_mainRTV) {
-    g_mainRTV->Release();
-    g_mainRTV = nullptr;
-  }
-}
-
 struct AppState {
   Settings settings;
   std::array<CurvePoint, 3> curvePoints;
-  float minDur = 0.f;
-  float maxDur = 0.f;
-  float xViewMin = 0.f;
-  float xViewMax = 0.f;
+  float minDur = 0.f, maxDur = 0.f, xViewMin = 0.f, xViewMax = 0.f;
   bool cooldownEnabled = false;
 
-  std::string stgShockParam;
-  std::string stgSecondParam;
-  std::string stgShockerIDs;
-  std::string stgSerialPort;
-  std::string stgVrchatHost;
-  bool stgUsePishock = false;
-  bool stgRandomOrSeq = false;
-  int stgBaseCooldown = 2;
-  int stgMaxCooldown = 6;
-  float stgCooldownFactor = 0.4f;
-  int stgCooldownWindow = 30;
-  bool stgNotifEnabled = false;
-  bool stgNotifUseOvr = false;
-  bool stgUseSerial = true;
-  std::string stgPishockUser;
-  std::string stgPishockKey;
-  std::string stgOpenshockToken;
-  std::string stgOpenshockServer;
-  int stgPresetCount = 3;
-  float stgTouchThreshold = 8.f;
+  std::string stgShockParam, stgSecondParam, stgShockerIDs, stgSerialPort,
+      stgVrchatHost, stgPishockUser, stgPishockKey, stgOpenshockToken,
+      stgOpenshockServer;
+  bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
+       stgNotifUseOvr = false, stgUseSerial = true;
+  int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
+      stgPresetCount = 3;
+  float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f;
 
-  bool operator==(const AppState& other) const {
-    return settings == other.settings && curvePoints == other.curvePoints &&
-           minDur == other.minDur && maxDur == other.maxDur &&
-           xViewMin == other.xViewMin && xViewMax == other.xViewMax &&
-           cooldownEnabled == other.cooldownEnabled &&
-           stgShockParam == other.stgShockParam &&
-           stgSecondParam == other.stgSecondParam &&
-           stgShockerIDs == other.stgShockerIDs &&
-           stgSerialPort == other.stgSerialPort &&
-           stgVrchatHost == other.stgVrchatHost &&
-           stgUsePishock == other.stgUsePishock &&
-           stgRandomOrSeq == other.stgRandomOrSeq &&
-           stgBaseCooldown == other.stgBaseCooldown &&
-           stgMaxCooldown == other.stgMaxCooldown &&
-           stgCooldownFactor == other.stgCooldownFactor &&
-           stgCooldownWindow == other.stgCooldownWindow &&
-           stgNotifEnabled == other.stgNotifEnabled &&
-           stgNotifUseOvr == other.stgNotifUseOvr &&
-           stgUseSerial == other.stgUseSerial &&
-           stgPishockUser == other.stgPishockUser &&
-           stgPishockKey == other.stgPishockKey &&
-           stgOpenshockToken == other.stgOpenshockToken &&
-           stgOpenshockServer == other.stgOpenshockServer &&
-           stgPresetCount == other.stgPresetCount &&
-           stgTouchThreshold == other.stgTouchThreshold;
+  bool operator==(const AppState& o) const {
+    return settings == o.settings && curvePoints == o.curvePoints &&
+           minDur == o.minDur && maxDur == o.maxDur && xViewMin == o.xViewMin &&
+           xViewMax == o.xViewMax && cooldownEnabled == o.cooldownEnabled &&
+           stgShockParam == o.stgShockParam &&
+           stgSecondParam == o.stgSecondParam &&
+           stgShockerIDs == o.stgShockerIDs &&
+           stgSerialPort == o.stgSerialPort &&
+           stgVrchatHost == o.stgVrchatHost &&
+           stgUsePishock == o.stgUsePishock &&
+           stgRandomOrSeq == o.stgRandomOrSeq &&
+           stgBaseCooldown == o.stgBaseCooldown &&
+           stgMaxCooldown == o.stgMaxCooldown &&
+           stgCooldownFactor == o.stgCooldownFactor &&
+           stgCooldownWindow == o.stgCooldownWindow &&
+           stgNotifEnabled == o.stgNotifEnabled &&
+           stgNotifUseOvr == o.stgNotifUseOvr &&
+           stgUseSerial == o.stgUseSerial &&
+           stgPishockUser == o.stgPishockUser &&
+           stgPishockKey == o.stgPishockKey &&
+           stgOpenshockToken == o.stgOpenshockToken &&
+           stgOpenshockServer == o.stgOpenshockServer &&
+           stgPresetCount == o.stgPresetCount &&
+           stgTouchThreshold == o.stgTouchThreshold;
   }
-
-  bool operator!=(const AppState& other) const { return !(*this == other); }
+  bool operator!=(const AppState& o) const { return !(*this == o); }
 };
 
 struct UiContext {
   Settings& settings;
   ShockerHub& hub;
-
   float& minDur;
   float& maxDur;
   float& xViewMin;
   float& xViewMax;
   bool& cooldownEnabled;
-
   char (&stgShockParam)[64];
   char (&stgSecondParam)[64];
   char (&stgShockerIDs)[256];
   char (&stgSerialPort)[64];
   char (&stgVrchatHost)[64];
-
   bool& stgUsePishock;
   bool& stgRandomOrSeq;
   int& stgBaseCooldown;
@@ -155,7 +320,6 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.xViewMin = ui.xViewMin;
   st.xViewMax = ui.xViewMax;
   st.cooldownEnabled = ui.cooldownEnabled;
-
   st.stgShockParam = ui.stgShockParam;
   st.stgSecondParam = ui.stgSecondParam;
   st.stgShockerIDs = ui.stgShockerIDs;
@@ -176,7 +340,6 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.stgOpenshockServer = ui.stgOpenshockServer;
   st.stgPresetCount = ui.stgPresetCount;
   st.stgTouchThreshold = ui.stgTouchThreshold;
-
   return st;
 }
 
@@ -188,18 +351,24 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.xViewMin = st.xViewMin;
   ui.xViewMax = st.xViewMax;
   ui.cooldownEnabled = st.cooldownEnabled;
-
   ui.settings.minShockDuration = ui.minDur;
   ui.settings.maxShockDuration = ui.maxDur;
   ui.settings.xViewMin = ui.xViewMin;
   ui.settings.xViewMax = ui.xViewMax;
   ui.settings.cooldownEnabled = ui.cooldownEnabled;
 
-  strncpy_s(ui.stgShockParam, st.stgShockParam.c_str(), _TRUNCATE);
-  strncpy_s(ui.stgSecondParam, st.stgSecondParam.c_str(), _TRUNCATE);
-  strncpy_s(ui.stgShockerIDs, st.stgShockerIDs.c_str(), _TRUNCATE);
-  strncpy_s(ui.stgSerialPort, st.stgSerialPort.c_str(), _TRUNCATE);
-  strncpy_s(ui.stgVrchatHost, st.stgVrchatHost.c_str(), _TRUNCATE);
+  auto cp = [](auto& dst, const std::string& src) {
+    snprintf(dst, sizeof(dst), "%s", src.c_str());
+  };
+  cp(ui.stgShockParam, st.stgShockParam);
+  cp(ui.stgSecondParam, st.stgSecondParam);
+  cp(ui.stgShockerIDs, st.stgShockerIDs);
+  cp(ui.stgSerialPort, st.stgSerialPort);
+  cp(ui.stgVrchatHost, st.stgVrchatHost);
+  cp(ui.stgPishockUser, st.stgPishockUser);
+  cp(ui.stgPishockKey, st.stgPishockKey);
+  cp(ui.stgOpenshockToken, st.stgOpenshockToken);
+  cp(ui.stgOpenshockServer, st.stgOpenshockServer);
 
   ui.stgUsePishock = st.stgUsePishock;
   ui.stgRandomOrSeq = st.stgRandomOrSeq;
@@ -210,10 +379,6 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.stgNotifEnabled = st.stgNotifEnabled;
   ui.stgNotifUseOvr = st.stgNotifUseOvr;
   ui.stgUseSerial = st.stgUseSerial;
-  strncpy_s(ui.stgPishockUser, st.stgPishockUser.c_str(), _TRUNCATE);
-  strncpy_s(ui.stgPishockKey, st.stgPishockKey.c_str(), _TRUNCATE);
-  strncpy_s(ui.stgOpenshockToken, st.stgOpenshockToken.c_str(), _TRUNCATE);
-  strncpy_s(ui.stgOpenshockServer, st.stgOpenshockServer.c_str(), _TRUNCATE);
   ui.stgPresetCount = st.stgPresetCount;
   ui.stgTouchThreshold = st.stgTouchThreshold;
 }
@@ -223,10 +388,8 @@ static void pushUndoSnapshot(std::deque<AppState>& undoStack,
                              const AppState& state, bool isPerformingUndoRedo) {
   if (isPerformingUndoRedo) return;
   if (!undoStack.empty() && undoStack.back() == state) return;
-
   undoStack.push_back(state);
   if (undoStack.size() > kMaxUndoRedoStates) undoStack.pop_front();
-
   redoStack.clear();
 }
 
@@ -235,71 +398,34 @@ static void performUndoRedo(bool is_undo, std::deque<AppState>& undoStack,
                             bool& isPerformingUndoRedo) {
   if (is_undo && undoStack.empty()) return;
   if (!is_undo && redoStack.empty()) return;
-
   isPerformingUndoRedo = true;
   AppState current = snapshotAppState(ui);
-
   if (is_undo) {
     redoStack.push_back(current);
     if (redoStack.size() > kMaxUndoRedoStates) redoStack.pop_front();
-
     AppState previous = undoStack.back();
     undoStack.pop_back();
     restoreAppState(previous, ui);
   } else {
     undoStack.push_back(current);
     if (undoStack.size() > kMaxUndoRedoStates) undoStack.pop_front();
-
     AppState next = redoStack.back();
     redoStack.pop_back();
     restoreAppState(next, ui);
   }
-
   isPerformingUndoRedo = false;
 }
 
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM,
-                                                             LPARAM);
-
-static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-  if (msg == WM_HOTKEY && wp == 1) {
-    if (g_hub) {
+static void glfwKeyCallback(GLFWwindow* window, int key, int scancode,
+                            int action, int mods) {
+  ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
+  if (action == GLFW_PRESS && g_hub && g_settingsForHotkey) {
+    if (key == g_settingsForHotkey->hotkeyVk) {
+      // NOTE: hotkeyMods check omitted for now — add if needed
       g_hub->shocksDisabled = true;
       logMsg("[Hotkey] Shocks disabled.");
     }
   }
-  if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp)) return true;
-  if (msg == WM_SIZE && g_pSwapChain) {
-    destroyRenderTargetView();
-    g_pSwapChain->ResizeBuffers(0, (UINT)LOWORD(lp), (UINT)HIWORD(lp),
-                                DXGI_FORMAT_UNKNOWN, 0);
-    createRenderTargetView();
-  }
-  if (msg == WM_DESTROY) {
-    PostQuitMessage(0);
-    return 0;
-  }
-  return DefWindowProcW(hwnd, msg, wp, lp);
-}
-
-static bool initializeD3D11(HWND hwnd) {
-  DXGI_SWAP_CHAIN_DESC sd{};
-  sd.BufferCount = 2;
-  sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-  sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  sd.OutputWindow = hwnd;
-  sd.SampleDesc.Count = 1;
-  sd.Windowed = TRUE;
-  sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-  D3D_FEATURE_LEVEL fl;
-  HRESULT hr = D3D11CreateDeviceAndSwapChain(
-      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0,
-      D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &fl,
-      &g_pd3dContext);
-  if (FAILED(hr)) return false;
-  createRenderTargetView();
-  return true;
 }
 
 // Save button icon
@@ -308,14 +434,12 @@ static bool drawSaveIconButton(const char* id) {
   ImGui::InvisibleButton(id, size);
   bool clicked = ImGui::IsItemClicked();
   bool hovered = ImGui::IsItemHovered();
-
   ImDrawList* dl = ImGui::GetWindowDrawList();
   ImVec2 p = ImGui::GetItemRectMin();
   ImU32 col = hovered
                   ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.f, 1.f, 1.f, 1.f))
                   : ImGui::ColorConvertFloat4ToU32(
                         ImGui::GetStyle().Colors[ImGuiCol_Text]);
-
   // Floppy disk body
   dl->AddRectFilled(p, {p.x + 14, p.y + 14}, col, 1.f);
   // Inner label area (cutout)
@@ -326,28 +450,145 @@ static bool drawSaveIconButton(const char* id) {
   dl->AddRectFilled({p.x + 4, p.y + 1}, {p.x + 10, p.y + 5},
                     ImGui::ColorConvertFloat4ToU32(
                         ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
-
   return clicked;
+}
+
+inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
+                                 float min, float max, float width = -1.f) {
+  ImGuiIO& io = ImGui::GetIO();
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImGuiStyle& style = ImGui::GetStyle();
+  if (width < 0) width = ImGui::GetContentRegionAvail().x;
+  float height = ImGui::GetFrameHeight();
+  ImVec2 pos = ImGui::GetCursorScreenPos();
+  ImGui::Dummy({width, height});
+  bool changed = false;
+  float trackY = pos.y + height * 0.5f;
+  float trackX0 = pos.x + height * 0.5f;
+  float trackX1 = pos.x + width - height * 0.5f;
+  float trackW = trackX1 - trackX0;
+  float hRadius = height * 0.5f;
+  auto valToX = [&](float v) {
+    return trackX0 + (v - min) / (max - min) * trackW;
+  };
+  auto xToVal = [&](float x) {
+    return std::clamp(min + (x - trackX0) / trackW * (max - min), min, max);
+  };
+  ImVec2 hMinPos = {valToX(*vMin), trackY};
+  ImVec2 hMaxPos = {valToX(*vMax), trackY};
+  static int dragging = 0;
+  ImVec2 mouse = io.MousePos;
+  auto inCircle = [&](ImVec2 c) {
+    float dx = mouse.x - c.x, dy = mouse.y - c.y;
+    return dx * dx + dy * dy <= hRadius * hRadius;
+  };
+  if (ImGui::IsMouseClicked(0) && dragging == 0) {
+    bool onMin = inCircle(hMinPos), onMax = inCircle(hMaxPos);
+    if (onMin && onMax)
+      dragging = (mouse.x < (hMinPos.x + hMaxPos.x) * 0.5f) ? 1 : 2;
+    else if (onMin)
+      dragging = 1;
+    else if (onMax)
+      dragging = 2;
+  }
+  if (!ImGui::IsMouseDown(0)) dragging = 0;
+  if (dragging == 1) {
+    *vMin = std::min(xToVal(mouse.x), *vMax - 1.f);
+    changed = true;
+  } else if (dragging == 2) {
+    *vMax = std::max(xToVal(mouse.x), *vMin + 1.f);
+    changed = true;
+  }
+  hMinPos = {valToX(*vMin), trackY};
+  hMaxPos = {valToX(*vMax), trackY};
+  bool hovMin = inCircle(hMinPos), hovMax = inCircle(hMaxPos);
+  ImU32 trackCol =
+      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_FrameBg]);
+  ImU32 fillCol =
+      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrab]);
+  ImU32 grabCol =
+      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrab]);
+  ImU32 grabActCol =
+      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrabActive]);
+  dl->AddRectFilled({trackX0, trackY - 3}, {trackX1, trackY + 3}, trackCol, 3);
+  dl->AddRectFilled({hMinPos.x, trackY - 3}, {hMaxPos.x, trackY + 3}, fillCol,
+                    3);
+  dl->AddCircleFilled(hMinPos, hRadius,
+                      (dragging == 1 || hovMin) ? grabActCol : grabCol, 12);
+  dl->AddCircleFilled(hMaxPos, hRadius,
+                      (dragging == 2 || hovMax) ? grabActCol : grabCol, 12);
+  return changed;
+}
+
+inline void applyUiTheme(Settings& settings) {
+  ImGuiStyle& style = ImGui::GetStyle();
+  style.Colors[ImGuiCol_WindowBg] = settings.backgroundColor;
+  style.Colors[ImGuiCol_ChildBg] = settings.backgroundColor;
+  style.Colors[ImGuiCol_Text] = settings.labelColor;
+  ImVec4 a = settings.accentColor;
+  ImVec4 aH = {a.x * 1.2f, a.y * 1.2f, a.z * 1.2f, a.w};
+  ImVec4 aA = {a.x * 0.8f, a.y * 0.8f, a.z * 0.8f, a.w};
+  ImVec4 aD = {a.x * 0.5f, a.y * 0.5f, a.z * 0.5f, a.w};
+  style.Colors[ImGuiCol_Button] = aA;
+  style.Colors[ImGuiCol_ButtonHovered] = a;
+  style.Colors[ImGuiCol_ButtonActive] = aH;
+  style.Colors[ImGuiCol_FrameBg] = aD;
+  style.Colors[ImGuiCol_FrameBgHovered] = {aD.x * 1.3f, aD.y * 1.3f,
+                                           aD.z * 1.3f, aD.w};
+  style.Colors[ImGuiCol_FrameBgActive] = aA;
+  style.Colors[ImGuiCol_SliderGrab] = a;
+  style.Colors[ImGuiCol_SliderGrabActive] = aH;
+  style.Colors[ImGuiCol_CheckMark] = aH;
+  style.Colors[ImGuiCol_Header] = aA;
+  style.Colors[ImGuiCol_HeaderHovered] = a;
+  style.Colors[ImGuiCol_HeaderActive] = aH;
+  style.Colors[ImGuiCol_SeparatorHovered] = a;
+  style.Colors[ImGuiCol_SeparatorActive] = aH;
+  style.Colors[ImGuiCol_TitleBgActive] = aD;
+  ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = settings.outsideCurveBg;
+  ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = settings.outsideCurveBg;
+  ImPlot::GetStyle().Colors[ImPlotCol_AxisText] = settings.labelColor;
+  ImPlot::GetStyle().Colors[ImPlotCol_LegendText] = settings.labelColor;
+  ImVec4& bgColor = settings.outsideCurveBg;
+  ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] = {bgColor.x, bgColor.y,
+                                                   bgColor.z, 0.84f};
+}
+
+static void registerPanicHotkey(const Settings& settings) {
+  registerGlobalHotkey(settings.hotkeyVk, settings.hotkeyMods);
+}
+
+inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
+  std::string s;
+  if (mods & 2) s += "Ctrl+";
+  if (mods & 1) s += "Alt+";
+  if (mods & 4) s += "Shift+";
+  if (glfwKey >= GLFW_KEY_F1 && glfwKey <= GLFW_KEY_F25) {
+    s += "F" + std::to_string(glfwKey - GLFW_KEY_F1 + 1);
+  } else if (glfwKey != 0) {
+    const char* name = glfwGetKeyName(glfwKey, 0);
+    if (name) {
+      std::string n = name;
+      if (!n.empty()) n[0] = (char)toupper((unsigned char)n[0]);
+      s += n;
+    } else {
+      s += "Key(" + std::to_string(glfwKey) + ")";
+    }
+  } else {
+    s += "None";
+  }
+  return s;
 }
 
 // Button to import old config from
 inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
                                      float& minDur, float& maxDur,
                                      float& xViewMin, float& xViewMax,
-                                     const std::string& settingsPath) {
-  // Folder picker
-  char folderPath[MAX_PATH] = {};
-  BROWSEINFOA bi{};
-  bi.hwndOwner = g_hwnd;
-  bi.pszDisplayName = folderPath;
-  bi.lpszTitle = "Select your Python ShockerLink folder";
-  bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-  LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
-  if (!pidl) return false;
-  SHGetPathFromIDListA(pidl, folderPath);
-  CoTaskMemFree(pidl);
-
-  std::string folder = std::string(folderPath) + "\\";
+                                     const std::string& settingsPath,
+                                     const char* folderPathIn) {
+  if (!folderPathIn || folderPathIn[0] == '\0') return false;
+  std::string folder = folderPathIn;
+  if (!folder.empty() && folder.back() != '/') folder += '/';
 
   // --- Import curve_settings.json ---
   try {
@@ -356,22 +597,18 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
       nlohmann::json j = nlohmann::json::parse(f);
       const nlohmann::json names =
           j.contains("preset_names") ? j["preset_names"] : nlohmann::json{};
-
       if (j.contains("curve_points") && j["curve_points"].size() == 3)
         for (int i = 0; i < 3; i++)
           hub.curvePoints[i] = {j["curve_points"][i][0].get<double>(),
                                 j["curve_points"][i][1].get<double>()};
-
       if (j.contains("min_duration"))
         minDur = settings.minShockDuration = j["min_duration"].get<float>();
       if (j.contains("max_duration"))
         maxDur = settings.maxShockDuration = j["max_duration"].get<float>();
-
       if (j.contains("ui_min_x"))
         xViewMin = settings.xViewMin = j["ui_min_x"].get<float>();
       if (j.contains("ui_max_x"))
         xViewMax = settings.xViewMax = j["ui_max_x"].get<float>();
-
       auto& rawPresets = j["presets"];
       for (int i = 0;
            i < (int)settings.presets.size() && i < (int)rawPresets.size();
@@ -395,8 +632,9 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
                                 rp["curve_points"][k][1].get<double>()};
         settings.presets[i] = p;
       }
-
       settings.defaultPreset = j.value("default_preset", -1);
+
+      // Apply default preset if set
       if (settings.defaultPreset >= 0 &&
           settings.defaultPreset < (int)settings.presets.size() &&
           settings.presets[settings.defaultPreset].has_value()) {
@@ -409,7 +647,7 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
       }
       logMsg("Imported curve_settings.json");
     } else {
-      logMsg("curve_settings.json not found in selected folder, skipping");
+      logMsg("curve_settings.json not found in folder, skipping");
     }
   } catch (std::exception& e) {
     logMsg("curve_settings.json import failed: {}", e.what());
@@ -439,7 +677,7 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
       settings.lineWidth = c["LINE_WIDTH"].as<float>(3.f);
       auto hex = [](const std::string& h) {
         unsigned r = 0, g = 0, b = 0;
-        sscanf_s(h.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
+        sscanf(h.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
         return ImVec4{r / 255.f, g / 255.f, b / 255.f, 1.f};
       };
       settings.outsideCurveBg =
@@ -454,14 +692,11 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
           hex(c["GRADIENT_LEFT_COLOR"].as<std::string>("#42953b"));
       settings.gradientRightColor =
           hex(c["GRADIENT_RIGHT_COLOR"].as<std::string>("#6e173b"));
-
-      // Handle both old single-ID keys and new array key
       settings.shockerIDs.clear();
       if (c["SHOCKER_IDS"]) {
         for (auto id : c["SHOCKER_IDS"])
           settings.shockerIDs.push_back(std::to_string(id.as<int>()));
       } else {
-        // Old Python format: pishock wins if present
         std::string id;
         if (c["PISHOCK_SHOCKER_ID"])
           id = c["PISHOCK_SHOCKER_ID"].as<std::string>("");
@@ -470,16 +705,13 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
         if (!id.empty()) settings.shockerIDs.push_back(id);
       }
       if (settings.shockerIDs.empty()) settings.shockerIDs = {"41838"};
-
-      // Migrate old notification booleans
       bool oldXs = c["XSOVERLAY_NOTIFICATIONS"].as<bool>(false);
       bool oldOvr = c["OVRTOOLKIT_NOTIFICATIONS"].as<bool>(false);
       settings.notificationsEnabled = oldXs || oldOvr;
       settings.notifUseOvrToolkit = oldOvr;
-
       logMsg("Imported config.yml");
     } else {
-      logMsg("config.yml not found in selected folder, skipping");
+      logMsg("config.yml not found in folder, skipping");
     }
   } catch (std::exception& e) {
     logMsg("config.yml import failed: {}", e.what());
@@ -489,210 +721,116 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
   return true;
 }
 
-inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
-                                 float min, float max, float width = -1.f) {
-  ImGuiIO& io = ImGui::GetIO();
-  ImDrawList* dl = ImGui::GetWindowDrawList();
-  ImGuiStyle& style = ImGui::GetStyle();
-
-  if (width < 0) width = ImGui::GetContentRegionAvail().x;
-  float height = ImGui::GetFrameHeight();
-  ImVec2 pos = ImGui::GetCursorScreenPos();
-
-  ImGui::Dummy({width, height});
-  bool changed = false;
-
-  float trackY = pos.y + height * 0.5f;
-  float trackX0 = pos.x + height * 0.5f;
-  float trackX1 = pos.x + width - height * 0.5f;
-  float trackW = trackX1 - trackX0;
-  float hRadius = height * 0.5f;
-
-  auto valToX = [&](float v) {
-    return trackX0 + (v - min) / (max - min) * trackW;
-  };
-  auto xToVal = [&](float x) {
-    return std::clamp(min + (x - trackX0) / trackW * (max - min), min, max);
-  };
-
-  ImVec2 hMinPos = {valToX(*vMin), trackY};
-  ImVec2 hMaxPos = {valToX(*vMax), trackY};
-
-  static int dragging = 0;
-  ImVec2 mouse = io.MousePos;
-
-  auto inCircle = [&](ImVec2 c) {
-    float dx = mouse.x - c.x, dy = mouse.y - c.y;
-    return dx * dx + dy * dy <= hRadius * hRadius;
-  };
-
-  if (ImGui::IsMouseClicked(0) && dragging == 0) {
-    bool onMin = inCircle(hMinPos), onMax = inCircle(hMaxPos);
-    if (onMin && onMax)
-      dragging = (mouse.x < (hMinPos.x + hMaxPos.x) * 0.5f) ? 1 : 2;
-    else if (onMin)
-      dragging = 1;
-    else if (onMax)
-      dragging = 2;
-  }
-  if (!ImGui::IsMouseDown(0)) dragging = 0;
-
-  if (dragging == 1) {
-    *vMin = std::min(xToVal(mouse.x), *vMax - 1.f);
-    changed = true;
-  } else if (dragging == 2) {
-    *vMax = std::max(xToVal(mouse.x), *vMin + 1.f);
-    changed = true;
-  }
-
-  hMinPos = {valToX(*vMin), trackY};
-  hMaxPos = {valToX(*vMax), trackY};
-
-  bool hovMin = inCircle(hMinPos), hovMax = inCircle(hMaxPos);
-
-  ImU32 trackCol =
-      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_FrameBg]);
-  ImU32 fillCol =
-      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrab]);
-  ImU32 grabCol =
-      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrab]);
-  ImU32 grabActCol =
-      ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrabActive]);
-
-  dl->AddRectFilled({trackX0, trackY - 3}, {trackX1, trackY + 3}, trackCol, 3);
-  dl->AddRectFilled({hMinPos.x, trackY - 3}, {hMaxPos.x, trackY + 3}, fillCol,
-                    3);
-  dl->AddCircleFilled(hMinPos, hRadius,
-                      (dragging == 1 || hovMin) ? grabActCol : grabCol, 12);
-  dl->AddCircleFilled(hMaxPos, hRadius,
-                      (dragging == 2 || hovMax) ? grabActCol : grabCol, 12);
-
-  return changed;
-}
-
-inline void applyUiTheme(Settings& settings) {
-  ImGuiStyle& style = ImGui::GetStyle();
-  style.Colors[ImGuiCol_WindowBg] = settings.backgroundColor;
-  style.Colors[ImGuiCol_ChildBg] = settings.backgroundColor;
-  style.Colors[ImGuiCol_Text] = settings.labelColor;
-
-  // Accent color variants
-  ImVec4 a = settings.accentColor;
-  ImVec4 aH = {a.x * 1.2f, a.y * 1.2f, a.z * 1.2f, a.w};  // Hovered
-  ImVec4 aA = {a.x * 0.8f, a.y * 0.8f, a.z * 0.8f, a.w};  // Active/pressed
-  ImVec4 aD = {a.x * 0.5f, a.y * 0.5f, a.z * 0.5f, a.w};  // Dim (frame bg)
-
-  style.Colors[ImGuiCol_Button] = aA;
-  style.Colors[ImGuiCol_ButtonHovered] = a;
-  style.Colors[ImGuiCol_ButtonActive] = aH;
-  style.Colors[ImGuiCol_FrameBg] = aD;
-  style.Colors[ImGuiCol_FrameBgHovered] = {aD.x * 1.3f, aD.y * 1.3f,
-                                           aD.z * 1.3f, aD.w};
-  style.Colors[ImGuiCol_FrameBgActive] = aA;
-  style.Colors[ImGuiCol_SliderGrab] = a;
-  style.Colors[ImGuiCol_SliderGrabActive] = aH;
-  style.Colors[ImGuiCol_CheckMark] = aH;
-  style.Colors[ImGuiCol_Header] = aA;
-  style.Colors[ImGuiCol_HeaderHovered] = a;
-  style.Colors[ImGuiCol_HeaderActive] = aH;
-  style.Colors[ImGuiCol_SeparatorHovered] = a;
-  style.Colors[ImGuiCol_SeparatorActive] = aH;
-  style.Colors[ImGuiCol_TitleBgActive] = aD;
-
-  ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = settings.outsideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = settings.outsideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_AxisText] = settings.labelColor;
-  ImPlot::GetStyle().Colors[ImPlotCol_LegendText] = settings.labelColor;
-
-  ImVec4& bgColor = settings.outsideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] =
-      ImVec4(bgColor.x, bgColor.y, bgColor.z, 0.84f);
-}
-
-static void registerPanicHotkey(const Settings& settings) {
-  UnregisterHotKey(g_hwnd, 1);
-  if (settings.hotkeyVk != 0)
-    RegisterHotKey(g_hwnd, 1, settings.hotkeyMods | MOD_NOREPEAT,
-                   settings.hotkeyVk);
-}
-
-inline std::string formatKeyNameFromVk(int vk, int mods) {
-  std::string s;
-  if (mods & MOD_CONTROL) s += "Ctrl+";
-  if (mods & MOD_ALT) s += "Alt+";
-  if (mods & MOD_SHIFT) s += "Shift+";
-  char buf[32] = {};
-  UINT sc = MapVirtualKeyA(vk, MAPVK_VK_TO_VSC);
-  GetKeyNameTextA(sc << 16, buf, sizeof(buf));
-  s += buf[0] ? buf : "?";
-  return s;
-}
-
 // UI entry point
 inline void runUI(Settings& settings, ShockerHub& hub,
                   const std::string& settingsPath) {
-  HICON hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(1));
-  WNDCLASSEXW wc{sizeof(wc),
-                 CS_CLASSDC,
-                 WndProc,
-                 0,
-                 0,
-                 GetModuleHandle(nullptr),
-                 hIcon,
-                 nullptr,
-                 nullptr,
-                 nullptr,
-                 L"ShockerLink",
-                 hIcon};
-  ImGui_ImplWin32_EnableDpiAwareness();
-  RegisterClassExW(&wc);
+  extern std::atomic<bool> running;
 
-  g_hwnd =
-      CreateWindowW(wc.lpszClassName, kWindowTitle, WS_OVERLAPPEDWINDOW,
-                    settings.windowX, settings.windowY, settings.windowW,
-                    settings.windowH, nullptr, nullptr, wc.hInstance, nullptr);
+  static bool g_canSetWindowPos = true;
+  glfwSetErrorCallback([](int err, const char* desc) {
+    if (err == 65548) return;
+    if (err == 65540) return;
+    logMsg("[GLFW] Error {}: {}", err, desc);
+  });
+#ifndef _WIN32
+  glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+#endif
+  if (!glfwInit()) {
+    logMsg("[UI] glfwInit failed");
+    return;
+  }
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+  g_window = glfwCreateWindow(settings.windowW, settings.windowH, kWindowTitle,
+                              nullptr, nullptr);
+  if (!g_window) {
+    logMsg("[UI] glfwCreateWindow failed");
+    glfwTerminate();
+    return;
+  }
+
+#ifndef _WIN32
+  if (!setWindowIcon(g_window)) {
+    logMsg("[UI] Failed to load window icon");
+  }
+#endif
+
+#ifdef _WIN32
+  glfwSetWindowPos(g_window, settings.windowX, settings.windowY);
+#endif
+  glfwMakeContextCurrent(g_window);
+  glfwSwapInterval(1);  // vsync
 
   g_hub = &hub;
-
-  BOOL dark = TRUE;
-  DwmSetWindowAttribute(g_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark,
-                        sizeof(dark));
-
-  SendMessage(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
-  SendMessage(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-
-  if (!initializeD3D11(g_hwnd)) return;
-
-  ShowWindow(g_hwnd, SW_SHOWDEFAULT);
-  UpdateWindow(g_hwnd);
+  g_settingsForHotkey = &settings;
   registerPanicHotkey(settings);
+  g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
+
+  glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
+    glfwSetWindowShouldClose(win, GLFW_TRUE);
+    running = false;
+
+    g_wakeUiFunc = nullptr;
+
+    if (g_hub) {
+      g_hub->queueCV.notify_all();
+    }
+  });
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImPlot::CreateContext();
 
   ImGuiIO& io = ImGui::GetIO();
-
   io.IniFilename = nullptr;
 
-  io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 18.0f);
-  // Merge symbol font for ⚡ (U+26A1)
+  ImFont* boldFont = nullptr;
   {
-    ImFontConfig cfg;
-    cfg.MergeMode = true;
-    cfg.GlyphOffset = {0, 0.f};
-    static const ImWchar ranges[] = {0x2600, 0x27FF, 0};
-    io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/seguisym.ttf", 18.0f, &cfg,
-                                 ranges);
+    const char* regularPaths[] = {
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf", nullptr};
+    const char* boldPaths[] = {
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf", nullptr};
+    const char* symPaths[] = {
+        "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+        "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf", nullptr};
+
+    for (auto p = regularPaths; *p; ++p) {
+      if (std::filesystem::exists(*p)) {
+        io.Fonts->AddFontFromFileTTF(*p, 18.0f);
+        break;
+      }
+    }
+    if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
+
+    for (auto p = symPaths; *p; ++p) {
+      if (std::filesystem::exists(*p)) {
+        ImFontConfig cfg;
+        cfg.MergeMode = true;
+        static const ImWchar ranges[] = {0x2600, 0x27FF, 0};
+        io.Fonts->AddFontFromFileTTF(*p, 18.0f, &cfg, ranges);
+        break;
+      }
+    }
+
+    for (auto p = boldPaths; *p; ++p) {
+      if (std::filesystem::exists(*p)) {
+        boldFont = io.Fonts->AddFontFromFileTTF(*p, 18.0f);
+        break;
+      }
+    }
   }
-  ImFont* boldFont =
-      io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeuib.ttf", 18.0f);
 
   ImVec4& bgColor = settings.outsideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] =
-      ImVec4(bgColor.x, bgColor.y, bgColor.z, 0.84f);
-  ImPlot::GetStyle().Colors[ImPlotCol_LegendBorder] =
-      ImVec4(0.4f, 0.4f, 0.5f, 0.8f);
+  ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] = {bgColor.x, bgColor.y,
+                                                   bgColor.z, 0.84f};
+  ImPlot::GetStyle().Colors[ImPlotCol_LegendBorder] = {0.4f, 0.4f, 0.5f, 0.8f};
   ImPlot::GetStyle().LegendPadding = ImVec2(10, 8);
   ImPlot::GetStyle().LegendInnerPadding = ImVec2(6, 4);
   ImPlot::GetStyle().LegendSpacing = ImVec2(6, 4);
@@ -700,32 +838,21 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   ImGui::StyleColorsDark();
   applyUiTheme(settings);
 
-  // Apply background colors
-  ImGuiStyle& style = ImGui::GetStyle();
-  style.Colors[ImGuiCol_WindowBg] = settings.backgroundColor;
-  style.Colors[ImGuiCol_ChildBg] = settings.backgroundColor;
-  style.Colors[ImGuiCol_Text] = settings.labelColor;
-
-  ImGui_ImplWin32_Init(g_hwnd);
-  ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dContext);
+  ImGui_ImplGlfw_InitForOpenGL(g_window, true);
+  ImGui_ImplOpenGL3_Init("#version 330 core");
 
   // Dynamic UI state
-  float minDur = (float)settings.minShockDuration;
-  float maxDur = (float)settings.maxShockDuration;
+  float minDur = settings.minShockDuration;
+  float maxDur = settings.maxShockDuration;
   bool cooldownEnabled = settings.cooldownEnabled;
-
   float xViewMin = settings.xViewMin;
   float xViewMax = settings.xViewMax;
 
-  std::deque<AppState> undoStack;
-  std::deque<AppState> redoStack;
+  std::deque<AppState> undoStack, redoStack;
   bool isPerformingUndoRedo = false;
-
-  bool ctrlZPrev = false;
-  bool ctrlYPrev = false;
+  bool ctrlZPrev = false, ctrlYPrev = false;
   bool stateChangedPreviousFrame = false;
 
-  // Apply default preset if set
   if (settings.defaultPreset >= 0 &&
       settings.defaultPreset < (int)settings.presets.size() &&
       settings.presets[settings.defaultPreset].has_value()) {
@@ -737,43 +864,21 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     xViewMax = p->xViewMax;
   }
 
-  // Settings modal state
+  // Settings/Stats modal state
   bool showSettings = false;
-  float settingsAnim = 0.f;
+  float settingsAnim = 0.f, statsAnim = 0.f;
+  if (settings.showStats) statsAnim = 1.f;
 
-  // Stats modal state
-  float statsAnim = 0.f;
-  if (settings.showStats) {
-    // Start with animation fully open
-    statsAnim = 1.f;
-    // Make sure the window width is correct
-    int sw = (int)(statsAnim * 280);
-    SetWindowPos(g_hwnd, nullptr, settings.windowX - sw, settings.windowY,
-                 settings.windowW + sw + (int)(settingsAnim * 550),
-                 settings.windowH, SWP_NOZORDER);
-  }
-
-  // Editable staging copies (only written back on Save)
-  char stgShockParam[64] = {};
-  char stgSecondParam[64] = {};
-  char stgShockerIDs[256] = {};
-  char stgSerialPort[64] = {};
-  char stgVrchatHost[64] = {};
-  bool stgUsePishock = false;
-  bool stgRandomOrSeq = false;
-  int stgBaseCooldown = 2;
-  int stgMaxCooldown = 6;
-  float stgCooldownFactor = 0.4f;
-  int stgCooldownWindow = 30;
-  bool stgNotifEnabled = false;
-  bool stgNotifUseOvr = false;
-  bool stgUseSerial = true;
-  char stgPishockUser[128] = {};
-  char stgPishockKey[128] = {};
-  char stgOpenshockToken[256] = {};
-  char stgOpenshockServer[128] = {};
-  int stgPresetCount = 3;
-  float stgTouchThreshold = 8.f;
+  // Editable staging copies (only written back on save)
+  char stgShockParam[64] = {}, stgSecondParam[64] = {}, stgShockerIDs[256] = {},
+       stgSerialPort[64] = {}, stgVrchatHost[64] = {};
+  bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
+       stgNotifUseOvr = false, stgUseSerial = true;
+  int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
+      stgPresetCount = 3;
+  float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f;
+  char stgPishockUser[128] = {}, stgPishockKey[128] = {},
+       stgOpenshockToken[256] = {}, stgOpenshockServer[128] = {};
 
   UiContext ui{settings,
                hub,
@@ -805,23 +910,28 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
   AppState lastCommittedState = snapshotAppState(ui);
 
-  int baseClientW = (int)ImGui::GetIO().DisplaySize.x;
-  // Style copies apply live on edit, so point directly at settings fields
+  // Style copies apply live on edit, so point directly at settings field
   auto openSettingsModal = [&]() {
-    baseClientW = (int)ImGui::GetIO().DisplaySize.x;
-
-    strncpy_s(stgShockParam, settings.shockParameter.c_str(),
-              sizeof(stgShockParam) - 1);
-    strncpy_s(stgSecondParam, settings.secondShockParameter.c_str(),
-              sizeof(stgSecondParam) - 1);
-    strncpy_s(stgSerialPort, settings.serialPort.c_str(),
-              sizeof(stgSerialPort) - 1);
-    strncpy_s(stgVrchatHost, settings.vrchatHost.c_str(),
-              sizeof(stgVrchatHost) - 1);
+    snprintf(stgShockParam, sizeof(stgShockParam), "%s",
+             settings.shockParameter.c_str());
+    snprintf(stgSecondParam, sizeof(stgSecondParam), "%s",
+             settings.secondShockParameter.c_str());
+    snprintf(stgSerialPort, sizeof(stgSerialPort), "%s",
+             settings.serialPort.c_str());
+    snprintf(stgVrchatHost, sizeof(stgVrchatHost), "%s",
+             settings.vrchatHost.c_str());
+    snprintf(stgPishockUser, sizeof(stgPishockUser), "%s",
+             settings.pishockUsername.c_str());
+    snprintf(stgPishockKey, sizeof(stgPishockKey), "%s",
+             settings.pishockApiKey.c_str());
+    snprintf(stgOpenshockToken, sizeof(stgOpenshockToken), "%s",
+             settings.openshockApiToken.c_str());
+    snprintf(stgOpenshockServer, sizeof(stgOpenshockServer), "%s",
+             settings.openshockServerUrl.c_str());
     std::string ids;
     for (int i = 0; i < (int)settings.shockerIDs.size(); i++)
       ids += (i ? ", " : "") + settings.shockerIDs[i];
-    strncpy_s(stgShockerIDs, ids.c_str(), sizeof(stgShockerIDs) - 1);
+    snprintf(stgShockerIDs, sizeof(stgShockerIDs), "%s", ids.c_str());
     stgUsePishock = settings.usePishock;
     stgRandomOrSeq = settings.randomOrSeq;
     stgBaseCooldown = settings.baseCooldown;
@@ -831,14 +941,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     stgNotifEnabled = settings.notificationsEnabled;
     stgNotifUseOvr = settings.notifUseOvrToolkit;
     stgUseSerial = settings.useSerial;
-    strncpy_s(stgPishockUser, settings.pishockUsername.c_str(),
-              sizeof(stgPishockUser) - 1);
-    strncpy_s(stgPishockKey, settings.pishockApiKey.c_str(),
-              sizeof(stgPishockKey) - 1);
-    strncpy_s(stgOpenshockToken, settings.openshockApiToken.c_str(),
-              sizeof(stgOpenshockToken) - 1);
-    strncpy_s(stgOpenshockServer, settings.openshockServerUrl.c_str(),
-              sizeof(stgOpenshockServer) - 1);
     stgPresetCount = settings.presetCount;
     stgTouchThreshold = settings.touchSelectThreshold;
   };
@@ -855,35 +957,23 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     settings.gradientRightColor = reverted.gradientRightColor;
     showSettings = false;
   };
-  bool capturingHotkey = false;
 
-  std::array<CurvePoint, 3>& pts = hub.curvePoints;
+  bool capturingHotkey = false;
+  bool panicWasPressedLastFrame = false;
 
   // Curve cache
+  std::array<CurvePoint, 3>& pts = hub.curvePoints;
   std::array<CurvePoint, 3> lastPts = {};
   std::vector<double> cx, cy;
 
   ImVec4& clear = settings.backgroundColor;
-
   bool forceFrame = true;
   auto lastAnimTime = steady_clock::now();
-  MSG msg{};
-  while (msg.message != WM_QUIT) {
-    if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-      TranslateMessage(&msg);
-      DispatchMessage(&msg);
-      continue;
-    }
 
-    bool minimized = IsIconic(g_hwnd);
+  while (!glfwWindowShouldClose(g_window) && running.load()) {
+    bool minimized = glfwGetWindowAttrib(g_window, GLFW_ICONIFIED);
+    bool focused = glfwGetWindowAttrib(g_window, GLFW_FOCUSED) || showSettings;
 
-    if (minimized) {
-      // If minimized don't render
-      WaitMessage();
-      continue;
-    }
-
-    bool focused = GetForegroundWindow() == g_hwnd || showSettings;
     bool cooldownActive = settings.cooldownEnabled &&
                           hub.cooldownUntil.load() > hub.getCurrentTime();
     bool statsAnimating =
@@ -893,71 +983,78 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     bool needsAnimation = cooldownActive || !hub.isConnected ||
                           statsAnimating || settAnimating || forceFrame;
 
-    if (!forceFrame) {
-      if (!needsAnimation && !focused) {
-        // Fully idle -- nothing to animate and nobody watching
-        MsgWaitForMultipleObjects(0, nullptr, FALSE, INFINITE, QS_ALLINPUT);
-      } else if (!needsAnimation && focused) {
-        // Focused but static -- render on input only
-        MsgWaitForMultipleObjects(0, nullptr, FALSE, INFINITE, QS_ALLINPUT);
-      } else {
-        // Animation needed -- cap to target fps, wake early on input
-        int frameMs = focused ? (1000 / 60) : (1000 / 16);
-        MsgWaitForMultipleObjects(0, nullptr, FALSE, frameMs, QS_ALLINPUT);
-      }
+    if (minimized) {
+      // If minimized don't render
+      glfwWaitEvents();
+      continue;
     }
 
-    RECT wr;
-    if (GetWindowRect(g_hwnd, &wr)) {
-      // Only update the logical base when fully idle - no panels animating.
-      // While animating, reading back and subtracting offsets causes a
-      // rounding feedback loop that makes the window vibrate.
+    if (forceFrame) {
+      glfwPollEvents();
+    } else if (!needsAnimation) {
+      glfwWaitEvents();
+    } else {
+      double targetInterval = focused ? (1.0 / 60.0) : (1.0 / 16.0);
+      glfwWaitEventsTimeout(targetInterval);
+    }
+
+    // Window position tracking
+    {
+      int ww, wh;
+      int wx, wy;
+      glfwGetWindowPos(g_window, &wx, &wy);
+      glfwGetWindowSize(g_window, &ww, &wh);
       bool fullyIdle = (statsAnim == 0.f && settingsAnim == 0.f);
       if (fullyIdle) {
-        settings.windowX = wr.left;
-        settings.windowW = wr.right - wr.left;
+        settings.windowX = wx;
+        settings.windowW = ww;
       }
-      settings.windowY = wr.top;
-      settings.windowH = wr.bottom - wr.top;
+      settings.windowY = wy;
+      settings.windowH = wh;
     }
 
-    // Animate panels and reposition window before layout so they stay in sync
+    // Panel slide animations
     {
       auto now = steady_clock::now();
       float dt =
           std::min(duration<float>(now - lastAnimTime).count(), 1.f / 30.f);
       lastAnimTime = now;
-
       float settTarget = showSettings ? 1.f : 0.f;
       float statsTarget = settings.showStats ? 1.f : 0.f;
-
-      float prevSettAnim = settingsAnim;
-      float prevStatsAnim = statsAnim;
-
+      float prevSett = settingsAnim, prevStats = statsAnim;
       settingsAnim += (settTarget - settingsAnim) * std::min(1.f, dt * 12.f);
       statsAnim += (statsTarget - statsAnim) * std::min(1.f, dt * 12.f);
       if (settingsAnim < 0.001f) settingsAnim = 0.f;
       if (statsAnim < 0.043f) statsAnim = 0.f;
-
-      if (fabs(statsAnim - prevStatsAnim) > 0.001f ||
-          fabs(settingsAnim - prevSettAnim) > 0.001f) {
+      if (fabs(statsAnim - prevStats) > 0.001f ||
+          fabs(settingsAnim - prevSett) > 0.001f) {
         int sw = (int)roundf(statsAnim * 280.f);
         int settW = (int)roundf(settingsAnim * 550.f);
-        SetWindowPos(g_hwnd, nullptr, settings.windowX - sw, settings.windowY,
-                     settings.windowW + sw + settW, settings.windowH,
-                     SWP_NOZORDER);
+        glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
+        glfwSetWindowSize(g_window, settings.windowW + sw + settW,
+                          settings.windowH);
       }
-
-      if ((settingsAnim == 0.f && prevSettAnim > 0.f) ||
-          (statsAnim == 0.f && prevStatsAnim > 0.f))
+      if ((settingsAnim == 0.f && prevSett > 0.f) ||
+          (statsAnim == 0.f && prevStats > 0.f))
         forceFrame = true;
     }
 
-    ImGui_ImplDX11_NewFrame();
-    ImGui_ImplWin32_NewFrame();
+    // Panic hotkey polling (window-focused only on Linux)
+    if (settings.hotkeyVk != 0) {
+      bool pressed = glfwGetKey(g_window, settings.hotkeyVk) == GLFW_PRESS;
+      if (pressed && !panicWasPressedLastFrame) {
+        hub.shocksDisabled = true;
+        logMsg("[Hotkey] Shocks disabled.");
+      }
+      panicWasPressedLastFrame = pressed;
+    }
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
     applyUiTheme(settings);
+
     // statsW is the current animated left-panel width; used throughout the
     // frame
     float statsW = statsAnim * 280.f;
@@ -966,12 +1063,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         {ImGui::GetIO().DisplaySize.x - statsW, ImGui::GetIO().DisplaySize.y});
     ImGui::Begin("##root", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoScrollWithMouse |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    // Compute panel width from font size so it scales with DPI
+    // Compute panel width from the font size so it scales with DPI
     float fontSize = ImGui::GetFontSize();
-    float panelW = fontSize * 10.f;
+    float leftPanelWidth = std::max(180.f, fontSize * 11.5f);
 
     // Left panel
     float lineH = ImGui::GetTextLineHeightWithSpacing();
@@ -980,7 +1078,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     float sepH = 1.f + ImGui::GetStyle().ItemSpacing.y * 2.f;
     float bottomH = rowH + logH + sepH;
 
-    ImGui::BeginChild("##controls", {panelW, -bottomH}, true);
+    ImGui::BeginChild("##controls", ImVec2(leftPanelWidth, -bottomH), true);
     // Connected Icon
     ImGui::SetCursorPosY(ImGui::GetStyle().WindowPadding.y * 0.5f);
 
@@ -999,9 +1097,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
 
     ImGui::Spacing();
-    if (ImGui::Checkbox("Enable Cooldown", &cooldownEnabled)) {
+    if (ImGui::Checkbox("Enable Cooldown", &cooldownEnabled))
       settings.cooldownEnabled = cooldownEnabled;
-    }
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -1016,14 +1113,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       bool isDefault = (settings.defaultPreset == i);
       if (isDefault)
         ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.54f, 0.34f, 1.f});
-
-      ImGui::Button(label.c_str(), {panelW - fontSize * 2.5f, 0});
+      ImGui::Button(label.c_str(),
+                    ImVec2(fontSize * 10.f - fontSize * 2.5f, 0));
       ImGui::SetItemTooltip(
           "LClick - Load\nMClick - Startup default\nRClick - Rename");
 
       if (isDefault) ImGui::PopStyleColor();
 
-      // left click - load
+      // Left click - load
       if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && hasData) {
         minDur = settings.presets[i]->minShockDuration;
         maxDur = settings.presets[i]->maxShockDuration;
@@ -1038,7 +1135,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         settings.defaultPreset = i;
         settings.save(settingsPath);
       }
-      // Right click - open rename popup
+      // Right click - open rename popoup
       if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && hasData)
         ImGui::OpenPopup(("##rename" + std::to_string(i)).c_str());
 
@@ -1046,7 +1143,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (ImGui::BeginPopup(("##rename" + std::to_string(i)).c_str())) {
         static char nameBuf[64] = {};
         if (ImGui::IsWindowAppearing())
-          strncpy_s(nameBuf, label.c_str(), sizeof(nameBuf) - 1);
+          snprintf(nameBuf, sizeof(nameBuf), "%s", label.c_str());
         ImGui::SetKeyboardFocusHere();
         if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
@@ -1083,10 +1180,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (ImGui::Button("Test Shock", {-1, 0})) hub.queueShock(-1, false);
     ImGui::SetItemTooltip("Sends a Shock command");
 
-    ImGui::SetCursorPosY(ImGui::GetWindowHeight() -
-                         ImGui::GetFrameHeightWithSpacing() -
-                         ImGui::GetStyle().WindowPadding.y);
-
     // Set cursor position based on buttons being visible or not
     // Prevents Stats/Settings buttons being pushed down
     {
@@ -1095,13 +1188,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                          ImGui::GetStyle().WindowPadding.y;
       ImGui::SetCursorPosY(ImGui::GetWindowHeight() - totalBtnsH);
     }
-
-    if (!hub.isConnected) {
+    if (!hub.isConnected)
       if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
-    }
-    if (hub.shocksDisabled) {
+    if (hub.shocksDisabled)
       if (ImGui::Button("Enable Shocks", {-1, 0})) hub.enableShocks();
-    }
 
     float halfBtn =
         (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
@@ -1113,27 +1203,24 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (!showSettings) {
         openSettingsModal();
         showSettings = true;
-      } else {
+      } else
         closeSettingsModal();
-      }
     }
 
-    if (showSettings) {
+    if (showSettings)
       ImGui::SetItemTooltip("Will close settings without saving.");
-    }
 
     ImGui::EndChild();
 
     // Curve editor
     ImGui::SameLine();
-    // We are not using GetContentRegionAvail() otherwise the sliding animation
-    // for the settings menu breaks
     ImGui::BeginChild("##plot", {settings.windowW - 220.f, -bottomH}, false);
 
     float sliderH = ImGui::GetFrameHeightWithSpacing() + 4;
     ImVec2 savedPlotPos = {}, savedPlotSize = {};
     ImVec2 plotFramePos = ImGui::GetCursorScreenPos();
     float plotFrameWidth = ImGui::GetContentRegionAvail().x;
+
     if (ImPlot::BeginPlot(" ", {-1, -sliderH})) {
       ImPlot::SetupAxes("Intensity (%)", "Weight", ImPlotAxisFlags_NoGridLines,
                         ImPlotAxisFlags_NoGridLines);
@@ -1143,19 +1230,24 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImPlot::SetupFinish();
 
       ImDrawList* dl = ImPlot::GetPlotDrawList();
-
       const char* title = "Intensity Curve";
       ImVec2 plot_pos = ImPlot::GetPlotPos();
       ImVec2 plot_size = ImPlot::GetPlotSize();
-      ImVec2 text_size = boldFont->CalcTextSizeA(18.0f, FLT_MAX, 0.0f, title);
-
-      ImVec2 pos;
-      pos.x = plot_pos.x + (plot_size.x - text_size.x) * 0.5f;
-      pos.y = plot_pos.y - ImGui::GetTextLineHeight() - 4;
-      dl->AddText(boldFont, 18.0f, pos,
-                  ImGui::ColorConvertFloat4ToU32(
-                      ImGui::GetStyle().Colors[ImGuiCol_Text]),
-                  title);
+      ImVec2 text_size =
+          boldFont ? boldFont->CalcTextSizeA(18.0f, FLT_MAX, 0.0f, title)
+                   : ImGui::CalcTextSize(title);
+      ImVec2 titlePos = {plot_pos.x + (plot_size.x - text_size.x) * 0.5f,
+                         plot_pos.y - ImGui::GetTextLineHeight() - 4};
+      if (boldFont)
+        dl->AddText(boldFont, 18.0f, titlePos,
+                    ImGui::ColorConvertFloat4ToU32(
+                        ImGui::GetStyle().Colors[ImGuiCol_Text]),
+                    title);
+      else
+        dl->AddText(titlePos,
+                    ImGui::ColorConvertFloat4ToU32(
+                        ImGui::GetStyle().Colors[ImGuiCol_Text]),
+                    title);
 
       ImPlot::PushPlotClipRect();
       ImVec2 pmin = ImPlot::PlotToPixels({0, 0});
@@ -1166,7 +1258,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGui::ColorConvertFloat4ToU32(settings.gradientRightColor),
           ImGui::ColorConvertFloat4ToU32(settings.gradientRightColor),
           ImGui::ColorConvertFloat4ToU32(settings.gradientLeftColor));
-
       ImPlot::PopPlotClipRect();
 
       {
@@ -1186,7 +1277,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           }
         }
 
-        // Legend entries
         char minLabel[64], maxLabel[64];
         snprintf(minLabel, sizeof(minLabel), "Min: %.0f%%  W: %.2f",
                  sorted[0].x, sorted[0].y);
@@ -1231,10 +1321,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         drawDashedV(sorted[0].x, minCol, 1.5f);
         drawDashedV(sorted[2].x, maxCol, 1.5f);
 
-        // Curve
         ImPlot::SetNextLineStyle(settings.curveLineColor, settings.lineWidth);
         ImPlot::PlotLine("##curve", cx.data(), cy.data(), (int)cx.size());
-
         for (int i = 0; i < 3; i++) {
           ImPlot::DragPoint(i, &pts[i].x, &pts[i].y, settings.markerColor,
                             settings.touchMarkerSize / 15.f,
@@ -1251,31 +1339,34 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImPlot::EndPlot();
     }
 
-    ImVec2 sc = ImGui::GetCursorScreenPos();
-    float gap = ImGui::GetStyle().ItemSpacing.y;
-    float sliderRowH = ImGui::GetFrameHeight() + 4;
-    float border = 1.f;
-    ImGui::GetWindowDrawList()->AddRectFilled(
-        {plotFramePos.x, sc.y - gap},
-        {plotFramePos.x + plotFrameWidth - border, sc.y + sliderRowH},
-        ImGui::ColorConvertFloat4ToU32(settings.outsideCurveBg));
-    ImGui::GetWindowDrawList()->AddText(
-        {plotFramePos.x + 6,
-         sc.y + (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f +
-             2},
-        ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_Text]),
-        "X Scale");
-    ImGui::SetCursorScreenPos({savedPlotPos.x, sc.y + 2});
-    drawRangeSliderFloat("##xrange", &xViewMin, &xViewMax, 0.f, 100.f,
-                         savedPlotSize.x);
-    ImGui::SetCursorScreenPos(
-        {plotFramePos.x + plotFrameWidth, sc.y + sliderRowH});
+    {
+      ImVec2 sc = ImGui::GetCursorScreenPos();
+      float gap = ImGui::GetStyle().ItemSpacing.y;
+      float sliderRowH = ImGui::GetFrameHeight() + 4;
+      ImGui::GetWindowDrawList()->AddRectFilled(
+          {plotFramePos.x, sc.y - gap},
+          {plotFramePos.x + plotFrameWidth - 1.f, sc.y + sliderRowH},
+          ImGui::ColorConvertFloat4ToU32(settings.outsideCurveBg));
+      ImGui::GetWindowDrawList()->AddText(
+          {plotFramePos.x + 6,
+           sc.y +
+               (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f +
+               2},
+          ImGui::ColorConvertFloat4ToU32(
+              ImGui::GetStyle().Colors[ImGuiCol_Text]),
+          "X Scale");
+      ImGui::SetCursorScreenPos({savedPlotPos.x, sc.y + 2});
+      drawRangeSliderFloat("##xrange", &xViewMin, &xViewMax, 0.f, 100.f,
+                           savedPlotSize.x);
+      ImGui::SetCursorScreenPos(
+          {plotFramePos.x + plotFrameWidth, sc.y + sliderRowH});
+    }
 
     ImGui::EndChild();
 
     // Log bar
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - rowH - logH - sepH -
-                         ImGui::GetStyle().WindowPadding.y);  // CHANGED
+                         ImGui::GetStyle().WindowPadding.y);
     ImGui::Separator();
     ImGui::BeginChild("##log", {0, logH}, false,
                       ImGuiWindowFlags_HorizontalScrollbar);
@@ -1290,32 +1381,34 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     // Status bar
     ImGui::Separator();
     {
-      // Align to bottom
       ImGui::SetCursorPosY(ImGui::GetWindowHeight() - rowH);
-
-      float cy = ImGui::GetCursorScreenPos().y +
-                 ImGui::GetTextLineHeight() * 0.5f + 2.f;
-      float cx = ImGui::GetCursorScreenPos().x;
-      ImDrawList* dl = ImGui::GetWindowDrawList();
+      float cy2 = ImGui::GetCursorScreenPos().y +
+                  ImGui::GetTextLineHeight() * 0.5f + 2.f;
+      float cx2 = ImGui::GetCursorScreenPos().x;
+      ImDrawList* dl2 = ImGui::GetWindowDrawList();
 
       // Connection circle
       ImU32 connCol = hub.isConnected ? IM_COL32(60, 220, 80, 255)
                                       : IM_COL32(220, 60, 60, 255);
-      dl->AddCircleFilled({cx + 7.f, cy}, 5.f, connCol);
+      dl2->AddCircleFilled({cx2 + 7.f, cy2}, 5.f, connCol);
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 17.f);
-      if (!hub.shocksDisabled) {
+      if (!hub.shocksDisabled)
         ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
-      } else {
+      else
         ImGui::TextColored({1.f, 0.3f, 0.3f, 1.f}, "SHOCKS DISABLED");
-      }
 
       ImGui::SameLine(0, 12);
       ImGui::TextDisabled("|");
       ImGui::SameLine(0, 12);
 
-      // Shock counter
-      // \xe2\x9a\xa1 = ⚡ symbol
+// Shock counter
+// \xe2\x9a\xa1 = ⚡ symbol
+#ifdef _WIN32
       ImGui::Text("\xe2\x9a\xa1 %d", gStats.sessionShocks);
+#else
+      ImGui::Text("Shocks:  %d",
+                  gStats.sessionShocks);  // CBA to fix the symbol on linux
+#endif
 
       ImGui::SameLine(0, 12);
       ImGui::TextDisabled("|");
@@ -1329,33 +1422,27 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGui::TextColored({1.f, 0.4f, 0.4f, 1.f}, "Cooldown: %.1fs", rem);
         else
           ImGui::TextDisabled("Cooldown: 0.0s");
-      }
 
-      ImGui::SameLine(0, 8);
+        ImGui::SameLine(0, 8);
 
-      // Cooldown Bar
-      if (settings.cooldownEnabled) {
+        // Cooldown bar
         double remaining =
             std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
-        double maxCd = settings.maxCooldown;
-        float fraction = (float)(remaining / maxCd);
-
-        float height = 3.f;
-        float textH = ImGui::GetTextLineHeight();
+        float fraction = (float)(remaining / settings.maxCooldown);
+        float height = 3.f, textH = ImGui::GetTextLineHeight();
         ImVec2 p = ImGui::GetCursorScreenPos();
         p.y += (textH - height) * 0.7f;
-        float len = ImGui::GetContentRegionAvail().x * 0.28;
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(p, {p.x + len, p.y + height},
-                          ImGui::ColorConvertFloat4ToU32(
-                              ImGui::GetStyle().Colors[ImGuiCol_FrameBg]));
+        float len = ImGui::GetContentRegionAvail().x * 0.28f;
+        dl2->AddRectFilled(p, {p.x + len, p.y + height},
+                           ImGui::ColorConvertFloat4ToU32(
+                               ImGui::GetStyle().Colors[ImGuiCol_FrameBg]));
         if (fraction > 0.f)
-          dl->AddRectFilled(p, {p.x + len * fraction, p.y + height},
-                            IM_COL32(220, 80, 80, 255));
+          dl2->AddRectFilled(p, {p.x + len * fraction, p.y + height},
+                             IM_COL32(220, 80, 80, 255));
         ImGui::Dummy({len, height});
       }
 
-      // Right-align: version
+      // Right-align version
       float verW = ImGui::CalcTextSize("v" APP_VERSION).x;
       ImGui::SameLine(ImGui::GetContentRegionMax().x - verW);
       ImGui::TextDisabled("v" APP_VERSION);
@@ -1363,7 +1450,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     ImGui::End();
 
-    if (updateReady.exchange(false)) Updater::applyAndRestart(g_hwnd);
+    if (updateReady.exchange(false)) {
+#ifdef _WIN32
+      Updater::applyAndRestart(nullptr);
+#else
+      Updater::applyAndRestart();
+#endif
+      glfwSetWindowShouldClose(g_window, 1);
+    }
 
     auto commitAll = [&]() {
       settings.shockParameter = stgShockParam;
@@ -1399,9 +1493,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.save(settingsPath);
     };
 
+    // Settings panel
     if (showSettings) {
-      float panelW = settingsAnim * 542.f;
-      ImGui::SetNextWindowSize({panelW, (float)settings.windowH - 40},
+      float sPanelW = settingsAnim * 542.f;
+      ImGui::SetNextWindowSize({sPanelW, (float)settings.windowH - 40},
                                ImGuiCond_Always);
       ImGui::SetNextWindowPos({statsW + (float)settings.windowW, 0.f},
                               ImGuiCond_Always);
@@ -1410,22 +1505,18 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                        ImGuiWindowFlags_NoTitleBar);
 
       ImGui::BeginChild("##settingsscroll", {0, -40}, false);
-      ImGui::TextDisabled(
-          "(?) Hover over settings for details | CTRL+Z/CTRL+Y to Undo/Redo");
+      ImGui::TextDisabled("(?) Hover for details | CTRL+Z/Y to Undo/Redo");
       ImGui::Spacing();
 
       // OSC / Avatar
       ImGui::SeparatorText("OSC / Avatar");
       ImGui::InputText("Shock Parameter##s", stgShockParam,
                        sizeof(stgShockParam));
-      ImGui::SetItemTooltip(
-          "Input the parameter name you want to use for the shock (for example "
-          "for touches)\nThis is the parameter you set in unity");
+      ImGui::SetItemTooltip("Parameter name on your VRChat avatar");
       ImGui::InputText("Second Shock Parameter##s", stgSecondParam,
                        sizeof(stgSecondParam));
       ImGui::SetItemTooltip(
-          "Optional second parameter for stronger shocks.\nTakes only the "
-          "second half of the curve into account (for example for slaps)");
+          "Optional second parameter — upper half of curve only");
       ImGui::TextDisabled("Changes here require a restart");
 
       ImGui::Spacing();
@@ -1433,7 +1524,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       // Hardware
       ImGui::SeparatorText("Hardware");
 
-      // Backend toggle: OpenShock | PiShock
+      // Backend toggle: Openshock | PiShock
       if (!stgUsePishock)
         ImGui::PushStyleColor(ImGuiCol_Button,
                               ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
@@ -1496,11 +1587,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             "If using multiple shockers, this option chooses between "
             "randomizing or using them sequentially\n"
             "No for random // Yes for sequential");
-
       } else {
         // API mode fields
         if (stgUsePishock) {
-          // PiShock API
+          // Pishock API
           ImGui::InputText("Username##psa", stgPishockUser,
                            sizeof(stgPishockUser));
           ImGui::SetItemTooltip("Your PiShock account username");
@@ -1525,7 +1615,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGui::InputText("Server URL##oss", stgOpenshockServer,
                            sizeof(stgOpenshockServer));
           ImGui::SetItemTooltip(
-              "OpenShock server hostname (without https://).\n"
+              "OpenShock server hostname\n"
               "Default: api.openshock.app");
           ImGui::InputText("Shocker IDs (uuid, uuid, ...)##os", stgShockerIDs,
                            sizeof(stgShockerIDs));
@@ -1541,10 +1631,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             "If using multiple shockers, this option chooses between "
             "randomizing or using them sequentially\n"
             "No for random // Yes for sequential");
+        ImGui::Checkbox("Sequential shocker order (vs Random)",
+                        &stgRandomOrSeq);
       }
-
       ImGui::TextDisabled("Changes here require a restart");
-
       ImGui::Spacing();
 
       // Cooldown
@@ -1567,9 +1657,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           "this are ignored.");
 
       ImGui::Spacing();
-
-      // Notifications
       ImGui::SeparatorText("Notifications");
+
+#ifdef _WIN32
       ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
       ImGui::SetItemTooltip(
           "Send a VR notification showing shock strength and duration");
@@ -1577,74 +1667,123 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::SameLine();
         ImGui::TextDisabled("Provider:");
         ImGui::SameLine();
+
+        // XSOverlay button
         if (!stgNotifUseOvr)
           ImGui::PushStyleColor(
               ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
         else
           ImGui::PushStyleColor(ImGuiCol_Button,
                                 ImGui::GetStyle().Colors[ImGuiCol_Button]);
+
         if (ImGui::Button("XSOverlay##np", {90, 0})) stgNotifUseOvr = false;
         ImGui::PopStyleColor();
+
         ImGui::SameLine(0, 0);
+
+        // OVRToolkit button
         if (stgNotifUseOvr)
           ImGui::PushStyleColor(
               ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
         else
           ImGui::PushStyleColor(ImGuiCol_Button,
                                 ImGui::GetStyle().Colors[ImGuiCol_Button]);
+
         if (ImGui::Button("OVRToolkit##np", {90, 0})) stgNotifUseOvr = true;
         ImGui::PopStyleColor();
       }
+#else
+      // Linux: Force XSOverlay, grey out OVRToolkit(WayVR uses XSOverlays
+      // notification system)
+      ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
+      ImGui::SetItemTooltip(
+          "Send a VR notification showing shock strength and duration");
 
+      if (stgNotifEnabled) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("Provider:");
+
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+        ImGui::Button("XSOverlay##np", {90, 0});  // Active / selected
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine(0, 0);
+
+        // Greyed out OVRToolkit (disabled)
+        ImGui::BeginDisabled();
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
+        ImGui::Button("OVRToolkit##np", {90, 0});
+        ImGui::PopStyleColor();
+        ImGui::EndDisabled();
+
+        ImGui::Text(
+            "XSOverlay notifications work with WayVR\nXSOverlay and OVRToolkit "
+            "don't work on linux");
+      }
+
+      // Force XSOverlay on Linux
+      stgNotifUseOvr = false;
+#endif
       ImGui::Spacing();
 
-      // Panic button
       ImGui::SeparatorText("Hotkey");
       ImGui::TextDisabled("Panic button:");
       ImGui::SameLine();
-
       std::string keyLabel =
           capturingHotkey
               ? "Press any key..."
               : (settings.hotkeyVk ? formatKeyNameFromVk(settings.hotkeyVk,
                                                          settings.hotkeyMods)
                                    : "None");
-      if (ImGui::Button(keyLabel.c_str(), {160, 0})) capturingHotkey = true;
+      if (ImGui::Button(keyLabel.c_str(), {160, 0})) {
+        capturingHotkey = true;
+#ifndef _WIN32
+        unregisterGlobalHotkeyLinux();
+#endif
+      }
       ImGui::SetItemTooltip("Hotkey to disable shocks\nWorks anywhere");
+      ImGui::SetItemTooltip("Disables shocks.");
       ImGui::SameLine();
       if (ImGui::Button("Clear##hk")) {
         settings.hotkeyVk = 0;
         settings.hotkeyMods = 0;
-        UnregisterHotKey(g_hwnd, 1);
       }
       ImGui::SetItemTooltip("Clear the button (disables hotkey)");
 
       if (capturingHotkey) {
         int mods = 0;
-        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) mods |= MOD_CONTROL;
-        if (GetAsyncKeyState(VK_MENU) & 0x8000) mods |= MOD_ALT;
-        if (GetAsyncKeyState(VK_SHIFT) & 0x8000) mods |= MOD_SHIFT;
+        if (glfwGetKey(g_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+            glfwGetKey(g_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS)
+          mods |= 2;
+        if (glfwGetKey(g_window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+            glfwGetKey(g_window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS)
+          mods |= 1;
+        if (glfwGetKey(g_window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+            glfwGetKey(g_window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
+          mods |= 4;
 
-        for (int vk = VK_F1; vk <= VK_F24; vk++) {
-          if (GetAsyncKeyState(vk) & 0x8000) {
-            settings.hotkeyVk = vk;
+        bool captured = false;
+        auto tryKey = [&](int k) {
+          if (!captured && glfwGetKey(g_window, k) == GLFW_PRESS) {
+            settings.hotkeyVk = k;
             settings.hotkeyMods = mods;
             capturingHotkey = false;
-            registerPanicHotkey(settings);
-            break;
+            captured = true;
+#ifndef _WIN32
+            registerGlobalHotkey(k, mods);
+#endif
           }
-        }
-        for (int vk = 0x30; vk <= 0x5A; vk++) {
-          if (GetAsyncKeyState(vk) & 0x8000) {
-            settings.hotkeyVk = vk;
-            settings.hotkeyMods = mods;
-            capturingHotkey = false;
-            registerPanicHotkey(settings);
-            break;
-          }
-        }
-        if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) capturingHotkey = false;
+        };
+        for (int k = GLFW_KEY_F1; k <= GLFW_KEY_F25; k++) tryKey(k);
+        for (int k = GLFW_KEY_0; k <= GLFW_KEY_9; k++) tryKey(k);
+        for (int k = GLFW_KEY_A; k <= GLFW_KEY_Z; k++) tryKey(k);
+        if (glfwGetKey(g_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+          capturingHotkey = false;
       }
+      ImGui::Spacing();
 
       // Style
       ImGui::SeparatorText("Style (live preview)");
@@ -1661,17 +1800,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       auto liftMinLum = [](ImVec4 c, float minLum) {
         float lum = c.x * 0.299f + c.y * 0.587f + c.z * 0.114f;
         if (lum < minLum) {
-          float scale = minLum / (lum + 1e-5f);
-          c.x *= scale;
-          c.y *= scale;
-          c.z *= scale;
+          float sc = minLum / (lum + 1e-5f);
+          c.x *= sc;
+          c.y *= sc;
+          c.z *= sc;
         }
-        return ImVec4(std::min(c.x, 1.0f), std::min(c.y, 1.0f),
-                      std::min(c.z, 1.0f), c.w);
+        return ImVec4(std::min(c.x, 1.f), std::min(c.y, 1.f),
+                      std::min(c.z, 1.f), c.w);
       };
-
       ImVec4 base = liftMinLum(settings.accentColor, 0.35f);
-
       ImGui::PushStyleColor(
           ImGuiCol_FrameBg,
           ImVec4(base.x * 1.25f, base.y * 1.25f, base.z * 1.25f, 1.0f));
@@ -1755,7 +1892,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           commitAll();
           registerPanicHotkey(settings);
           shouldRestart = true;
-          PostMessage(g_hwnd, WM_CLOSE, 0, 0);
+          glfwSetWindowShouldClose(g_window, 1);
         }
       } else {
         if (ImGui::Button("Save", {80, 0})) {
@@ -1765,18 +1902,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         }
       }
       ImGui::SameLine();
-      if (ImGui::Button("Cancel", {80, 0})) {
-        closeSettingsModal();
-      }
+      if (ImGui::Button("Cancel", {80, 0})) closeSettingsModal();
       ImGui::SetItemTooltip(
-          "Will close settings without saving\nTheme settings will be "
-          "reverted");
-
+          "Closes settings without saving\nTheme settings will be reverted");
       ImGui::End();
     }
 
-    // Stats panel (slides out to the left)
-    if (statsAnim > 0.43) {
+    // Stats panel (slides out left)
+    if (statsAnim > 0.43f) {
       ImGui::SetNextWindowPos({0.f, 0.f}, ImGuiCond_Always);
       ImGui::SetNextWindowSize({statsW, (float)settings.windowH},
                                ImGuiCond_Always);
@@ -1786,7 +1919,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                        ImGuiWindowFlags_NoScrollbar |
                        ImGuiWindowFlags_NoScrollWithMouse);
 
-      // Fade the text in so it doesn't clip weirdly during the slide
+      // Fade the text in so it doesn't clip weirly during the slide
       float alpha = std::min(1.f, std::max(0.f, (statsW - 60.f) / 160.f));
       ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 
@@ -1833,7 +1966,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       row("Cooldown blocks", std::to_string(gStats.totalCooldownHits));
 
-      // This Session
+      // This session
       ImGui::Spacing();
       ImGui::SeparatorText("This Session");
       row("Shocks", std::to_string(gStats.sessionShocks));
@@ -1892,17 +2025,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           double dayPositions[7] = {0, 1, 2, 3, 4, 5, 6};
           ImPlot::SetupAxisTicks(ImAxis_X1, dayPositions, 7, dayLabels);
 
-          // Smart vertical ticks
+          // Smart vertical tics
           static std::vector<double> yticks;
           yticks.clear();
-
-          double max = *std::max_element(vals, vals + 7);
-          int max_i = (int)std::ceil(max);
-          // 4 vertical ticks max, will show 5 due to 0 not being counted
+          double maxv = *std::max_element(vals, vals + 7);
+          int max_i = (int)std::ceil(maxv);
+          // 4 vertical tics max, will show 5 due to 0 not being counted
           int step = max_i <= 4 ? 1 : (int)std::ceil(max_i / 4.0);
           for (int i = 0; i <= max_i; i += step) yticks.push_back((double)i);
           if (yticks.back() < max_i) yticks.push_back((double)max_i);
-
           ImPlot::SetupAxisTicks(ImAxis_Y1, yticks.data(), yticks.size());
           ImPlot::SetNextFillStyle(settings.curveLineColor, 0.85f);
           ImPlot::PlotBars("##bars", vals, 7, 0.6);
@@ -1934,10 +2065,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::End();
     }
 
+    // Ctrl+Z / Ctrl+Y
     const bool editingText = io.WantTextInput;
-    bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-    bool zDown = (GetAsyncKeyState('Z') & 0x8000) != 0;
-    bool yDown = (GetAsyncKeyState('Y') & 0x8000) != 0;
+    bool ctrlDown = glfwGetKey(g_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                    glfwGetKey(g_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+    bool zDown = glfwGetKey(g_window, GLFW_KEY_Z) == GLFW_PRESS;
+    bool yDown = glfwGetKey(g_window, GLFW_KEY_Y) == GLFW_PRESS;
     bool didUndoRedo = false;
 
     if (!editingText) {
@@ -1954,46 +2087,53 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ctrlYPrev = ctrlDown && yDown;
 
     AppState currentState = snapshotAppState(ui);
-
     bool isEditingThisFrame = ImGui::IsAnyItemActive() || io.WantTextInput;
-
     if (!didUndoRedo) {
-      if (isEditingThisFrame && !stateChangedPreviousFrame) {
+      if (isEditingThisFrame && !stateChangedPreviousFrame)
         pushUndoSnapshot(undoStack, redoStack, lastCommittedState, false);
-      }
-      if (isEditingThisFrame || stateChangedPreviousFrame) {
+      if (isEditingThisFrame || stateChangedPreviousFrame)
         lastCommittedState = snapshotAppState(ui);
-      }
     } else {
       lastCommittedState = snapshotAppState(ui);
     }
-
     stateChangedPreviousFrame = isEditingThisFrame;
 
     // Render
     ImGui::Render();
-    g_pd3dContext->OMSetRenderTargets(1, &g_mainRTV, nullptr);
-    g_pd3dContext->ClearRenderTargetView(g_mainRTV, (float*)&clear);
-    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-    g_pd3dContext->OMSetRenderTargets(0, nullptr, nullptr);
-    g_pSwapChain->Present(focused ? 1 : 0, 0);
+    int fb_w, fb_h;
+    glfwGetFramebufferSize(g_window, &fb_w, &fb_h);
+    glViewport(0, 0, fb_w, fb_h);
+    glClearColor(clear.x * clear.w, clear.y * clear.w, clear.z * clear.w,
+                 clear.w);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    glfwSwapBuffers(g_window);
     forceFrame = false;
   }
 
   // Cleanup
+  running = false;
+  g_wakeUiFunc = nullptr;
+
+  hub.shutdown();
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
   settings.minShockDuration = minDur;
   settings.maxShockDuration = maxDur;
   settings.xViewMin = xViewMin;
   settings.xViewMax = xViewMax;
 
-  ImGui_ImplDX11_Shutdown();
-  ImGui_ImplWin32_Shutdown();
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
   ImPlot::DestroyContext();
   ImGui::DestroyContext();
-  destroyRenderTargetView();
-  if (g_pSwapChain) g_pSwapChain->Release();
-  if (g_pd3dContext) g_pd3dContext->Release();
-  if (g_pd3dDevice) g_pd3dDevice->Release();
-  DestroyWindow(g_hwnd);
-  UnregisterClassW(wc.lpszClassName, wc.hInstance);
+
+#ifndef _WIN32
+  g_hotkeyThreadRunning = false;
+  unregisterGlobalHotkeyLinux();
+  if (g_hotkeyThread.joinable()) g_hotkeyThread.join();
+#endif
+
+  glfwDestroyWindow(g_window);
+  glfwTerminate();
 }
