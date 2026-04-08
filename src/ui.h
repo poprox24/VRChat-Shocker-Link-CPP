@@ -131,7 +131,7 @@ static void registerGlobalHotkey(int glfwKey, int mods) {
         (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)hotkeyWndProc);
 }
 
-#else #else
+#else
 #include <X11/Xlib.h>
 #define GLFW_EXPOSE_NATIVE_X11
 #include <GLFW/glfw3native.h>
@@ -428,6 +428,7 @@ static void glfwKeyCallback(GLFWwindow* window, int key, int scancode,
   }
 }
 
+// Save button icon
 static bool drawSaveIconButton(const char* id) {
   ImVec2 size(16, 16);
   ImGui::InvisibleButton(id, size);
@@ -439,10 +440,13 @@ static bool drawSaveIconButton(const char* id) {
                   ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.f, 1.f, 1.f, 1.f))
                   : ImGui::ColorConvertFloat4ToU32(
                         ImGui::GetStyle().Colors[ImGuiCol_Text]);
+  // Floppy disk body
   dl->AddRectFilled(p, {p.x + 14, p.y + 14}, col, 1.f);
+  // Inner label area (cutout)
   dl->AddRectFilled({p.x + 2, p.y + 6}, {p.x + 12, p.y + 13},
                     ImGui::ColorConvertFloat4ToU32(
                         ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
+  // Shutter slot
   dl->AddRectFilled({p.x + 4, p.y + 1}, {p.x + 10, p.y + 5},
                     ImGui::ColorConvertFloat4ToU32(
                         ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
@@ -576,6 +580,7 @@ inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
   return s;
 }
 
+// Button to import old config from
 inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
                                      float& minDur, float& maxDur,
                                      float& xViewMin, float& xViewMax,
@@ -628,6 +633,8 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
         settings.presets[i] = p;
       }
       settings.defaultPreset = j.value("default_preset", -1);
+
+      // Apply default preset if set
       if (settings.defaultPreset >= 0 &&
           settings.defaultPreset < (int)settings.presets.size() &&
           settings.presets[settings.defaultPreset].has_value()) {
@@ -714,6 +721,7 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
   return true;
 }
 
+// UI entry point
 inline void runUI(Settings& settings, ShockerHub& hub,
                   const std::string& settingsPath) {
   extern std::atomic<bool> running;
@@ -735,9 +743,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-#ifdef __APPLE__
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#endif
 
   g_window = glfwCreateWindow(settings.windowW, settings.windowH, kWindowTitle,
                               nullptr, nullptr);
@@ -859,10 +864,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     xViewMax = p->xViewMax;
   }
 
+  // Settings/Stats modal state
   bool showSettings = false;
   float settingsAnim = 0.f, statsAnim = 0.f;
   if (settings.showStats) statsAnim = 1.f;
 
+  // Editable staging copies (only written back on save)
   char stgShockParam[64] = {}, stgSecondParam[64] = {}, stgShockerIDs[256] = {},
        stgSerialPort[64] = {}, stgVrchatHost[64] = {};
   bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
@@ -903,6 +910,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
   AppState lastCommittedState = snapshotAppState(ui);
 
+  // Style copies apply live on edit, so point directly at settings field
   auto openSettingsModal = [&]() {
     snprintf(stgShockParam, sizeof(stgShockParam), "%s",
              settings.shockParameter.c_str());
@@ -953,6 +961,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool capturingHotkey = false;
   bool panicWasPressedLastFrame = false;
 
+  // Curve cache
   std::array<CurvePoint, 3>& pts = hub.curvePoints;
   std::array<CurvePoint, 3> lastPts = {};
   std::vector<double> cx, cy;
@@ -964,6 +973,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   while (!glfwWindowShouldClose(g_window) && running.load()) {
     bool minimized = glfwGetWindowAttrib(g_window, GLFW_ICONIFIED);
     bool focused = glfwGetWindowAttrib(g_window, GLFW_FOCUSED) || showSettings;
+
     bool cooldownActive = settings.cooldownEnabled &&
                           hub.cooldownUntil.load() > hub.getCurrentTime();
     bool statsAnimating =
@@ -974,6 +984,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                           statsAnimating || settAnimating || forceFrame;
 
     if (minimized) {
+      // If minimized don't render
       glfwWaitEvents();
       continue;
     }
@@ -1044,6 +1055,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     applyUiTheme(settings);
 
+    // statsW is the current animated left-panel width; used throughout the
+    // frame
     float statsW = statsAnim * 280.f;
     ImGui::SetNextWindowPos({statsW, 0});
     ImGui::SetNextWindowSize(
@@ -1054,8 +1067,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                      ImGuiWindowFlags_NoScrollWithMouse |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
+    // Compute panel width from the font size so it scales with DPI
     float fontSize = ImGui::GetFontSize();
     float leftPanelWidth = std::max(180.f, fontSize * 11.5f);
+
+    // Left panel
     float lineH = ImGui::GetTextLineHeightWithSpacing();
     float logH = lineH * 3.f + ImGui::GetStyle().WindowPadding.y * 2.f;
     float rowH = ImGui::GetTextLineHeightWithSpacing() + 3.f;
@@ -1063,7 +1079,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     float bottomH = rowH + logH + sepH;
 
     ImGui::BeginChild("##controls", ImVec2(leftPanelWidth, -bottomH), true);
+    // Connected Icon
     ImGui::SetCursorPosY(ImGui::GetStyle().WindowPadding.y * 0.5f);
+
     ImGui::Spacing();
     ImGui::Text("Min Duration (s)");
     ImGui::SliderFloat("##mind", &minDur, 0.1f, 5.f, "%.1f");
@@ -1071,14 +1089,17 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       minDur = std::min(minDur, maxDur - 0.1f);
       settings.minShockDuration = minDur;
     }
+
     ImGui::SliderFloat("##maxd", &maxDur, 0.1f, 5.f, "%.1f");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
       maxDur = std::max(maxDur, minDur + 0.1f);
       settings.maxShockDuration = maxDur;
     }
+
     ImGui::Spacing();
     if (ImGui::Checkbox("Enable Cooldown", &cooldownEnabled))
       settings.cooldownEnabled = cooldownEnabled;
+
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -1088,6 +1109,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       bool hasData = settings.presets[i].has_value();
       std::string label = hasData ? settings.presets[i]->name
                                   : ("Preset " + std::to_string(i + 1));
+
       bool isDefault = (settings.defaultPreset == i);
       if (isDefault)
         ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.54f, 0.34f, 1.f});
@@ -1095,7 +1117,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                     ImVec2(fontSize * 10.f - fontSize * 2.5f, 0));
       ImGui::SetItemTooltip(
           "LClick - Load\nMClick - Startup default\nRClick - Rename");
+
       if (isDefault) ImGui::PopStyleColor();
+
+      // Left click - load
       if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && hasData) {
         minDur = settings.presets[i]->minShockDuration;
         maxDur = settings.presets[i]->maxShockDuration;
@@ -1105,12 +1130,16 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         xViewMin = settings.presets[i]->xViewMin;
         xViewMax = settings.presets[i]->xViewMax;
       }
+      // Middle click - set default
       if (ImGui::IsItemClicked(ImGuiMouseButton_Middle)) {
         settings.defaultPreset = i;
         settings.save(settingsPath);
       }
+      // Right click - open rename popoup
       if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && hasData)
         ImGui::OpenPopup(("##rename" + std::to_string(i)).c_str());
+
+      // Rename popup
       if (ImGui::BeginPopup(("##rename" + std::to_string(i)).c_str())) {
         static char nameBuf[64] = {};
         if (ImGui::IsWindowAppearing())
@@ -1124,6 +1153,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         }
         ImGui::EndPopup();
       }
+
       ImGui::SameLine();
       ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
                            (ImGui::GetFrameHeight() - 16.f) * 0.5f);
@@ -1143,12 +1173,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
+
     if (ImGui::Button("Test Vibrate", {77.5f, 0})) hub.queueShock(-1, true);
     ImGui::SetItemTooltip("Sends a vibration command");
     ImGui::SameLine();
     if (ImGui::Button("Test Shock", {-1, 0})) hub.queueShock(-1, false);
     ImGui::SetItemTooltip("Sends a Shock command");
 
+    // Set cursor position based on buttons being visible or not
+    // Prevents Stats/Settings buttons being pushed down
     {
       int extraRows = (!hub.isConnected ? 1 : 0) + (hub.shocksDisabled ? 1 : 0);
       float totalBtnsH = (1 + extraRows) * ImGui::GetFrameHeightWithSpacing() +
@@ -1228,6 +1261,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImPlot::PopPlotClipRect();
 
       {
+        // Sort + cache curve
         auto sorted = pts;
         std::sort(
             sorted.begin(), sorted.end(),
@@ -1257,6 +1291,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
         ImPlot::PushPlotClipRect();
         ImDrawList* dl2 = ImPlot::GetPlotDrawList();
+
+        // Manual grid on top of gradient
         ImU32 gridCol = ImGui::ColorConvertFloat4ToU32(ImVec4(1, 1, 1, 0.25f));
         for (int x = 0; x <= 100; x += 10) {
           ImVec2 p0 = ImPlot::PlotToPixels({(double)x, 0.0});
@@ -1269,6 +1305,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImVec2 p1 = ImPlot::PlotToPixels({100.0, yv});
           dl2->AddLine(p0, p1, gridCol, 1.f);
         }
+
+        // Dashed vertical lines for min/max
         auto drawDashedV = [&](double x, ImVec4 col, float thickness) {
           ImVec2 top = ImPlot::PlotToPixels({x, 1.0});
           ImVec2 bot = ImPlot::PlotToPixels({x, 0.0});
@@ -1292,11 +1330,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           pts[i].x = std::clamp(pts[i].x, 0.0, 100.0);
           pts[i].y = std::clamp(pts[i].y, 0.0, 1.0);
         }
+
         ImPlot::PopPlotClipRect();
       }
-
       savedPlotPos = ImPlot::GetPlotPos();
       savedPlotSize = ImPlot::GetPlotSize();
+
       ImPlot::EndPlot();
     }
 
@@ -1322,6 +1361,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SetCursorScreenPos(
           {plotFramePos.x + plotFrameWidth, sc.y + sliderRowH});
     }
+
     ImGui::EndChild();
 
     // Log bar
@@ -1346,6 +1386,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                   ImGui::GetTextLineHeight() * 0.5f + 2.f;
       float cx2 = ImGui::GetCursorScreenPos().x;
       ImDrawList* dl2 = ImGui::GetWindowDrawList();
+
+      // Connection circle
       ImU32 connCol = hub.isConnected ? IM_COL32(60, 220, 80, 255)
                                       : IM_COL32(220, 60, 60, 255);
       dl2->AddCircleFilled({cx2 + 7.f, cy2}, 5.f, connCol);
@@ -1358,11 +1400,21 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SameLine(0, 12);
       ImGui::TextDisabled("|");
       ImGui::SameLine(0, 12);
+
+// Shock counter
+// \xe2\x9a\xa1 = ⚡ symbol
+#ifdef _WIN32
       ImGui::Text("\xe2\x9a\xa1 %d", gStats.sessionShocks);
+#else
+      ImGui::Text("Shocks:  %d",
+                  gStats.sessionShocks);  // CBA to fix the symbol on linux
+#endif
+
       ImGui::SameLine(0, 12);
       ImGui::TextDisabled("|");
       ImGui::SameLine(0, 12);
 
+      // Cooldown indicator
       if (settings.cooldownEnabled) {
         double rem =
             std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
@@ -1370,7 +1422,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGui::TextColored({1.f, 0.4f, 0.4f, 1.f}, "Cooldown: %.1fs", rem);
         else
           ImGui::TextDisabled("Cooldown: 0.0s");
+
         ImGui::SameLine(0, 8);
+
+        // Cooldown bar
         double remaining =
             std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
         float fraction = (float)(remaining / settings.maxCooldown);
@@ -1387,10 +1442,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::Dummy({len, height});
       }
 
+      // Right-align version
       float verW = ImGui::CalcTextSize("v" APP_VERSION).x;
       ImGui::SameLine(ImGui::GetContentRegionMax().x - verW);
       ImGui::TextDisabled("v" APP_VERSION);
     }
+
     ImGui::End();
 
     if (updateReady.exchange(false)) {
@@ -1451,6 +1508,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::TextDisabled("(?) Hover for details | CTRL+Z/Y to Undo/Redo");
       ImGui::Spacing();
 
+      // OSC / Avatar
       ImGui::SeparatorText("OSC / Avatar");
       ImGui::InputText("Shock Parameter##s", stgShockParam,
                        sizeof(stgShockParam));
@@ -1460,9 +1518,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SetItemTooltip(
           "Optional second parameter — upper half of curve only");
       ImGui::TextDisabled("Changes here require a restart");
+
       ImGui::Spacing();
 
+      // Hardware
       ImGui::SeparatorText("Hardware");
+
+      // Backend toggle: Openshock | PiShock
       if (!stgUsePishock)
         ImGui::PushStyleColor(ImGuiCol_Button,
                               ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
@@ -1482,8 +1544,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::PopStyleColor();
       ImGui::SameLine();
       ImGui::Text("Backend/Hub");
+
       ImGui::Spacing();
 
+      // Connection mode toggle: Serial | API
       if (stgUseSerial)
         ImGui::PushStyleColor(ImGuiCol_Button,
                               ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
@@ -1503,50 +1567,102 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::PopStyleColor();
       ImGui::SameLine();
       ImGui::Text("Connection Mode");
+
       ImGui::Spacing();
 
       if (stgUseSerial) {
+        // Serial mode fields
+        // Shocker IDs label stays the same for serial
         ImGui::InputTextWithHint("Serial Port##s", "(blank = auto)",
                                  stgSerialPort, sizeof(stgSerialPort));
+        ImGui::SetItemTooltip("Leave blank to auto-detect");
         ImGui::InputText("Shocker IDs (#, #, ...)##s", stgShockerIDs,
                          sizeof(stgShockerIDs));
+        ImGui::SetItemTooltip(
+            "Shocker IDs as found on the PiShock or OpenShock website.\n"
+            "Separate with comma");
         ImGui::Checkbox("Sequential shocker order (vs Random)",
                         &stgRandomOrSeq);
+        ImGui::SetItemTooltip(
+            "If using multiple shockers, this option chooses between "
+            "randomizing or using them sequentially\n"
+            "No for random // Yes for sequential");
       } else {
+        // API mode fields
         if (stgUsePishock) {
+          // Pishock API
           ImGui::InputText("Username##psa", stgPishockUser,
                            sizeof(stgPishockUser));
+          ImGui::SetItemTooltip("Your PiShock account username");
           ImGui::InputText("API Key##psk", stgPishockKey, sizeof(stgPishockKey),
                            ImGuiInputTextFlags_Password);
+          ImGui::SetItemTooltip(
+              "Your PiShock API key (from Account > API Access)");
           ImGui::InputText("Shocker IDs (ID, ID, ...)##ps", stgShockerIDs,
                            sizeof(stgShockerIDs));
+          ImGui::SetItemTooltip(
+              "Share ID(s) for each shocker, comma-separated.\n"
+              "Found on the PiShock website under your shocker.\nIf left "
+              "empty, will try to get the IDs automatically");
         } else {
+          // OpenShock API
           ImGui::InputText("API Token##ost", stgOpenshockToken,
                            sizeof(stgOpenshockToken),
                            ImGuiInputTextFlags_Password);
+          ImGui::SetItemTooltip(
+              "Your OpenShock API token.\n"
+              "Create one at your OpenShock dashboard under API Tokens.");
           ImGui::InputText("Server URL##oss", stgOpenshockServer,
                            sizeof(stgOpenshockServer));
+          ImGui::SetItemTooltip(
+              "OpenShock server hostname\n"
+              "Default: api.openshock.app");
           ImGui::InputText("Shocker IDs (uuid, uuid, ...)##os", stgShockerIDs,
                            sizeof(stgShockerIDs));
+          ImGui::SetItemTooltip(
+              "Shocker UUID(s) from your OpenShock dashboard, "
+              "comma-separated.\nIf left empty, will find them automatically "
+              "using the API\nDO NOT MISTAKE THIS FOR SHOCKER IDs\nThe UUID "
+              "is the long string of text and dashes");
         }
+        ImGui::Checkbox("Sequential shocker order (vs Random)",
+                        &stgRandomOrSeq);
+        ImGui::SetItemTooltip(
+            "If using multiple shockers, this option chooses between "
+            "randomizing or using them sequentially\n"
+            "No for random // Yes for sequential");
         ImGui::Checkbox("Sequential shocker order (vs Random)",
                         &stgRandomOrSeq);
       }
       ImGui::TextDisabled("Changes here require a restart");
       ImGui::Spacing();
 
+      // Cooldown
       ImGui::SeparatorText("Cooldown");
       ImGui::SliderInt("Base Cooldown (s)##s", &stgBaseCooldown, 1, 15);
+      ImGui::SetItemTooltip(
+          "Starting cooldown after each shock.\nFormula: Base + Factor * "
+          "shocks_in_window");
       ImGui::SliderInt("Max Cooldown (s)##s", &stgMaxCooldown, 1, 30);
+      ImGui::SetItemTooltip(
+          "Cooldown is capped at this value regardless of shock count.");
       ImGui::SliderFloat("Cooldown Factor##s", &stgCooldownFactor, 0.f, 2.f,
                          "%.2f");
+      ImGui::SetItemTooltip(
+          "Added to cooldown per shock within the window.\nHigher = longer "
+          "cooldown after bursts.");
       ImGui::SliderInt("Cooldown Window (s)##s", &stgCooldownWindow, 5, 120);
-      ImGui::Spacing();
+      ImGui::SetItemTooltip(
+          "How far back to count shocks for the factor.\nShocks older than "
+          "this are ignored.");
 
+      ImGui::Spacing();
       ImGui::SeparatorText("Notifications");
 
 #ifdef _WIN32
       ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
+      ImGui::SetItemTooltip(
+          "Send a VR notification showing shock strength and duration");
       if (stgNotifEnabled) {
         ImGui::SameLine();
         ImGui::TextDisabled("Provider:");
@@ -1577,8 +1693,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::PopStyleColor();
       }
 #else
-      // Linux: Force XSOverlay, grey out OVRToolkit
+      // Linux: Force XSOverlay, grey out OVRToolkit(WayVR uses XSOverlays
+      // notification system)
       ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
+      ImGui::SetItemTooltip(
+          "Send a VR notification showing shock strength and duration");
 
       if (stgNotifEnabled) {
         ImGui::SameLine();
@@ -1625,12 +1744,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         unregisterGlobalHotkeyLinux();
 #endif
       }
-      ImGui::SetItemTooltip("Disables shocks when window is focused");
+      ImGui::SetItemTooltip("Hotkey to disable shocks\nWorks anywhere");
+      ImGui::SetItemTooltip("Disables shocks.");
       ImGui::SameLine();
       if (ImGui::Button("Clear##hk")) {
         settings.hotkeyVk = 0;
         settings.hotkeyMods = 0;
       }
+      ImGui::SetItemTooltip("Clear the button (disables hotkey)");
 
       if (capturingHotkey) {
         int mods = 0;
@@ -1664,13 +1785,18 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       ImGui::Spacing();
 
+      // Style
       ImGui::SeparatorText("Style (live preview)");
       ImGui::SliderInt("Preset Count*##s", &stgPresetCount, 1, 8);
+      ImGui::SetItemTooltip("Amount of presets");
       ImGui::SliderFloat("Marker Size##s", &settings.touchMarkerSize, 50.f,
                          300.f, "%.0f");
+      ImGui::SetItemTooltip("Size of points in the curve");
       ImGui::SliderFloat("Curve Line Width##s", &settings.lineWidth, 1.f, 6.f,
                          "%.1f");
+      ImGui::SetItemTooltip("Width of the curve line");
 
+      // Increase luminance to make the color pickers always visible
       auto liftMinLum = [](ImVec4 c, float minLum) {
         float lum = c.x * 0.299f + c.y * 0.587f + c.z * 0.114f;
         if (lum < minLum) {
@@ -1686,42 +1812,59 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::PushStyleColor(
           ImGuiCol_FrameBg,
           ImVec4(base.x * 1.25f, base.y * 1.25f, base.z * 1.25f, 1.0f));
+
+      // Color pickers
       ImGui::ColorEdit4("Background##s", (float*)&settings.backgroundColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("Main window background color.");
       ImGui::ColorEdit4("Outside Curve BG##s", (float*)&settings.outsideCurveBg,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("Area outside of the curve/plot UI.");
       ImGui::ColorEdit4("Accent##s", (float*)&settings.accentColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("Buttons, sliders, checkboxes, input fields.");
       ImGui::ColorEdit4("Curve Line##s", (float*)&settings.curveLineColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("The bezier curve line.");
       ImGui::ColorEdit4("Markers##s", (float*)&settings.markerColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("The draggable curve control points.");
       ImGui::ColorEdit4("Labels##s", (float*)&settings.labelColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip("All text labels and axis text.");
       ImGui::ColorEdit4("Gradient Left##s", (float*)&settings.gradientLeftColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip(
+          "Plot background gradient - left/low intensity side.");
       ImGui::ColorEdit4("Gradient Right##s",
                         (float*)&settings.gradientRightColor,
                         ImGuiColorEditFlags_NoInputs);
+      ImGui::SetItemTooltip(
+          "Plot background gradient - right/high intensity side.");
+
       ImGui::TextDisabled("* - Restart required");
+
       ImGui::PopStyleColor(1);
+
       ImGui::Spacing();
 
+      // Network
       ImGui::SeparatorText("Network");
       ImGui::InputText("VRChat Host##s", stgVrchatHost, sizeof(stgVrchatHost));
+      ImGui::SetItemTooltip("Usually doesn't need a change.");
+
       ImGui::Spacing();
       ImGui::Separator();
-      ImGui::Spacing();
 
-      static char importPathBuf[512] = {};
-      ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - 135.f);
-      ImGui::InputTextWithHint("##importpath", "/path/to/python/shocker-link",
-                               importPathBuf, sizeof(importPathBuf));
-      ImGui::SameLine();
-      if (ImGui::Button("Import Python cfg"))
+      ImGui::Spacing();
+      if (ImGui::Button("Import Python cfg", {ImGui::CalcItemWidth(), 0}))
         importLegacyPythonConfig(settings, hub, minDur, maxDur, xViewMin,
-                                 xViewMax, settingsPath, importPathBuf);
-      ImGui::SetItemTooltip("Point at your old Python ShockerLink folder");
+                                 xViewMax, settingsPath);
+      ImGui::SetItemTooltip(
+          "Select the folder of your python installation.\nUseless for most, "
+          "imports config from the old python build.");
+      ImGui::SameLine();
+      ImGui::Text("Import old python config");
       ImGui::Spacing();
 
       ImGui::EndChild();
@@ -1776,9 +1919,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                        ImGuiWindowFlags_NoScrollbar |
                        ImGuiWindowFlags_NoScrollWithMouse);
 
+      // Fade the text in so it doesn't clip weirly during the slide
       float alpha = std::min(1.f, std::max(0.f, (statsW - 60.f) / 160.f));
       ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 
+      // Header row
       if (boldFont) ImGui::PushFont(boldFont);
       ImGui::Text("Statistics");
       if (boldFont) ImGui::PopFont();
@@ -1786,13 +1931,18 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (ImGui::SmallButton("X##sc")) settings.showStats = false;
       ImGui::Separator();
 
+      // Scrollable body
       ImGui::BeginChild("##statsscroll",
                         {0, -ImGui::GetFrameHeightWithSpacing() - 6}, false);
+
+      // Two-column row helper
       auto row = [&](const char* label, const std::string& val) {
         ImGui::TextDisabled("%s", label);
         ImGui::SameLine(112.f);
         ImGui::TextUnformatted(val.c_str());
       };
+
+      // Duration formatter
       auto fmtMs = [](double ms) -> std::string {
         int ts = (int)(ms / 1000.0);
         if (ts < 60) return fmt::format("{:.1f}s", ms / 1000.0);
@@ -1803,6 +1953,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         return fmt::format("{}h {:02d}m", h, m);
       };
 
+      // All-Time
       ImGui::SeparatorText("All-Time");
       row("Shocks", std::to_string(gStats.totalShocks));
       row("Vibrations", std::to_string(gStats.totalVibrations));
@@ -1815,6 +1966,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       row("Cooldown blocks", std::to_string(gStats.totalCooldownHits));
 
+      // This session
       ImGui::Spacing();
       ImGui::SeparatorText("This Session");
       row("Shocks", std::to_string(gStats.sessionShocks));
@@ -1822,6 +1974,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       row("Shock time", fmtMs(gStats.sessionShockDurationMs));
       row("Cooldown blocks", std::to_string(gStats.sessionCooldownHits));
 
+      // Records
       ImGui::Spacing();
       ImGui::SeparatorText("Records");
       {
@@ -1842,6 +1995,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::Text("%d shock%s", tdc, tdc == 1 ? "" : "s");
       }
 
+      // Last 7 Days bar chart
       ImGui::Spacing();
       ImGui::SeparatorText("Last 7 Days");
       {
@@ -1857,6 +2011,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                   ImPlotAxisFlags_NoLabel);
           ImPlot::SetupAxisLimits(ImAxis_X1, 0.0, 6.5, ImPlotCond_Always);
           ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, 0.0, DBL_MAX);
+
+          // Days of the month
           static std::string dayStrings[7];
           const char* dayLabels[7] = {};
           for (int i = 0; i < 7; i++) {
@@ -1868,10 +2024,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           }
           double dayPositions[7] = {0, 1, 2, 3, 4, 5, 6};
           ImPlot::SetupAxisTicks(ImAxis_X1, dayPositions, 7, dayLabels);
+
+          // Smart vertical tics
           static std::vector<double> yticks;
           yticks.clear();
           double maxv = *std::max_element(vals, vals + 7);
           int max_i = (int)std::ceil(maxv);
+          // 4 vertical tics max, will show 5 due to 0 not being counted
           int step = max_i <= 4 ? 1 : (int)std::ceil(max_i / 4.0);
           for (int i = 0; i <= max_i; i += step) yticks.push_back((double)i);
           if (yticks.back() < max_i) yticks.push_back((double)max_i);
@@ -1883,6 +2042,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         }
       }
 
+      // Footer: reset button
       ImGui::Separator();
       if (ImGui::Button("Reset Stats", {-1, 0}))
         ImGui::OpenPopup("Confirm Reset##sr");
@@ -1901,7 +2061,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
 
       ImGui::EndChild();
-      ImGui::PopStyleVar();
+      ImGui::PopStyleVar();  // Alpha
       ImGui::End();
     }
 
@@ -1938,6 +2098,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     stateChangedPreviousFrame = isEditingThisFrame;
 
+    // Render
     ImGui::Render();
     int fb_w, fb_h;
     glfwGetFramebufferSize(g_window, &fb_w, &fb_h);
@@ -1950,13 +2111,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     forceFrame = false;
   }
 
+  // Cleanup
   running = false;
   g_wakeUiFunc = nullptr;
 
   hub.shutdown();
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-  // Cleanup
   settings.minShockDuration = minDur;
   settings.maxShockDuration = maxDur;
   settings.xViewMin = xViewMin;
