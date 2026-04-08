@@ -86,7 +86,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 - [x] Auto-updater
 - [x] Stats menu
 - [x] PiShock and OpenShock API support
-- [x] Linux support (tested on Arch, built with XWayland) 
+- [x] Linux support (Tested on Arch with Wayland, built with XWayland) 
 
 See [open issues](https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues) for proposed features and known issues.
 
