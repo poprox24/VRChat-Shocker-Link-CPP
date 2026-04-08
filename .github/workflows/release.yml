@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: ["none"] # Disabled, ran out of free GH usage
+    branches: ["main"]
     paths-ignore:
       - "README.md"
       - "**.md"
