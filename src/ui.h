@@ -584,9 +584,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
   static bool g_canSetWindowPos = true;
   glfwSetErrorCallback([](int err, const char* desc) {
-    if (err == 65548) {
-      return;
-    }
+    if (err == 65548) return;
+    if (err == 65540) return;
     logMsg("[GLFW] Error {}: {}", err, desc);
   });
 #ifndef _WIN32
