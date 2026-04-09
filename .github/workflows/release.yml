@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: ["main"]
+    branches: ["none"] #I'm poor
     paths-ignore:
       - "README.md"
       - "**.md"
