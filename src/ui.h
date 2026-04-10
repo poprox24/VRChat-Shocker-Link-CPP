@@ -252,6 +252,7 @@ struct AppState {
   int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
       stgPresetCount = 3;
   float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f;
+  std::vector<Parameter> stgParameters;
 
   bool operator==(const AppState& o) const {
     return settings == o.settings && curvePoints == o.curvePoints &&
@@ -278,7 +279,8 @@ struct AppState {
            stgOpenshockToken == o.stgOpenshockToken &&
            stgOpenshockServer == o.stgOpenshockServer &&
            stgPresetCount == o.stgPresetCount &&
-           stgTouchThreshold == o.stgTouchThreshold;
+           stgTouchThreshold == o.stgTouchThreshold &&
+           stgParameters == o.stgParameters;
   }
   bool operator!=(const AppState& o) const { return !(*this == o); }
 };
@@ -313,6 +315,7 @@ struct UiContext {
   char (&stgOpenshockServer)[128];
   int& stgPresetCount;
   float& stgTouchThreshold;
+  std::vector<Parameter>& stgParameters;
 };
 
 static AppState snapshotAppState(const UiContext& ui) {
@@ -346,6 +349,7 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.stgOpenshockServer = ui.stgOpenshockServer;
   st.stgPresetCount = ui.stgPresetCount;
   st.stgTouchThreshold = ui.stgTouchThreshold;
+  st.stgParameters = ui.stgParameters;
   return st;
 }
 
@@ -387,6 +391,7 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.stgUseSerial = st.stgUseSerial;
   ui.stgPresetCount = st.stgPresetCount;
   ui.stgTouchThreshold = st.stgTouchThreshold;
+  ui.stgParameters = st.stgParameters;
   ui.chatboxShockEnabled = st.chatboxShockEnabled;
   ui.chatboxCooldownEnabled = st.chatboxCooldownEnabled;
 }
@@ -704,6 +709,14 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
       bool oldXs = c["XSOVERLAY_NOTIFICATIONS"].as<bool>(false);
       bool oldOvr = c["OVRTOOLKIT_NOTIFICATIONS"].as<bool>(false);
       settings.notificationsEnabled = oldXs || oldOvr;
+      settings.parameters.clear();
+      if (!settings.shockParameter.empty())
+        settings.parameters.push_back(
+            {settings.shockParameter, 0, CurveRange::Full});
+      if (!settings.secondShockParameter.empty())
+        settings.parameters.push_back(
+            {settings.secondShockParameter, 0, CurveRange::SecondHalf});
+      if (settings.parameters.empty()) settings.parameters.push_back({});
       settings.notifUseOvrToolkit = oldOvr;
       logMsg("Imported config.yml");
     } else {
@@ -860,6 +873,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   float xViewMin = settings.xViewMin;
   float xViewMax = settings.xViewMax;
 
+  int currentCurveIndex = 0;
+
   std::deque<AppState> undoStack, redoStack;
   bool isPerformingUndoRedo = false;
   bool ctrlZPrev = false, ctrlYPrev = false;
@@ -901,6 +916,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f;
   char stgPishockUser[128] = {}, stgPishockKey[128] = {},
        stgOpenshockToken[256] = {}, stgOpenshockServer[128] = {};
+  std::vector<Parameter> stgParameters;
 
   UiContext ui{settings,
                hub,
@@ -930,7 +946,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                stgOpenshockToken,
                stgOpenshockServer,
                stgPresetCount,
-               stgTouchThreshold};
+               stgTouchThreshold,
+               stgParameters};
 
   AppState lastCommittedState = snapshotAppState(ui);
 
@@ -969,6 +986,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     stgTouchThreshold = settings.touchSelectThreshold;
     stgChatboxShockEnabled = settings.chatboxShockEnabled;
     stgChatboxCooldownEnabled = settings.chatboxCooldownEnabled;
+    stgParameters = settings.parameters;
   };
 
   auto closeSettingsModal = [&]() {
@@ -1243,6 +1261,112 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::SameLine();
     ImGui::BeginChild("##plot", {settings.windowW - 220.f, -bottomH}, false);
 
+    // Curve selector bar (like browser tabs)
+    {
+      // Auto-save current curve before switching
+      auto saveCurrent = [&]() {
+        if (currentCurveIndex >= 0 &&
+            currentCurveIndex < (int)settings.curves.size()) {
+          settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
+          settings.curves[currentCurveIndex].xViewMin = xViewMin;
+          settings.curves[currentCurveIndex].xViewMax = xViewMax;
+          settings.curves[currentCurveIndex].minShockDuration = minDur;
+          settings.curves[currentCurveIndex].maxShockDuration = maxDur;
+        }
+      };
+
+      float tabButtonWidth = fontSize * 4.f;
+      bool anyButtonPressed = false;
+
+      for (int i = 0; i < (int)settings.curves.size(); i++) {
+        bool isCurrent = (currentCurveIndex == i);
+        if (isCurrent)
+          ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.54f, 0.34f, 1.f});
+
+        std::string label = settings.curves[i].name;
+        if (ImGui::Button(label.c_str(), {tabButtonWidth, 0})) {
+          saveCurrent();  // Save current curve before switching
+          currentCurveIndex = i;
+          hub.curvePoints = settings.curves[i].curvePoints;
+          xViewMin = settings.curves[i].xViewMin;
+          xViewMax = settings.curves[i].xViewMax;
+          minDur = settings.curves[i].minShockDuration;
+          maxDur = settings.curves[i].maxShockDuration;
+          anyButtonPressed = true;
+        }
+
+        // Right-click menu for rename/clone
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+          ImGui::OpenPopup(("##curve_menu" + std::to_string(i)).c_str());
+        }
+
+        // Right-click context menu
+        if (ImGui::BeginPopup(("##curve_menu" + std::to_string(i)).c_str())) {
+          if (ImGui::MenuItem("Rename")) {
+            ImGui::OpenPopup(("##rename_curve" + std::to_string(i)).c_str());
+          }
+          if (ImGui::MenuItem("Clone")) {
+            saveCurrent();  // Save before cloning
+            Preset cloned = settings.curves[i];
+            cloned.name = cloned.name + " (copy)";
+            settings.curves.push_back(cloned);
+            settings.save(settingsPath);
+          }
+          if (ImGui::MenuItem("Delete")) {
+            settings.curves.erase(settings.curves.begin() + i);
+            if (currentCurveIndex >= (int)settings.curves.size() &&
+                !settings.curves.empty()) {
+              currentCurveIndex = (int)settings.curves.size() - 1;
+            }
+            if (!settings.curves.empty()) {
+              hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
+            }
+            settings.save(settingsPath);
+          }
+          ImGui::EndPopup();
+        }
+
+        // Rename popup
+        if (ImGui::BeginPopup(("##rename_curve" + std::to_string(i)).c_str())) {
+          static char nameBuf[256] = {};
+          if (ImGui::IsWindowAppearing())
+            snprintf(nameBuf, sizeof(nameBuf), "%s",
+                     settings.curves[i].name.c_str());
+          ImGui::SetKeyboardFocusHere();
+          if (ImGui::InputText(("##name" + std::to_string(i)).c_str(), nameBuf,
+                               sizeof(nameBuf),
+                               ImGuiInputTextFlags_EnterReturnsTrue)) {
+            settings.curves[i].name = nameBuf;
+            saveCurrent();
+            settings.save(settingsPath);
+            ImGui::CloseCurrentPopup();
+          }
+          ImGui::EndPopup();
+        }
+
+        if (isCurrent) ImGui::PopStyleColor();
+        ImGui::SameLine();
+      }
+
+      // Add curve button
+      if (ImGui::Button("+", {tabButtonWidth, 0})) {
+        saveCurrent();  // Save current before adding new
+        Preset newCurve;
+        newCurve.name = "Curve " + std::to_string(settings.curves.size() + 1);
+        settings.curves.push_back(newCurve);
+        currentCurveIndex = (int)settings.curves.size() - 1;
+        hub.curvePoints = newCurve.curvePoints;
+        xViewMin = newCurve.xViewMin;
+        xViewMax = newCurve.xViewMax;
+        minDur = newCurve.minShockDuration;
+        maxDur = newCurve.maxShockDuration;
+        settings.save(settingsPath);
+      }
+      ImGui::SetItemTooltip("Add new curve");
+
+      ImGui::NewLine();
+    }
+
     float sliderH = ImGui::GetFrameHeightWithSpacing() + 4;
     ImVec2 savedPlotPos = {}, savedPlotSize = {};
     ImVec2 plotFramePos = ImGui::GetCursorScreenPos();
@@ -1501,6 +1625,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.openshockServerUrl = stgOpenshockServer;
       settings.presetCount = stgPresetCount;
       settings.touchSelectThreshold = stgTouchThreshold;
+      settings.parameters = stgParameters;
       settings.chatboxShockEnabled = stgChatboxShockEnabled;
       settings.chatboxCooldownEnabled = stgChatboxCooldownEnabled;
       {
@@ -1534,13 +1659,58 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       // OSC / Avatar
       ImGui::SeparatorText("OSC / Avatar");
-      ImGui::InputText("Shock Parameter##s", stgShockParam,
-                       sizeof(stgShockParam));
-      ImGui::SetItemTooltip("Parameter name on your VRChat avatar");
-      ImGui::InputText("Second Shock Parameter##s", stgSecondParam,
-                       sizeof(stgSecondParam));
-      ImGui::SetItemTooltip(
-          "Optional second parameter — upper half of curve only");
+
+      std::vector<std::string> curveNames;
+      curveNames.reserve(settings.curves.size());
+      for (int ci = 0; ci < (int)settings.curves.size(); ++ci) {
+        curveNames.push_back(settings.curves[ci].name.empty()
+                                 ? ("Curve " + std::to_string(ci + 1))
+                                 : settings.curves[ci].name);
+      }
+      std::vector<const char*> curveNamePtrs;
+      curveNamePtrs.reserve(curveNames.size());
+      for (auto& name : curveNames) curveNamePtrs.push_back(name.c_str());
+
+      for (int i = 0; i < (int)stgParameters.size(); ++i) {
+        auto& param = stgParameters[i];
+        ImGui::PushID(i);
+        char paramNameBuf[128] = {};
+        snprintf(paramNameBuf, sizeof(paramNameBuf), "%s", param.name.c_str());
+        if (ImGui::InputText("Name", paramNameBuf, sizeof(paramNameBuf)))
+          param.name = paramNameBuf;
+        if (param.curveIndex < 0) param.curveIndex = 0;
+        if (param.curveIndex >= (int)curveNamePtrs.size())
+          param.curveIndex = std::max(0, (int)curveNamePtrs.size() - 1);
+        if (!curveNamePtrs.empty()) {
+          ImGui::Combo("Curve", &param.curveIndex, curveNamePtrs.data(),
+                       curveNamePtrs.size());
+        } else {
+          ImGui::TextDisabled("No curves available. Create a preset first.");
+        }
+
+        const char* rangeNames[] = {"Full Curve", "First Half", "Second Half"};
+        int rangeIndex = (int)param.range;
+        ImGui::Combo("Range", &rangeIndex, rangeNames,
+                     IM_ARRAYSIZE(rangeNames));
+        param.range = static_cast<CurveRange>(rangeIndex);
+
+        ImGui::SameLine();
+        if (ImGui::Button("Delete")) {
+          stgParameters.erase(stgParameters.begin() + i);
+          ImGui::PopID();
+          break;
+        }
+        ImGui::Separator();
+        ImGui::PopID();
+      }
+
+      if (ImGui::Button("Add Parameter")) stgParameters.emplace_back();
+      ImGui::SetItemTooltip("Add a new OSC parameter mapping");
+      ImGui::SameLine();
+      ImGui::TextDisabled("Use a unique parameter name for each mapping.");
+
+      if (stgParameters.empty())
+        ImGui::TextDisabled("No parameters configured yet.");
       ImGui::TextDisabled("Changes here require a restart");
 
       ImGui::Spacing();
@@ -1883,8 +2053,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       std::string currentIDs;
       for (int i = 0; i < (int)settings.shockerIDs.size(); i++)
         currentIDs += (i ? ", " : "") + settings.shockerIDs[i];
-      bool needsRestart = settings.shockParameter != stgShockParam ||
-                          settings.secondShockParameter != stgSecondParam ||
+      bool needsRestart = settings.parameters != stgParameters ||
                           settings.serialPort != stgSerialPort ||
                           settings.usePishock != stgUsePishock ||
                           settings.randomOrSeq != stgRandomOrSeq ||
@@ -2129,6 +2298,16 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   settings.minShockDuration = minDur;
+  // Save current curve before exiting
+  if (currentCurveIndex >= 0 &&
+      currentCurveIndex < (int)settings.curves.size()) {
+    settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
+    settings.curves[currentCurveIndex].xViewMin = xViewMin;
+    settings.curves[currentCurveIndex].xViewMax = xViewMax;
+    settings.curves[currentCurveIndex].minShockDuration = minDur;
+    settings.curves[currentCurveIndex].maxShockDuration = maxDur;
+  }
+
   settings.maxShockDuration = maxDur;
   settings.xViewMin = xViewMin;
   settings.xViewMax = xViewMax;

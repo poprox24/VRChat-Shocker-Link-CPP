@@ -25,6 +25,18 @@ struct Preset {
   float xViewMax = 100.f;
 };
 
+enum class CurveRange { Full = 0, FirstHalf = 1, SecondHalf = 2 };
+
+struct Parameter {
+  std::string name = "Shock";
+  int curveIndex = 0;
+  CurveRange range = CurveRange::Full;
+};
+
+inline bool operator==(const Parameter& a, const Parameter& b) {
+  return a.name == b.name && a.curveIndex == b.curveIndex && a.range == b.range;
+}
+
 class Settings {
  public:
   // Window
@@ -40,6 +52,10 @@ class Settings {
   float xViewMin = 0.f;
   float xViewMax = 100.f;
   std::vector<std::optional<Preset>> presets;
+
+  // Curves - dynamic list of bezier curves
+  std::vector<Preset> curves;
+
   std::string lastSerialPort;
 
   // Serial Config
@@ -93,6 +109,8 @@ class Settings {
   bool chatboxShockEnabled = true;
   bool chatboxCooldownEnabled = true;
 
+  std::vector<Parameter> parameters = {Parameter()};
+
   // Constants
   static constexpr int baudRate = 115200;
   static constexpr int oscPort = 39570;
@@ -100,9 +118,28 @@ class Settings {
 
   void pushShockerId(const std::string& id) { shockerIDs.push_back(id); }
 
-  Settings() : presets(3) {}
+  static std::string makeOscPath(const std::string& name) {
+    return std::string("/avatar/parameters/") + name;
+  }
 
-  Settings(const std::string& path) : presets(3) {
+  std::vector<std::string> getParameterPaths() const {
+    std::vector<std::string> out;
+    out.reserve(parameters.size());
+    for (auto& p : parameters) out.push_back(makeOscPath(p.name));
+    return out;
+  }
+
+  Settings() : presets(3), parameters(1) {
+    // Initialize with 1 default curve
+    curves.push_back(Preset());
+    curves[0].name = "Default";
+  }
+
+  Settings(const std::string& path) : presets(3), parameters(1) {
+    // Initialize with 1 default curve
+    curves.push_back(Preset());
+    curves[0].name = "Default";
+
     try {
       std::ifstream file(path);
       if (!file.is_open()) return;
@@ -126,6 +163,28 @@ class Settings {
       secondShockParameter = j.value("secondShockParameter", "");
       usePishock = j.value("usePishock", true);
       shockerIDs = j.value("shockerIDs", std::vector<std::string>{});
+
+      if (j.contains("parameters") && j["parameters"].is_array()) {
+        parameters.clear();
+        for (auto& item : j["parameters"]) {
+          if (!item.is_object()) continue;
+          Parameter p;
+          p.name = item.value("name", "Shock");
+          p.curveIndex = item.value("curveIndex", 0);
+          p.range = static_cast<CurveRange>(
+              item.value("range", (int)CurveRange::Full));
+          parameters.push_back(p);
+        }
+        if (parameters.empty()) parameters.push_back(Parameter());
+      } else {
+        parameters.clear();
+        if (!shockParameter.empty())
+          parameters.push_back({shockParameter, 0, CurveRange::Full});
+        if (!secondShockParameter.empty())
+          parameters.push_back(
+              {secondShockParameter, 0, CurveRange::SecondHalf});
+        if (parameters.empty()) parameters.push_back(Parameter());
+      }
       randomOrSeq = j.value("randomOrSeq", false);
       serialPort = j.value("serialPort", "");
 
@@ -200,6 +259,30 @@ class Settings {
         }
       }
 
+      // Load curves from JSON
+      if (j.contains("curves") && j["curves"].is_array()) {
+        curves.clear();
+        for (auto& item : j["curves"]) {
+          if (!item.is_object()) continue;
+          Preset p;
+          p.name = item.value("name", "Curve");
+          p.minShockDuration = item.value("minShockDuration", 1.f);
+          p.maxShockDuration = item.value("maxShockDuration", 2.f);
+          p.xViewMin = item.value("xViewMin", 0.f);
+          p.xViewMax = item.value("xViewMax", 100.f);
+          if (item.contains("curvePoints") && item["curvePoints"].size() == 3) {
+            for (int k = 0; k < 3; k++)
+              p.curvePoints[k] = {item["curvePoints"][k]["x"].get<double>(),
+                                  item["curvePoints"][k]["y"].get<double>()};
+          }
+          curves.push_back(p);
+        }
+      }
+      if (curves.empty()) {
+        curves.push_back(Preset());
+        curves[0].name = "Default";
+      }
+
       if (defaultPreset >= 0 && defaultPreset < (int)presets.size() &&
           presets[defaultPreset].has_value()) {
         minShockDuration = presets[defaultPreset]->minShockDuration;
@@ -262,6 +345,21 @@ class Settings {
     // Style Config
     j["presetCount"] = presetCount;
     j["touchSelectThreshold"] = touchSelectThreshold;
+
+    if (!parameters.empty()) {
+      j["shockParameter"] = parameters[0].name;
+      std::string secondName;
+      for (size_t i = 1; i < parameters.size(); ++i) {
+        if (parameters[i].range == CurveRange::SecondHalf) {
+          secondName = parameters[i].name;
+          break;
+        }
+      }
+      j["secondShockParameter"] = secondName;
+    } else {
+      j["shockParameter"] = shockParameter;
+      j["secondShockParameter"] = secondShockParameter;
+    }
     j["touchMarkerSize"] = touchMarkerSize;
     j["lineWidth"] = lineWidth;
     j["backgroundColor"] = saveColor(backgroundColor);
@@ -278,6 +376,13 @@ class Settings {
     j["chatboxShockEnabled"] = chatboxShockEnabled;
     j["chatboxCooldownEnabled"] = chatboxCooldownEnabled;
 
+    j["parameters"] = nlohmann::json::array();
+    for (auto& p : parameters) {
+      j["parameters"].push_back({{"name", p.name},
+                                 {"curveIndex", p.curveIndex},
+                                 {"range", (int)p.range}});
+    }
+
     j["presets"] = nlohmann::json::array();
     for (auto& p : presets) {
       if (!p.has_value()) {
@@ -293,6 +398,21 @@ class Settings {
           {"curvePoints", pts},
           {"xViewMin", p->xViewMin},
           {"xViewMax", p->xViewMax},
+      });
+    }
+
+    // Save curves
+    j["curves"] = nlohmann::json::array();
+    for (auto& c : curves) {
+      nlohmann::json pts = nlohmann::json::array();
+      for (auto& cp : c.curvePoints) pts.push_back({{"x", cp.x}, {"y", cp.y}});
+      j["curves"].push_back({
+          {"name", c.name},
+          {"minShockDuration", c.minShockDuration},
+          {"maxShockDuration", c.maxShockDuration},
+          {"curvePoints", pts},
+          {"xViewMin", c.xViewMin},
+          {"xViewMax", c.xViewMax},
       });
     }
 
@@ -333,6 +453,7 @@ class Settings {
            lineWidth == other.lineWidth && vrchatHost == other.vrchatHost &&
            chatboxShockEnabled == other.chatboxShockEnabled &&
            chatboxCooldownEnabled == other.chatboxCooldownEnabled &&
+           parameters == other.parameters &&
            presets.size() == other.presets.size() &&
            vec4Eq(backgroundColor, other.backgroundColor) &&
            vec4Eq(outsideCurveBg, other.outsideCurveBg) &&

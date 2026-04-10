@@ -53,7 +53,39 @@ inline int sampleIntensity(std::array<CurvePoint, 3>& pts, std::mt19937& rng) {
   }
   return (int)xs.back();
 }
+inline int sampleIntensityLowerHalf(std::array<CurvePoint, 3>& pts,
+                                    std::mt19937& rng) {
+  auto sorted = pts;
+  std::sort(sorted.begin(), sorted.end(),
+            [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
 
+  auto curve = bezierInterpolate(sorted[0], sorted[1], sorted[2]);
+
+  std::vector<double> xs, ys;
+  for (auto& p : curve) {
+    if (p.y <= 0.0) continue;
+    xs.push_back(std::clamp(p.x, 1.0, 100.0));
+    ys.push_back(p.y);
+  }
+
+  if (xs.empty()) return 25;
+
+  size_t end = xs.size();
+  while (end > 0 && xs[end - 1] >= 50.0) end--;
+
+  if (end == 0) return 25;
+
+  double totalWeight = 0.0;
+  for (size_t i = 0; i < end; i++) totalWeight += ys[i];
+  std::uniform_real_distribution<double> dist(0.0, totalWeight);
+  double r = dist(rng);
+  double acc = 0.0;
+  for (size_t i = 0; i < end; i++) {
+    acc += ys[i];
+    if (r <= acc) return (int)xs[i];
+  }
+  return (int)xs.front();
+}
 inline int sampleIntensityUpperHalf(std::array<CurvePoint, 3>& pts,
                                     std::mt19937& rng) {
   auto sorted = pts;
