@@ -1676,7 +1676,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::PushID(i);
         char paramNameBuf[128] = {};
         snprintf(paramNameBuf, sizeof(paramNameBuf), "%s", param.name.c_str());
-        if (ImGui::InputText("Name", paramNameBuf, sizeof(paramNameBuf)))
+        if (ImGui::InputText("Parameter name", paramNameBuf,
+                             sizeof(paramNameBuf)))
           param.name = paramNameBuf;
         if (param.curveIndex < 0) param.curveIndex = 0;
         if (param.curveIndex >= (int)curveNamePtrs.size())
