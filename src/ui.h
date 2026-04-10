@@ -631,7 +631,11 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
           for (int k = 0; k < 3; k++)
             p.curvePoints[k] = {rp["curve_points"][k][0].get<double>(),
                                 rp["curve_points"][k][1].get<double>()};
-        settings.presets[i] = p;
+        SavedPreset sp2;
+        sp2.name = p.name;
+        sp2.curves.push_back(p);
+        sp2.activeCurveIndex = 0;
+        settings.presets[i] = sp2;
       }
       settings.defaultPreset = j.value("default_preset", -1);
 
@@ -640,11 +644,16 @@ inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
           settings.defaultPreset < (int)settings.presets.size() &&
           settings.presets[settings.defaultPreset].has_value()) {
         auto& dp = settings.presets[settings.defaultPreset];
-        minDur = settings.minShockDuration = dp->minShockDuration;
-        maxDur = settings.maxShockDuration = dp->maxShockDuration;
-        hub.curvePoints = dp->curvePoints;
-        xViewMin = settings.xViewMin = dp->xViewMin;
-        xViewMax = settings.xViewMax = dp->xViewMax;
+        int ai = dp->activeCurveIndex;
+        if (!dp->curves.empty()) {
+          if (ai >= (int)dp->curves.size()) ai = 0;
+          auto& ac = dp->curves[ai];
+          minDur = settings.minShockDuration = ac.minShockDuration;
+          maxDur = settings.maxShockDuration = ac.maxShockDuration;
+          hub.curvePoints = ac.curvePoints;
+          xViewMin = settings.xViewMin = ac.xViewMin;
+          xViewMax = settings.xViewMax = ac.xViewMax;
+        }
       }
       logMsg("Imported curve_settings.json");
     } else {
@@ -1177,10 +1186,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       // Left click - load
       if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && hasData) {
         settings.curves = settings.presets[i]->curves;
-        currentCurveIndex = settings.presets[i]->activeCurveIndex;
 
         if (currentCurveIndex >= (int)settings.curves.size())
-          currentCurveIndex = 0;
+          currentCurveIndex = (int)settings.curves.size() - 1;
 
         // Fix any parameter indices that pointed at curves that no longer exist
         for (auto& param : settings.parameters)
@@ -1240,7 +1248,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
         // Snapshot all curves into this preset slot
         SavedPreset sp;
-        sp.name = label;
         sp.curves = settings.curves;
         sp.activeCurveIndex = currentCurveIndex;
         settings.presets[i] = sp;
