@@ -230,6 +230,7 @@ class Settings {
     j["defaultPreset"] = defaultPreset;
     j["lastSerialPort"] = lastSerialPort;
 
+    // Serial Config
     j["shockParameter"] = shockParameter;
     j["secondShockParameter"] = secondShockParameter;
     j["usePishock"] = usePishock;
@@ -243,18 +244,22 @@ class Settings {
     j["openshockApiToken"] = openshockApiToken;
     j["openshockServerUrl"] = openshockServerUrl;
 
+    // Cooldown Mode
     j["baseCooldown"] = baseCooldown;
     j["maxCooldown"] = maxCooldown;
     j["cooldownFactor"] = cooldownFactor;
     j["cooldownWindow"] = cooldownWindow;
     j["cooldownEnabled"] = cooldownEnabled;
 
+    // Panic Hotkey
     j["hotkeyVk"] = hotkeyVk;
     j["hotkeyMods"] = hotkeyMods;
 
+    // Notification Config
     j["notificationsEnabled"] = notificationsEnabled;
     j["notifUseOvrToolkit"] = notifUseOvrToolkit;
 
+    // Style Config
     j["presetCount"] = presetCount;
     j["touchSelectThreshold"] = touchSelectThreshold;
     j["touchMarkerSize"] = touchMarkerSize;
@@ -268,6 +273,7 @@ class Settings {
     j["gradientLeftColor"] = saveColor(gradientLeftColor);
     j["gradientRightColor"] = saveColor(gradientRightColor);
 
+    // VRChat
     j["vrchatHost"] = vrchatHost;
     j["chatboxShockEnabled"] = chatboxShockEnabled;
     j["chatboxCooldownEnabled"] = chatboxCooldownEnabled;

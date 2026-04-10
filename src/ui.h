@@ -1863,15 +1863,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       ImGui::Spacing();
 
-      // Network
-      ImGui::SeparatorText("Network");
-      ImGui::InputText("VRChat Host##s", stgVrchatHost, sizeof(stgVrchatHost));
-      ImGui::SetItemTooltip("Usually doesn't need a change.");
+      // VRChat
+      ImGui::SeparatorText("VRChat");
+      ImGui::Checkbox("Send shocks to ChatBox", &stgChatboxShockEnabled);
+      ImGui::Checkbox("Send cooldowns to ChatBox", &stgChatboxCooldownEnabled);
 
       ImGui::Spacing();
 
-      ImGui::Checkbox("Send shocks to ChatBox", &stgChatboxShockEnabled);
-      ImGui::Checkbox("Send cooldowns to ChatBox", &stgChatboxCooldownEnabled);
+      ImGui::InputText("VRChat Host##s", stgVrchatHost, sizeof(stgVrchatHost));
+      ImGui::SetItemTooltip("Usually doesn't need a change.");
 
       ImGui::Spacing();
       ImGui::Separator();
