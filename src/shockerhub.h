@@ -26,8 +26,10 @@
 #include "stats.h"
 #include "version.h"
 
+#ifdef _WIN32
 #pragma comment(lib, "wininet.lib")
 #pragma comment(lib, "winhttp.lib")
+#endif
 
 class ShockerHub {
  public:
@@ -184,13 +186,16 @@ class ShockerHub {
              resp.substr(0, 200));
       return false;
     }
-
-    if (settings.shockerIDs.empty()) {
-      for (auto& s : j["data"])
-        if (s.contains("id"))
-          settings.pushShockerId(s["id"].get<std::string>());
-      logMsg("[OpenShock] Auto-populated {} shocker ID(s): {}\n",
-             settings.shockerIDs.size(), fmt::join(settings.shockerIDs, ", "));
+    {
+      std::lock_guard<std::mutex> lock(queueMutex);
+      if (settings.shockerIDs.empty()) {
+        for (auto& s : j["data"])
+          if (s.contains("id"))
+            settings.pushShockerId(s["id"].get<std::string>());
+        logMsg("[OpenShock] Auto-populated {} shocker ID(s): {}\n",
+               settings.shockerIDs.size(),
+               fmt::join(settings.shockerIDs, ", "));
+      }
     }
 
     logMsg("[OpenShock] Resolved {} shocker(s)\n", j["data"].size());
@@ -254,11 +259,15 @@ class ShockerHub {
     }
     logMsg("[PiShock] Resolved {} shocker(s)\n", pishockShockerToClient.size());
 
-    if (settings.shockerIDs.empty()) {
-      for (auto& [sid, cid] : pishockShockerToClient)
-        settings.pushShockerId(std::to_string(sid));
-      logMsg("[PiShock] Auto-populated {} shocker ID(s): {}\n",
-             settings.shockerIDs.size(), fmt::join(settings.shockerIDs, ", "));
+    {
+      std::lock_guard<std::mutex> lock(queueMutex);
+      if (settings.shockerIDs.empty()) {
+        for (auto& [sid, cid] : pishockShockerToClient)
+          settings.pushShockerId(std::to_string(sid));
+        logMsg("[PiShock] Auto-populated {} shocker ID(s): {}\n",
+               settings.shockerIDs.size(),
+               fmt::join(settings.shockerIDs, ", "));
+      }
     }
 
     pishockResolved = true;
@@ -539,7 +548,6 @@ class ShockerHub {
           shockTimestamps.erase(shockTimestamps.begin());
 
         double dynamicCooldown = calcDynamicCooldown();
-        cooldownUntil.store(now + dynamicCooldown);
 
         // Calculate remaining cooldown
         double remaining = dynamicCooldown - (now - lastTriggerTimeAtomic);
@@ -658,7 +666,7 @@ class ShockerHub {
     if (serial.writeString(command.c_str()) <= 0) {
       logMsg("[ShockerHub] Serial write failed, reconnecting...\n");
       reconnectSerial();
-      queueShock(durationMs);
+      queueShock(durationMs, vibrate);
       return;
     }
 

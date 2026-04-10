@@ -733,6 +733,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     logMsg("[GLFW] Error {}: {}", err, desc);
   });
 #ifndef _WIN32
+  // This is needed because I am lazy and made the global hotkeys easy to
+  // implement
   glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
 #endif
   if (!glfwInit()) {
@@ -1650,8 +1652,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             "If using multiple shockers, this option chooses between "
             "randomizing or using them sequentially\n"
             "No for random // Yes for sequential");
-        ImGui::Checkbox("Sequential shocker order (vs Random)",
-                        &stgRandomOrSeq);
       }
       ImGui::TextDisabled("Changes here require a restart");
       ImGui::Spacing();
