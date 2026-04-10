@@ -203,7 +203,6 @@ static void registerGlobalHotkey(int glfwKey, int mods) {
 
   g_x11GrabbedKey = kc;
   g_x11GrabbedMods = x11Mods;
-  logMsg("[Hotkey] Registered global hotkey (X11)");
 
   if (g_hotkeyThreadRunning) return;
   g_hotkeyThreadRunning = true;
@@ -248,7 +247,8 @@ struct AppState {
       stgVrchatHost, stgPishockUser, stgPishockKey, stgOpenshockToken,
       stgOpenshockServer;
   bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
-       stgNotifUseOvr = false, stgUseSerial = true;
+       stgNotifUseOvr = false, stgUseSerial = true, chatboxShockEnabled = true,
+       chatboxCooldownEnabled = true;
   int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
       stgPresetCount = 3;
   float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f;
@@ -262,6 +262,8 @@ struct AppState {
            stgShockerIDs == o.stgShockerIDs &&
            stgSerialPort == o.stgSerialPort &&
            stgVrchatHost == o.stgVrchatHost &&
+           chatboxShockEnabled == o.chatboxShockEnabled &&
+           chatboxCooldownEnabled == o.chatboxCooldownEnabled &&
            stgUsePishock == o.stgUsePishock &&
            stgRandomOrSeq == o.stgRandomOrSeq &&
            stgBaseCooldown == o.stgBaseCooldown &&
@@ -303,6 +305,8 @@ struct UiContext {
   bool& stgNotifEnabled;
   bool& stgNotifUseOvr;
   bool& stgUseSerial;
+  bool& chatboxShockEnabled;
+  bool& chatboxCooldownEnabled;
   char (&stgPishockUser)[128];
   char (&stgPishockKey)[128];
   char (&stgOpenshockToken)[256];
@@ -325,6 +329,8 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.stgShockerIDs = ui.stgShockerIDs;
   st.stgSerialPort = ui.stgSerialPort;
   st.stgVrchatHost = ui.stgVrchatHost;
+  st.chatboxShockEnabled = ui.chatboxShockEnabled;
+  st.chatboxCooldownEnabled = ui.chatboxCooldownEnabled;
   st.stgUsePishock = ui.stgUsePishock;
   st.stgRandomOrSeq = ui.stgRandomOrSeq;
   st.stgBaseCooldown = ui.stgBaseCooldown;
@@ -381,6 +387,8 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.stgUseSerial = st.stgUseSerial;
   ui.stgPresetCount = st.stgPresetCount;
   ui.stgTouchThreshold = st.stgTouchThreshold;
+  ui.chatboxShockEnabled = st.chatboxShockEnabled;
+  ui.chatboxCooldownEnabled = st.chatboxCooldownEnabled;
 }
 
 static void pushUndoSnapshot(std::deque<AppState>& undoStack,
@@ -898,7 +906,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   char stgShockParam[64] = {}, stgSecondParam[64] = {}, stgShockerIDs[256] = {},
        stgSerialPort[64] = {}, stgVrchatHost[64] = {};
   bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
-       stgNotifUseOvr = false, stgUseSerial = true;
+       stgNotifUseOvr = false, stgUseSerial = true,
+       stgChatboxShockEnabled = true, stgChatboxCooldownEnabled = true;
   int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
       stgPresetCount = 3;
   float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f;
@@ -926,6 +935,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                stgNotifEnabled,
                stgNotifUseOvr,
                stgUseSerial,
+               stgChatboxShockEnabled,
+               stgChatboxCooldownEnabled,
                stgPishockUser,
                stgPishockKey,
                stgOpenshockToken,
@@ -968,6 +979,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     stgUseSerial = settings.useSerial;
     stgPresetCount = settings.presetCount;
     stgTouchThreshold = settings.touchSelectThreshold;
+    stgChatboxShockEnabled = settings.chatboxShockEnabled;
+    stgChatboxCooldownEnabled = settings.chatboxCooldownEnabled;
   };
 
   auto closeSettingsModal = [&]() {
@@ -1500,6 +1513,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.openshockServerUrl = stgOpenshockServer;
       settings.presetCount = stgPresetCount;
       settings.touchSelectThreshold = stgTouchThreshold;
+      settings.chatboxShockEnabled = stgChatboxShockEnabled;
+      settings.chatboxCooldownEnabled = stgChatboxCooldownEnabled;
       {
         std::lock_guard<std::mutex> lock(hub.queueMutex);
         settings.shockerIDs.clear();
@@ -1852,6 +1867,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SeparatorText("Network");
       ImGui::InputText("VRChat Host##s", stgVrchatHost, sizeof(stgVrchatHost));
       ImGui::SetItemTooltip("Usually doesn't need a change.");
+
+      ImGui::Spacing();
+
+      ImGui::Checkbox("Send shocks to ChatBox", &stgChatboxShockEnabled);
+      ImGui::Checkbox("Send cooldowns to ChatBox", &stgChatboxCooldownEnabled);
 
       ImGui::Spacing();
       ImGui::Separator();

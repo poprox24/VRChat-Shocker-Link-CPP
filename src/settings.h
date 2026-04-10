@@ -90,6 +90,8 @@ class Settings {
 
   // VRChat Config
   std::string vrchatHost = "127.0.0.1";
+  bool chatboxShockEnabled = true;
+  bool chatboxCooldownEnabled = true;
 
   // Constants
   static constexpr int baudRate = 115200;
@@ -170,6 +172,8 @@ class Settings {
 
       // VRChat Config
       vrchatHost = j.value("vrchatHost", "127.0.0.1");
+      chatboxShockEnabled = j.value("chatboxShockEnabled", true);
+      chatboxCooldownEnabled = j.value("chatboxCooldownEnabled", true);
 
       // Resize and load presets
       presets.resize(presetCount);
@@ -265,6 +269,8 @@ class Settings {
     j["gradientRightColor"] = saveColor(gradientRightColor);
 
     j["vrchatHost"] = vrchatHost;
+    j["chatboxShockEnabled"] = chatboxShockEnabled;
+    j["chatboxCooldownEnabled"] = chatboxCooldownEnabled;
 
     j["presets"] = nlohmann::json::array();
     for (auto& p : presets) {
@@ -319,6 +325,8 @@ class Settings {
            touchSelectThreshold == other.touchSelectThreshold &&
            touchMarkerSize == other.touchMarkerSize &&
            lineWidth == other.lineWidth && vrchatHost == other.vrchatHost &&
+           chatboxShockEnabled == other.chatboxShockEnabled &&
+           chatboxCooldownEnabled == other.chatboxCooldownEnabled &&
            presets.size() == other.presets.size() &&
            vec4Eq(backgroundColor, other.backgroundColor) &&
            vec4Eq(outsideCurveBg, other.outsideCurveBg) &&
