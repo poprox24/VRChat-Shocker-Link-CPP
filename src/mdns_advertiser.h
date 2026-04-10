@@ -36,8 +36,8 @@ inline void mdns_sock_init() {}
 
 class MdnsAdvertiser {
  public:
-  MdnsAdvertiser(const std::string& sn, int port)
-      : serviceName_(sn), httpPort_(port) {}
+  MdnsAdvertiser(const std::string& sn, int port, const std::string& hostIp)
+      : serviceName_(sn), httpPort_(port), hostIp_(hostIp) {}
 
   bool start() {
     mdns_sock_init();
@@ -97,7 +97,7 @@ class MdnsAdvertiser {
   }
 
  private:
-  std::string serviceName_, hostname_;
+  std::string serviceName_, hostname_, hostIp_;
   int httpPort_;
   sock_t sock_ = SOCK_INVAL;
   std::atomic<bool> running_{false};
@@ -178,10 +178,13 @@ class MdnsAdvertiser {
     appendU16(buf, 0x0001);
     appendU32(buf, 120);
     appendU16(buf, 4);
-    buf.push_back(127);
-    buf.push_back(0);
-    buf.push_back(0);
-    buf.push_back(1);
+    in_addr addr;
+    inet_pton(AF_INET, hostIp_.c_str(), &addr);
+    uint32_t ip = ntohl(addr.s_addr);
+    buf.push_back((ip >> 24) & 0xFF);
+    buf.push_back((ip >> 16) & 0xFF);
+    buf.push_back((ip >> 8) & 0xFF);
+    buf.push_back(ip & 0xFF);
     return buf;
   }
 

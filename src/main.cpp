@@ -51,8 +51,8 @@ int main() {
     return 1;
   }
 
-  OscQueryServer oscQuery(Settings::oscPort,
-                          std::string(Settings::serviceName));
+  OscQueryServer oscQuery(Settings::oscPort, std::string(Settings::serviceName),
+                          settings.vrchatHost);
   oscQuery.setShockPath("/avatar/parameters/" + settings.shockParameter);
   if (!settings.secondShockParameter.empty())
     oscQuery.setSecondShockPath("/avatar/parameters/" +

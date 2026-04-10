@@ -424,18 +424,6 @@ static void performUndoRedo(bool is_undo, std::deque<AppState>& undoStack,
   isPerformingUndoRedo = false;
 }
 
-static void glfwKeyCallback(GLFWwindow* window, int key, int scancode,
-                            int action, int mods) {
-  ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
-  if (action == GLFW_PRESS && g_hub && g_settingsForHotkey) {
-    if (key == g_settingsForHotkey->hotkeyVk) {
-      // NOTE: hotkeyMods check omitted for now — add if needed
-      g_hub->shocksDisabled = true;
-      logMsg("[Hotkey] Shocks disabled.");
-    }
-  }
-}
-
 // Save button icon
 static bool drawSaveIconButton(const char* id) {
   ImVec2 size(16, 16);
@@ -1875,6 +1863,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       ImGui::Spacing();
       ImGui::Separator();
+      ImGui::Spacing();
 
       static char importPathBuf[512] = {};
       ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - 135.f);

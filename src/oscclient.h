@@ -157,9 +157,10 @@ class OscQueryServer {
   std::condition_variable shockCV;
   bool shockPending = false, secondShockPending = false;
 
-  OscQueryServer(int oscPort, const std::string& sn)
+  OscQueryServer(int oscPort, const std::string& sn, const std::string& hostIp)
       : oscPort_(oscPort),
         serviceName_(sn),
+        hostIp_(hostIp),
         oscListener_(oscPort, [this](const std::string& p, float v) {
           onOscMessage(p, v);
         }) {}
@@ -186,7 +187,7 @@ class OscQueryServer {
       logMsg("[OSCQuery] Failed to start OSC listener");
       return false;
     }
-    mdns_ = std::make_unique<MdnsAdvertiser>(serviceName_, httpPort_);
+    mdns_ = std::make_unique<MdnsAdvertiser>(serviceName_, httpPort_, hostIp_);
     return mdns_->start();
   }
 
@@ -199,7 +200,7 @@ class OscQueryServer {
 
  private:
   int oscPort_, httpPort_ = -1;
-  std::string serviceName_;
+  std::string serviceName_, hostIp_;
   std::string shockPath_ = "/avatar/parameters/Shock", secondShockPath_;
   httplib::Server httpServer_;
   std::thread httpThread_;
@@ -214,7 +215,7 @@ class OscQueryServer {
     if (isHostInfo) {
       nlohmann::json r = {{"NAME", serviceName_},
                           {"OSC_PORT", oscPort_},
-                          {"OSC_IP", "127.0.0.1"},
+                          {"OSC_IP", hostIp_},
                           {"OSC_TRANSPORT", "UDP"},
                           {"EXTENSIONS",
                            {{"ACCESS", true},
