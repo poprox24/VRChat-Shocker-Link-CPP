@@ -893,8 +893,16 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.defaultPreset < (int)settings.presets.size() &&
       settings.presets[settings.defaultPreset].has_value()) {
     auto& dp = settings.presets[settings.defaultPreset];
+    // Preserve names across preset load
+    std::vector<std::string> savedNames;
+    for (auto& c : settings.curves) savedNames.push_back(c.name);
+
     settings.curves = dp->curves;
     currentCurveIndex = dp->activeCurveIndex;
+
+    for (int k = 0;
+         k < (int)settings.curves.size() && k < (int)savedNames.size(); k++)
+      settings.curves[k].name = savedNames[k];
 
     if (currentCurveIndex >= (int)settings.curves.size()) currentCurveIndex = 0;
     for (auto& param : settings.parameters)
@@ -1185,7 +1193,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       // Left click - load
       if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && hasData) {
+        std::vector<std::string> savedNames;
+        for (auto& c : settings.curves) savedNames.push_back(c.name);
+
         settings.curves = settings.presets[i]->curves;
+
+        for (int k = 0;
+             k < (int)settings.curves.size() && k < (int)savedNames.size(); k++)
+          settings.curves[k].name = savedNames[k];
 
         if (currentCurveIndex >= (int)settings.curves.size())
           currentCurveIndex = (int)settings.curves.size() - 1;
