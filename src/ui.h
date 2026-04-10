@@ -1695,7 +1695,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                      IM_ARRAYSIZE(rangeNames));
         param.range = static_cast<CurveRange>(rangeIndex);
 
-        ImGui::SameLine();
         if (ImGui::Button("Delete")) {
           stgParameters.erase(stgParameters.begin() + i);
           ImGui::PopID();
@@ -1705,10 +1704,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::PopID();
       }
 
-      if (ImGui::Button("Add Parameter")) stgParameters.emplace_back();
+      if (ImGui::Button(" + ")) stgParameters.emplace_back();
       ImGui::SetItemTooltip("Add a new OSC parameter mapping");
       ImGui::SameLine();
-      ImGui::TextDisabled("Use a unique parameter name for each mapping.");
+      ImGui::TextDisabled("Use a unique parameter name.");
 
       if (stgParameters.empty())
         ImGui::TextDisabled("No parameters configured yet.");
