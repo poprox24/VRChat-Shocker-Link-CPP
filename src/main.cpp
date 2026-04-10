@@ -53,10 +53,7 @@ int main() {
 
   OscQueryServer oscQuery(Settings::oscPort, std::string(Settings::serviceName),
                           settings.vrchatHost);
-  oscQuery.setShockPath("/avatar/parameters/" + settings.shockParameter);
-  if (!settings.secondShockParameter.empty())
-    oscQuery.setSecondShockPath("/avatar/parameters/" +
-                                settings.secondShockParameter);
+  oscQuery.setParameterPaths(settings.getParameterPaths());
   if (!oscQuery.start()) {
     logMsg("Failed to start OSCQuery\n");
     hub.shutdown();
@@ -68,16 +65,13 @@ int main() {
     while (running) {
       std::unique_lock<std::mutex> lock(oscQuery.shockMutex);
       oscQuery.shockCV.wait_for(lock, std::chrono::milliseconds(100), [&] {
-        return oscQuery.shockPending || oscQuery.secondShockPending || !running;
+        return !oscQuery.pendingParameterIndexes.empty() || !running;
       });
-      if (oscQuery.shockPending) {
-        oscQuery.shockPending = false;
+      if (!oscQuery.pendingParameterIndexes.empty()) {
+        int index = oscQuery.pendingParameterIndexes.front();
+        oscQuery.pendingParameterIndexes.pop_front();
         lock.unlock();
-        hub.queueShock();
-      } else if (oscQuery.secondShockPending) {
-        oscQuery.secondShockPending = false;
-        lock.unlock();
-        hub.queueShockUpperHalf();
+        hub.queueShockFor(index);
       }
     }
   });

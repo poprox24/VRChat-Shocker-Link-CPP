@@ -155,7 +155,7 @@ class OscQueryServer {
  public:
   std::mutex shockMutex;
   std::condition_variable shockCV;
-  bool shockPending = false, secondShockPending = false;
+  std::deque<int> pendingParameterIndexes;
 
   OscQueryServer(int oscPort, const std::string& sn, const std::string& hostIp)
       : oscPort_(oscPort),
@@ -164,9 +164,6 @@ class OscQueryServer {
         oscListener_(oscPort, [this](const std::string& p, float v) {
           onOscMessage(p, v);
         }) {}
-
-  void setShockPath(const std::string& p) { shockPath_ = p; }
-  void setSecondShockPath(const std::string& p) { secondShockPath_ = p; }
 
   bool start() {
     httpServer_.set_read_timeout(1, 0);
@@ -198,10 +195,19 @@ class OscQueryServer {
     if (mdns_) mdns_->stop();
   }
 
+  void setParameterPaths(const std::vector<std::string>& paths) {
+    std::lock_guard<std::mutex> lock(shockMutex);
+    parameterPaths_ = paths;
+    pathToParameterIndex_.clear();
+    for (int i = 0; i < (int)parameterPaths_.size(); ++i)
+      pathToParameterIndex_[parameterPaths_[i]] = i;
+  }
+
  private:
   int oscPort_, httpPort_ = -1;
   std::string serviceName_, hostIp_;
-  std::string shockPath_ = "/avatar/parameters/Shock", secondShockPath_;
+  std::vector<std::string> parameterPaths_;
+  std::unordered_map<std::string, int> pathToParameterIndex_;
   httplib::Server httpServer_;
   std::thread httpThread_;
   OscListener oscListener_;
@@ -225,17 +231,10 @@ class OscQueryServer {
                             {"VALUE", true}}}};
       res.set_content(r.dump(), "application/json");
     } else {
-      std::string pn = shockPath_.substr(shockPath_.rfind('/') + 1);
-      nlohmann::json contents = {{pn,
-                                  {{"FULL_PATH", shockPath_},
-                                   {"ACCESS", 2},
-                                   {"TYPE", "T"},
-                                   {"DESCRIPTION", ""}}}};
-      if (!secondShockPath_.empty()) {
-        std::string p2 =
-            secondShockPath_.substr(secondShockPath_.rfind('/') + 1);
-        contents[p2] = {
-            {"FULL_PATH", secondShockPath_}, {"ACCESS", 2}, {"TYPE", "T"}};
+      nlohmann::json contents = nlohmann::json::object();
+      for (auto& path : parameterPaths_) {
+        std::string name = path.substr(path.rfind('/') + 1);
+        contents[name] = {{"FULL_PATH", path}, {"ACCESS", 2}, {"TYPE", "T"}};
       }
       nlohmann::json r = {{"FULL_PATH", "/"},
                           {"ACCESS", 0},
@@ -261,13 +260,10 @@ class OscQueryServer {
       lastValues_[path] = value;
     }
     if (value > 0.f) {
-      if (path == shockPath_) {
+      auto it = pathToParameterIndex_.find(path);
+      if (it != pathToParameterIndex_.end()) {
         std::lock_guard<std::mutex> lock(shockMutex);
-        shockPending = true;
-        shockCV.notify_one();
-      } else if (!secondShockPath_.empty() && path == secondShockPath_) {
-        std::lock_guard<std::mutex> lock(shockMutex);
-        secondShockPending = true;
+        pendingParameterIndexes.push_back(it->second);
         shockCV.notify_one();
       }
     }

@@ -90,10 +90,19 @@ class ShockerHub {
     return settings.usePishock ? scanForPishock() : scanForOpenshock();
   }
 
+  struct ShockRequest {
+    std::optional<int> duration;
+    int parameterIndex = -1;
+    CurveRange range = CurveRange::Full;
+    bool vibrate = false;
+  };
+
   void queueShock(int duration = -1, bool vibrate = false) {
     {
       std::lock_guard<std::mutex> lock(queueMutex);
-      shockQueue.push({duration, false, vibrate});
+      shockQueue.push(
+          {duration == -1 ? std::nullopt : std::optional<int>(duration), -1,
+           CurveRange::Full, vibrate});
     }
     queueCV.notify_one();
   }
@@ -101,7 +110,23 @@ class ShockerHub {
   void queueShockUpperHalf(int duration = -1, bool vibrate = false) {
     {
       std::lock_guard<std::mutex> lock(queueMutex);
-      shockQueue.push({duration, true, vibrate});
+      shockQueue.push(
+          {duration == -1 ? std::nullopt : std::optional<int>(duration), -1,
+           CurveRange::SecondHalf, vibrate});
+    }
+    queueCV.notify_one();
+  }
+
+  void queueShockFor(int parameterIndex, int duration = -1,
+                     bool vibrate = false) {
+    CurveRange range = CurveRange::Full;
+    if (parameterIndex >= 0 && parameterIndex < (int)settings.parameters.size())
+      range = settings.parameters[parameterIndex].range;
+    {
+      std::lock_guard<std::mutex> lock(queueMutex);
+      shockQueue.push(
+          {duration == -1 ? std::nullopt : std::optional<int>(duration),
+           parameterIndex, range, vibrate});
     }
     queueCV.notify_one();
   }
@@ -280,7 +305,7 @@ class ShockerHub {
   std::vector<double> shockTimestamps;
   serialib serial;
 
-  std::queue<std::tuple<std::optional<int>, bool, bool>> shockQueue;
+  std::queue<ShockRequest> shockQueue;
   std::thread workerThread;
   std::atomic<bool> stopWorker = false;
 
@@ -534,9 +559,10 @@ class ShockerHub {
         continue;
       }
 
-      int durationMs = std::get<0>(item).value_or(-1);
-      bool useUpperHalf = std::get<1>(item);
-      bool vibrate = std::get<2>(item);
+      int durationMs = item.duration.value_or(-1);
+      bool vibrate = item.vibrate;
+      int parameterIndex = item.parameterIndex;
+      CurveRange range = item.range;
 
       if (settings.cooldownEnabled) {
         double now = getCurrentTime();
@@ -595,8 +621,20 @@ class ShockerHub {
         durationMs = std::max(100, (int)(durDist(rng) * 1000));
       }
 
-      int intensity = useUpperHalf ? sampleIntensityUpperHalf(curvePoints, rng)
-                                   : sampleIntensity(curvePoints, rng);
+      std::array<CurvePoint, 3>* pts = &curvePoints;
+      if (parameterIndex >= 0 &&
+          parameterIndex < (int)settings.parameters.size()) {
+        int curveIndex = settings.parameters[parameterIndex].curveIndex;
+        if (curveIndex >= 0 && curveIndex < (int)settings.curves.size())
+          pts = &settings.curves[curveIndex].curvePoints;
+      }
+      int intensity;
+      if (range == CurveRange::SecondHalf)
+        intensity = sampleIntensityUpperHalf(*pts, rng);
+      else if (range == CurveRange::FirstHalf)
+        intensity = sampleIntensityLowerHalf(*pts, rng);
+      else
+        intensity = sampleIntensity(*pts, rng);
       sendShock(durationMs, intensity, chosenShocker, vibrate);
 
       if (settings.cooldownEnabled)
