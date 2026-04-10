@@ -25,6 +25,12 @@ struct Preset {
   float xViewMax = 100.f;
 };
 
+struct SavedPreset {
+  std::string name;
+  std::vector<Preset> curves;
+  int activeCurveIndex = 0;
+};
+
 enum class CurveRange { Full = 0, FirstHalf = 1, SecondHalf = 2 };
 
 struct Parameter {
@@ -51,7 +57,8 @@ class Settings {
   float maxShockDuration = 2.f;
   float xViewMin = 0.f;
   float xViewMax = 100.f;
-  std::vector<std::optional<Preset>> presets;
+
+  std::vector<std::optional<SavedPreset>> presets;
 
   // Curves - dynamic list of bezier curves
   std::vector<Preset> curves;
@@ -243,17 +250,51 @@ class Settings {
           if (item.is_null()) {
             presets[i] = std::nullopt;
           } else {
-            Preset p;
-            p.name = item["name"].get<std::string>();
-            p.minShockDuration = item["minShockDuration"].get<float>();
-            p.maxShockDuration = item["maxShockDuration"].get<float>();
-            p.xViewMin = item.value("xViewMin", 0.f);
-            p.xViewMax = item.value("xViewMax", 100.f);
-            if (item.contains("curvePoints") && item["curvePoints"].size() == 3)
-              for (int k = 0; k < 3; k++)
-                p.curvePoints[k] = {item["curvePoints"][k]["x"].get<double>(),
-                                    item["curvePoints"][k]["y"].get<double>()};
-            presets[i] = p;
+            SavedPreset sp;
+            sp.name = item.value("name", "Preset");
+            sp.activeCurveIndex = item.value("activeCurveIndex", 0);
+
+            if (item.contains("curves") && item["curves"].is_array()) {
+              for (auto& ci : item["curves"]) {
+                Preset cp;
+                cp.name = ci.value("name", "Curve");
+                cp.minShockDuration = ci.value("minShockDuration", 1.f);
+                cp.maxShockDuration = ci.value("maxShockDuration", 2.f);
+                cp.xViewMin = ci.value("xViewMin", 0.f);
+                cp.xViewMax = ci.value("xViewMax", 100.f);
+                if (ci.contains("curvePoints") && ci["curvePoints"].size() == 3)
+                  for (int k = 0; k < 3; k++)
+                    cp.curvePoints[k] = {
+                        ci["curvePoints"][k]["x"].get<double>(),
+                        ci["curvePoints"][k]["y"].get<double>()};
+                sp.curves.push_back(cp);
+              }
+            }
+            // Old format migration - single curvePoints entry becomes one curve
+            else if (item.contains("curvePoints")) {
+              Preset cp;
+              cp.name = sp.name;
+              cp.minShockDuration = item.value("minShockDuration", 1.f);
+              cp.maxShockDuration = item.value("maxShockDuration", 2.f);
+              cp.xViewMin = item.value("xViewMin", 0.f);
+              cp.xViewMax = item.value("xViewMax", 100.f);
+              if (item["curvePoints"].size() == 3)
+                for (int k = 0; k < 3; k++)
+                  cp.curvePoints[k] = {
+                      item["curvePoints"][k]["x"].get<double>(),
+                      item["curvePoints"][k]["y"].get<double>()};
+              sp.curves.push_back(cp);
+            }
+
+            // Ensure at least one curve, clamp active index
+            if (sp.curves.empty()) {
+              sp.curves.push_back(Preset());
+              sp.curves[0].name = "Default";
+            }
+            if (sp.activeCurveIndex >= (int)sp.curves.size())
+              sp.activeCurveIndex = 0;
+
+            presets[i] = sp;
           }
           i++;
         }
@@ -283,10 +324,16 @@ class Settings {
         curves[0].name = "Default";
       }
 
+      // CHANGED: apply default preset using active curve index
       if (defaultPreset >= 0 && defaultPreset < (int)presets.size() &&
           presets[defaultPreset].has_value()) {
-        minShockDuration = presets[defaultPreset]->minShockDuration;
-        maxShockDuration = presets[defaultPreset]->maxShockDuration;
+        auto& dp = presets[defaultPreset];
+        int ai = dp->activeCurveIndex;
+        if (!dp->curves.empty()) {
+          if (ai >= (int)dp->curves.size()) ai = 0;
+          minShockDuration = dp->curves[ai].minShockDuration;
+          maxShockDuration = dp->curves[ai].maxShockDuration;
+        }
       }
 
     } catch (std::exception& e) {
@@ -383,22 +430,31 @@ class Settings {
                                  {"range", (int)p.range}});
     }
 
+    // Save full curve snapshots per preset slot
     j["presets"] = nlohmann::json::array();
     for (auto& p : presets) {
       if (!p.has_value()) {
         j["presets"].push_back(nullptr);
         continue;
       }
-      nlohmann::json pts = nlohmann::json::array();
-      for (auto& cp : p->curvePoints) pts.push_back({{"x", cp.x}, {"y", cp.y}});
-      j["presets"].push_back({
-          {"name", p->name},
-          {"minShockDuration", p->minShockDuration},
-          {"maxShockDuration", p->maxShockDuration},
-          {"curvePoints", pts},
-          {"xViewMin", p->xViewMin},
-          {"xViewMax", p->xViewMax},
-      });
+      nlohmann::json jp;
+      jp["name"] = p->name;
+      jp["activeCurveIndex"] = p->activeCurveIndex;
+      jp["curves"] = nlohmann::json::array();
+      for (auto& c : p->curves) {
+        nlohmann::json pts = nlohmann::json::array();
+        for (auto& cp : c.curvePoints)
+          pts.push_back({{"x", cp.x}, {"y", cp.y}});
+        jp["curves"].push_back({
+            {"name", c.name},
+            {"minShockDuration", c.minShockDuration},
+            {"maxShockDuration", c.maxShockDuration},
+            {"curvePoints", pts},
+            {"xViewMin", c.xViewMin},
+            {"xViewMax", c.xViewMax},
+        });
+      }
+      j["presets"].push_back(jp);
     }
 
     // Save curves

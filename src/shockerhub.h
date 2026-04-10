@@ -625,9 +625,8 @@ class ShockerHub {
       if (parameterIndex >= 0 &&
           parameterIndex < (int)settings.parameters.size()) {
         int curveIndex = settings.parameters[parameterIndex].curveIndex;
-        if (curveIndex >= 0 && curveIndex < (int)settings.presets.size() &&
-            settings.presets[curveIndex].has_value())
-          pts = &settings.presets[curveIndex]->curvePoints;
+        if (curveIndex >= 0 && curveIndex < (int)settings.curves.size())
+          pts = &settings.curves[curveIndex].curvePoints;
       }
       int intensity;
       if (range == CurveRange::SecondHalf)

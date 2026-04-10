@@ -883,12 +883,21 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   if (settings.defaultPreset >= 0 &&
       settings.defaultPreset < (int)settings.presets.size() &&
       settings.presets[settings.defaultPreset].has_value()) {
-    auto& p = settings.presets[settings.defaultPreset];
-    minDur = p->minShockDuration;
-    maxDur = p->maxShockDuration;
-    hub.curvePoints = p->curvePoints;
-    xViewMin = p->xViewMin;
-    xViewMax = p->xViewMax;
+    auto& dp = settings.presets[settings.defaultPreset];
+    settings.curves = dp->curves;
+    currentCurveIndex = dp->activeCurveIndex;
+
+    if (currentCurveIndex >= (int)settings.curves.size()) currentCurveIndex = 0;
+    for (auto& param : settings.parameters)
+      if (param.curveIndex >= (int)settings.curves.size()) param.curveIndex = 0;
+
+    if (!settings.curves.empty()) {
+      hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
+      xViewMin = settings.curves[currentCurveIndex].xViewMin;
+      xViewMax = settings.curves[currentCurveIndex].xViewMax;
+      minDur = settings.curves[currentCurveIndex].minShockDuration;
+      maxDur = settings.curves[currentCurveIndex].maxShockDuration;
+    }
   }
 
   // Settings/Stats modal state
@@ -1167,13 +1176,30 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       // Left click - load
       if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && hasData) {
-        minDur = settings.presets[i]->minShockDuration;
-        maxDur = settings.presets[i]->maxShockDuration;
-        settings.minShockDuration = minDur;
-        settings.maxShockDuration = maxDur;
-        hub.curvePoints = settings.presets[i]->curvePoints;
-        xViewMin = settings.presets[i]->xViewMin;
-        xViewMax = settings.presets[i]->xViewMax;
+        settings.curves = settings.presets[i]->curves;
+        currentCurveIndex = settings.presets[i]->activeCurveIndex;
+
+        if (currentCurveIndex >= (int)settings.curves.size())
+          currentCurveIndex = 0;
+
+        // Fix any parameter indices that pointed at curves that no longer exist
+        for (auto& param : settings.parameters)
+          if (param.curveIndex >= (int)settings.curves.size())
+            param.curveIndex = 0;
+
+        for (auto& param : stgParameters)
+          if (param.curveIndex >= (int)settings.curves.size())
+            param.curveIndex = 0;
+
+        if (!settings.curves.empty()) {
+          hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
+          xViewMin = settings.curves[currentCurveIndex].xViewMin;
+          xViewMax = settings.curves[currentCurveIndex].xViewMax;
+          minDur = settings.curves[currentCurveIndex].minShockDuration;
+          maxDur = settings.curves[currentCurveIndex].maxShockDuration;
+          settings.minShockDuration = minDur;
+          settings.maxShockDuration = maxDur;
+        }
       }
       // Middle click - set default
       if (ImGui::IsItemClicked(ImGuiMouseButton_Middle)) {
@@ -1203,14 +1229,21 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
                            (ImGui::GetFrameHeight() - 16.f) * 0.5f);
       if (drawSaveIconButton(("##save" + std::to_string(i)).c_str())) {
-        Preset p;
-        p.name = label;
-        p.minShockDuration = minDur;
-        p.maxShockDuration = maxDur;
-        p.curvePoints = hub.curvePoints;
-        p.xViewMin = xViewMin;
-        p.xViewMax = xViewMax;
-        settings.presets[i] = p;
+        if (currentCurveIndex >= 0 &&
+            currentCurveIndex < (int)settings.curves.size()) {
+          settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
+          settings.curves[currentCurveIndex].xViewMin = xViewMin;
+          settings.curves[currentCurveIndex].xViewMax = xViewMax;
+          settings.curves[currentCurveIndex].minShockDuration = minDur;
+          settings.curves[currentCurveIndex].maxShockDuration = maxDur;
+        }
+
+        // Snapshot all curves into this preset slot
+        SavedPreset sp;
+        sp.name = label;
+        sp.curves = settings.curves;
+        sp.activeCurveIndex = currentCurveIndex;
+        settings.presets[i] = sp;
         settings.save(settingsPath);
       }
     }
@@ -1261,7 +1294,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::SameLine();
     ImGui::BeginChild("##plot", {settings.windowW - 220.f, -bottomH}, false);
 
-    // Curve selector bar (like browser tabs)
+    // Curve selector bar
     {
       // Auto-save current curve before switching
       auto saveCurrent = [&]() {
@@ -1278,6 +1311,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       float tabButtonWidth = fontSize * 4.f;
       bool anyButtonPressed = false;
 
+      static int wantsRenameCurve = -1;
+      static char renameCurveBuf[256] = {};
+
       for (int i = 0; i < (int)settings.curves.size(); i++) {
         bool isCurrent = (currentCurveIndex == i);
         if (isCurrent)
@@ -1285,7 +1321,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
         std::string label = settings.curves[i].name;
         if (ImGui::Button(label.c_str(), {tabButtonWidth, 0})) {
-          saveCurrent();  // Save current curve before switching
+          saveCurrent();
           currentCurveIndex = i;
           hub.curvePoints = settings.curves[i].curvePoints;
           xViewMin = settings.curves[i].xViewMin;
@@ -1295,18 +1331,18 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           anyButtonPressed = true;
         }
 
-        // Right-click menu for rename/clone
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        // Right-click menu for rename/clone/delete
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
           ImGui::OpenPopup(("##curve_menu" + std::to_string(i)).c_str());
-        }
 
-        // Right-click context menu
         if (ImGui::BeginPopup(("##curve_menu" + std::to_string(i)).c_str())) {
           if (ImGui::MenuItem("Rename")) {
-            ImGui::OpenPopup(("##rename_curve" + std::to_string(i)).c_str());
+            wantsRenameCurve = i;
+            snprintf(renameCurveBuf, sizeof(renameCurveBuf), "%s",
+                     settings.curves[i].name.c_str());
           }
           if (ImGui::MenuItem("Clone")) {
-            saveCurrent();  // Save before cloning
+            saveCurrent();
             Preset cloned = settings.curves[i];
             cloned.name = cloned.name + " (copy)";
             settings.curves.push_back(cloned);
@@ -1315,31 +1351,18 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           if (ImGui::MenuItem("Delete")) {
             settings.curves.erase(settings.curves.begin() + i);
             if (currentCurveIndex >= (int)settings.curves.size() &&
-                !settings.curves.empty()) {
+                !settings.curves.empty())
               currentCurveIndex = (int)settings.curves.size() - 1;
-            }
-            if (!settings.curves.empty()) {
+            // Clamp parameter curve indices that now point past the end
+            for (auto& param : settings.parameters)
+              if (param.curveIndex >= (int)settings.curves.size())
+                param.curveIndex = 0;
+            for (auto& param : stgParameters)
+              if (param.curveIndex >= (int)settings.curves.size())
+                param.curveIndex = 0;
+            if (!settings.curves.empty())
               hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
-            }
             settings.save(settingsPath);
-          }
-          ImGui::EndPopup();
-        }
-
-        // Rename popup
-        if (ImGui::BeginPopup(("##rename_curve" + std::to_string(i)).c_str())) {
-          static char nameBuf[256] = {};
-          if (ImGui::IsWindowAppearing())
-            snprintf(nameBuf, sizeof(nameBuf), "%s",
-                     settings.curves[i].name.c_str());
-          ImGui::SetKeyboardFocusHere();
-          if (ImGui::InputText(("##name" + std::to_string(i)).c_str(), nameBuf,
-                               sizeof(nameBuf),
-                               ImGuiInputTextFlags_EnterReturnsTrue)) {
-            settings.curves[i].name = nameBuf;
-            saveCurrent();
-            settings.save(settingsPath);
-            ImGui::CloseCurrentPopup();
           }
           ImGui::EndPopup();
         }
@@ -1350,7 +1373,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       // Add curve button
       if (ImGui::Button("+", {tabButtonWidth, 0})) {
-        saveCurrent();  // Save current before adding new
+        saveCurrent();
         Preset newCurve;
         newCurve.name = "Curve " + std::to_string(settings.curves.size() + 1);
         settings.curves.push_back(newCurve);
@@ -1363,6 +1386,29 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         settings.save(settingsPath);
       }
       ImGui::SetItemTooltip("Add new curve");
+
+      if (wantsRenameCurve >= 0 && !ImGui::IsPopupOpen("##rename_curve_modal"))
+        ImGui::OpenPopup("##rename_curve_modal");
+      if (ImGui::BeginPopup("##rename_curve_modal")) {
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        if (ImGui::InputText("Rename##rcm", renameCurveBuf,
+                             sizeof(renameCurveBuf),
+                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+          if (wantsRenameCurve >= 0 &&
+              wantsRenameCurve < (int)settings.curves.size())
+            settings.curves[wantsRenameCurve].name = renameCurveBuf;
+          settings.save(settingsPath);
+          wantsRenameCurve = -1;
+          ImGui::CloseCurrentPopup();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+          wantsRenameCurve = -1;
+          ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+      } else if (!ImGui::IsPopupOpen("##rename_curve_modal")) {
+        wantsRenameCurve = -1;
+      }
 
       ImGui::NewLine();
     }
