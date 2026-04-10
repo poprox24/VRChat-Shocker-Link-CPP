@@ -556,7 +556,7 @@ class ShockerHub {
           std::string cooldownMsg =
               fmt::format("On cooldown: {:.1f}s", remaining);
           logMsg("{}\n", cooldownMsg);
-          chatbox.send(cooldownMsg);
+          if (settings.chatboxCooldownEnabled) chatbox.send(cooldownMsg);
 
           // Record to stats
           gStats.recordCooldownHit();
@@ -615,14 +615,15 @@ class ShockerHub {
   // Stuff to do after the shock was sent
   // (Send chat message, handle cooldown math, send notifications, record shock)
   void afterShockSent(int durationMs, int strength, const std::string& opType) {
-    shockTimestamps.push_back(getCurrentTime());
     lastTriggerTimeAtomic = getCurrentTime();
+    shockTimestamps.push_back(lastTriggerTimeAtomic);
 
     if (!settings.cooldownEnabled) cooldownUntil.store(0.0);
 
-    // \xe2\x9a\xa1 = ⚡ symbol
-    chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
-                             durationMs / 1000.0f));
+    if (settings.chatboxShockEnabled)
+      // \xe2\x9a\xa1 = ⚡ symbol
+      chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
+                               durationMs / 1000.0f));
     std::string notifMsg =
         fmt::format("{}% | {:.1f}s", strength, durationMs / 1000.0f);
     if (settings.notificationsEnabled) {
