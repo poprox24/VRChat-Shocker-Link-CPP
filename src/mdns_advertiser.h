@@ -65,9 +65,9 @@ class MdnsAdvertiser {
     addr.sin_port = htons(5353);
     addr.sin_addr.s_addr = INADDR_ANY;
     if (bind(sock_, (sockaddr*)&addr, sizeof(addr)) != 0) {
-      // avahi/systemd-resolved probably holds port 5353 — non-fatal, just no
+      // Avahi/systemd-resolved probably holds port 5353 - non-fatal, just no
       // auto-discovery
-      logMsg("[mDNS] bind to 5353 failed — mDNS disabled (avahi running?)");
+      logMsg("[mDNS] Bind to 5353 failed - mDNS disabled (avahi running?)");
       sock_close(sock_);
       sock_ = SOCK_INVAL;
       return true;
@@ -103,7 +103,6 @@ class MdnsAdvertiser {
   std::atomic<bool> running_{false};
   std::thread listenerThread_;
 
-  // packet building helpers — identical to original Windows code
   static void appendName(std::vector<uint8_t>& buf, const std::string& name) {
     std::string n = name;
     if (!n.empty() && n.back() == '.') n.pop_back();

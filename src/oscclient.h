@@ -176,7 +176,7 @@ class OscQueryServer {
         ".*", [this](const httplib::Request& req, httplib::Response& res) {
           handleHttpRequest(req, res);
         });
-    httpPort_ = httpServer_.bind_to_any_port("127.0.0.1");
+    httpPort_ = httpServer_.bind_to_any_port(hostIp_);
     if (httpPort_ < 0) {
       logMsg("[OSCQuery] Failed to bind HTTP server");
       return false;
