@@ -613,13 +613,21 @@ class ShockerHub {
 
       // Calculate duration if no duration is set yet
       // Duration is only set already when shocks are being re-sent
-      if (durationMs == -1) {
-        std::uniform_real_distribution<float> durDist(
-            settings.minShockDuration,
-            std::nextafter(settings.maxShockDuration,
-                           std::numeric_limits<float>::infinity()));
-        durationMs = std::max(100, (int)(durDist(rng) * 1000));
+      float minD = settings.minShockDuration;
+      float maxD = settings.maxShockDuration;
+
+      if (parameterIndex >= 0 &&
+          parameterIndex < (int)settings.parameters.size()) {
+        int curveIndex = settings.parameters[parameterIndex].curveIndex;
+
+        if (curveIndex >= 0 && curveIndex < (int)settings.curves.size()) {
+          minD = settings.curves[curveIndex].minShockDuration;
+          maxD = settings.curves[curveIndex].maxShockDuration;
+        }
       }
+      std::uniform_real_distribution<float> durDist(
+          minD, std::nextafter(maxD, std::numeric_limits<float>::infinity()));
+      durationMs = std::max(100, (int)(durDist(rng) * 1000));
 
       std::array<CurvePoint, 3>* pts = &curvePoints;
       if (parameterIndex >= 0 &&
