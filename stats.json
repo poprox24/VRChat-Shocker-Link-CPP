@@ -1,0 +1,11 @@
+{
+  "dailyShocks": {},
+  "highestIntensity": 0,
+  "longestShockMs": 0.0,
+  "totalCooldownHits": 0,
+  "totalIntensitySum": 0.0,
+  "totalShockDurationMs": 0.0,
+  "totalShocks": 0,
+  "totalVibrationDurationMs": 0.0,
+  "totalVibrations": 0
+}

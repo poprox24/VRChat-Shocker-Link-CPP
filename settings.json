@@ -1,0 +1,197 @@
+{
+  "accentColor": [
+    0.28200000524520874,
+    0.28200000524520874,
+    0.28200000524520874,
+    1.0
+  ],
+  "backgroundColor": [
+    0.11599999666213989,
+    0.11599999666213989,
+    0.11599999666213989,
+    1.0
+  ],
+  "baseCooldown": 2,
+  "chatboxCooldownEnabled": true,
+  "chatboxShockEnabled": true,
+  "cooldownEnabled": true,
+  "cooldownFactor": 0.4000000059604645,
+  "cooldownWindow": 30,
+  "curveLineColor": [
+    0.1120000034570694,
+    0.7879999876022339,
+    1.0,
+    1.0
+  ],
+  "curves": [
+    {
+      "curvePoints": [
+        {
+          "x": 20.0,
+          "y": 0.8
+        },
+        {
+          "x": 15.8008658008658,
+          "y": 0.25853658536585367
+        },
+        {
+          "x": 80.0,
+          "y": 0.2
+        }
+      ],
+      "maxShockDuration": 2.0,
+      "minShockDuration": 1.0,
+      "name": "Default",
+      "xViewMax": 100.0,
+      "xViewMin": 0.0
+    }
+  ],
+  "defaultPreset": -1,
+  "gradientLeftColor": [
+    0.2590000033378601,
+    0.5839999914169312,
+    0.23100000619888306,
+    1.0
+  ],
+  "gradientRightColor": [
+    0.4309999942779541,
+    0.09000000357627869,
+    0.23100000619888306,
+    1.0
+  ],
+  "hotkeyMods": 0,
+  "hotkeyVk": 298,
+  "labelColor": [
+    0.9020000100135803,
+    0.9330000281333923,
+    0.9649999737739563,
+    1.0
+  ],
+  "lastSerialPort": "",
+  "lineWidth": 3.0,
+  "markerColor": [
+    0.847000002861023,
+    0.5410000085830688,
+    0.5690000057220459,
+    1.0
+  ],
+  "maxCooldown": 6,
+  "notifUseOvrToolkit": false,
+  "notificationsEnabled": false,
+  "openshockApiToken": "",
+  "openshockServerUrl": "api.openshock.app",
+  "outsideCurveBg": [
+    0.11599999666213989,
+    0.11599999666213989,
+    0.11599999666213989,
+    1.0
+  ],
+  "parameters": [
+    {
+      "curveIndex": 0,
+      "name": "Shock",
+      "range": 0
+    }
+  ],
+  "pishockApiKey": "",
+  "pishockUsername": "",
+  "presetCount": 3,
+  "presets": [
+    {
+      "activeCurveIndex": 0,
+      "curves": [
+        {
+          "curvePoints": [
+            {
+              "x": 20.0,
+              "y": 0.8
+            },
+            {
+              "x": 15.8008658008658,
+              "y": 0.25853658536585367
+            },
+            {
+              "x": 80.0,
+              "y": 0.2
+            }
+          ],
+          "maxShockDuration": 2.0,
+          "minShockDuration": 1.0,
+          "name": "Default",
+          "xViewMax": 100.0,
+          "xViewMin": 0.0
+        }
+      ],
+      "name": "Preset 1"
+    },
+    {
+      "activeCurveIndex": 0,
+      "curves": [
+        {
+          "curvePoints": [
+            {
+              "x": 60.17316017316017,
+              "y": 0.5073170731707317
+            },
+            {
+              "x": 15.8008658008658,
+              "y": 0.25853658536585367
+            },
+            {
+              "x": 80.0,
+              "y": 0.2
+            }
+          ],
+          "maxShockDuration": 3.200000047683716,
+          "minShockDuration": 1.0,
+          "name": "Default",
+          "xViewMax": 100.0,
+          "xViewMin": 0.0
+        }
+      ],
+      "name": "Preset 2"
+    },
+    {
+      "activeCurveIndex": 0,
+      "curves": [
+        {
+          "curvePoints": [
+            {
+              "x": 20.0,
+              "y": 0.8
+            },
+            {
+              "x": 15.8008658008658,
+              "y": 0.25853658536585367
+            },
+            {
+              "x": 80.0,
+              "y": 0.2
+            }
+          ],
+          "maxShockDuration": 2.0,
+          "minShockDuration": 1.0,
+          "name": "Default",
+          "xViewMax": 100.0,
+          "xViewMin": 0.0
+        }
+      ],
+      "name": "Preset 3"
+    }
+  ],
+  "randomOrSeq": false,
+  "secondShockParameter": "",
+  "serialPort": "/dev/ttyACM7",
+  "shockParameter": "Shock",
+  "shockerIDs": [],
+  "showStats": true,
+  "touchMarkerSize": 140.0,
+  "touchSelectThreshold": 8.0,
+  "usePishock": false,
+  "useSerial": true,
+  "vrchatHost": "127.0.0.1",
+  "windowH": 709,
+  "windowW": 750,
+  "windowX": 382,
+  "windowY": 792
+}

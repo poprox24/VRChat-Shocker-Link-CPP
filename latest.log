@@ -1,0 +1,13 @@
+[23:30:31] [ShockerHub] Attempting to connect to the shocker hub
+[23:30:31] [ShockerHub] Could not open port saved in settings: /dev/ttyACM7, trying last known working port.
+[23:30:31] [ShockerHub] Could not open last known working port, running a port scan
+[23:30:31] [ShockerHub] Couldn't connect to OpenShock HUB, check connection and press reconnect.
+[23:30:31] [ShockerHub] No shockers configured. Shocks will be disabled until IDs are set in settings.
+[23:30:31] [OSCQuery] HTTP server on port 37929
+[23:30:31] [OSC] Listening on UDP port 39570
+[23:30:31] [mDNS] Advertising ShockerLink on port 37929
+[23:30:32] [Update] Up to date (1.6.1)
+[23:30:32] [Update] Patch:
+[23:30:32] [Update]  - Added the ability to add multiple curves and parameters.
+[23:31:12] Settings saved
+[23:33:05] Settings saved

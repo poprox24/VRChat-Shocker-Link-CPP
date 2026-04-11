@@ -35,9 +35,12 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
+add_subdirectory(lib)
+add_subdirectory(src)
+
 set(SHOCKER_COMMON_SOURCES
-    src/main.cpp
-    lib/serialib.cpp
+    ${SHOCKERLINK_APP_SOURCES}
+    ${SHOCKERLINK_LIB_SOURCES}
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -83,7 +86,8 @@ else()
 endif()
 
 target_include_directories(ShockerLink PRIVATE
-    lib src
+    ${SHOCKERLINK_LIB_INCLUDE_DIRS}
+    ${SHOCKERLINK_APP_INCLUDE_DIRS}
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
     ${implot_SOURCE_DIR}

@@ -29,6 +29,7 @@ void signalHandler(int) { running = false; }
 int main() {
   // STARUP
   Settings settings(settingsLocation);
+  const auto deviceCfg = settings.deviceConfig();
   gStats.load("stats.json");
 
   ShockerHub hub(settings);
@@ -36,11 +37,11 @@ int main() {
   std::signal(SIGINT, signalHandler);
 
   std::future<void> shockFuture;
-  if (!settings.useSerial) {
-    if (settings.usePishock) {
+  if (!deviceCfg.useSerial) {
+    if (deviceCfg.usePishock) {
       shockFuture =
           std::async(std::launch::async, [&hub] { hub.resolvePiShockApi(); });
-    } else if (settings.shockerIDs.empty()) {
+    } else if (deviceCfg.shockerIDs.empty()) {
       shockFuture =
           std::async(std::launch::async, [&hub] { hub.resolveOpenShockApi(); });
     }
@@ -52,7 +53,7 @@ int main() {
   }
 
   OscQueryServer oscQuery(Settings::oscPort, std::string(Settings::serviceName),
-                          settings.vrchatHost);
+                          deviceCfg.vrchatHost);
   oscQuery.setParameterPaths(settings.getParameterPaths());
   if (!oscQuery.start()) {
     logMsg("Failed to start OSCQuery\n");
