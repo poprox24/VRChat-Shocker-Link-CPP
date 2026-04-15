@@ -613,9 +613,12 @@ class ShockerHub {
 
       // Calculate duration if no duration is set yet
       // Duration is only set already when shocks are being re-sent
+      // This is just a fallback if multiple curves fail
       float minD = settings.minShockDuration;
       float maxD = settings.maxShockDuration;
 
+      // If multiple curves exist and parameter curve index is not 0 set min/max
+      // duration from the correct curve
       if (parameterIndex >= 0 &&
           parameterIndex < (int)settings.parameters.size()) {
         int curveIndex = settings.parameters[parameterIndex].curveIndex;
