@@ -800,6 +800,49 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   ImGuiIO& io = ImGui::GetIO();
   io.IniFilename = nullptr;
 
+#ifdef _WIN32
+  ImFont* boldFont = nullptr;
+  {
+    const char* regularPaths[] = {"C:\\Windows\\Fonts\\segoeui.ttf",
+                                  "C:\\Windows\\Fonts\\arial.ttf",
+                                  "C:\\Windows\\Fonts\\calibri.ttf", nullptr};
+
+    const char* boldPaths[] = {"C:\\Windows\\Fonts\\segoeuib.ttf",
+                               "C:\\Windows\\Fonts\\arialbd.ttf",
+                               "C:\\Windows\\Fonts\\calibrib.ttf", nullptr};
+
+    const char* symPaths[] = {"C:\\Windows\\Fonts\\segoeui.ttf", nullptr};
+
+    for (auto p = regularPaths; *p; ++p) {
+      if (std::filesystem::exists(*p)) {
+        io.Fonts->AddFontFromFileTTF(*p, 18.0f);
+        break;
+      }
+    }
+    if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
+
+    for (auto p = symPaths; *p; ++p) {
+      if (std::filesystem::exists(*p)) {
+        ImFontConfig cfg;
+        cfg.MergeMode = true;
+        cfg.GlyphOffset = {0, 0.f};
+        static const ImWchar ranges[] = {0x2600, 0x27FF, 0};
+        io.Fonts->AddFontFromFileTTF(*p, 18.0f, &cfg, ranges);
+        break;
+      }
+    }
+
+    for (auto p = boldPaths; *p; ++p) {
+      if (std::filesystem::exists(*p)) {
+        boldFont = io.Fonts->AddFontFromFileTTF(*p, 18.0f);
+        break;
+      }
+    }
+    if (!boldFont) {
+      boldFont = io.Fonts->Fonts.back();
+    }
+  }
+#else
   ImFont* boldFont = nullptr;
   {
     const char* regularPaths[] = {
@@ -853,6 +896,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
     }
   }
+#endif
 
   ImVec4& bgColor = settings.outsideCurveBg;
   ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] = {bgColor.x, bgColor.y,
