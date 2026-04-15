@@ -1400,6 +1400,46 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             }
             settings.save(settingsPath);
           }
+          if (ImGui::BeginMenu("Copy from Preset")) {
+            bool anyPreset = false;
+            for (int pi = 0; pi < (int)settings.presets.size(); pi++) {
+              if (!settings.presets[pi].has_value()) continue;
+              auto& sp = *settings.presets[pi];
+              if (sp.curves.empty()) continue;
+              anyPreset = true;
+              if (ImGui::BeginMenu(sp.name.c_str())) {
+                for (int ci = 0; ci < (int)sp.curves.size(); ci++) {
+                  const auto& srcCurve = sp.curves[ci];
+                  std::string curveLabel =
+                      srcCurve.name.empty()
+                          ? ("Curve " + std::to_string(ci + 1))
+                          : srcCurve.name;
+                  if (ImGui::MenuItem(curveLabel.c_str())) {
+                    saveCurrentCurve();
+                    Preset& dst = settings.curves[i];
+                    dst.curvePoints = srcCurve.curvePoints;
+                    dst.xViewMin = srcCurve.xViewMin;
+                    dst.xViewMax = srcCurve.xViewMax;
+                    dst.minShockDuration = srcCurve.minShockDuration;
+                    dst.maxShockDuration = srcCurve.maxShockDuration;
+                    // If this is the active curve, update live UI state too
+                    if (i == currentCurveIndex) {
+                      hub.curvePoints = dst.curvePoints;
+                      xViewMin = dst.xViewMin;
+                      xViewMax = dst.xViewMax;
+                      minDur = dst.minShockDuration;
+                      maxDur = dst.maxShockDuration;
+                      settings.minShockDuration = minDur;
+                      settings.maxShockDuration = maxDur;
+                    }
+                  }
+                }
+                ImGui::EndMenu();
+              }
+            }
+            if (!anyPreset) ImGui::TextDisabled("No saved presets");
+            ImGui::EndMenu();
+          }
           if (ImGui::MenuItem("Delete")) {
             saveCurrentCurve();
             std::string deletedName = settings.curves[i].name;
