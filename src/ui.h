@@ -1657,6 +1657,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           pts[i].x = std::clamp(pts[i].x, 0.0, 100.0);
           pts[i].y = std::clamp(pts[i].y, 0.0, 1.0);
         }
+        if (currentCurveIndex >= 0 &&
+            currentCurveIndex < (int)settings.curves.size())
+          settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
 
         ImPlot::PopPlotClipRect();
       }

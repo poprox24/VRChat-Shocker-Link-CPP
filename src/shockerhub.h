@@ -630,7 +630,13 @@ class ShockerHub {
       }
       std::uniform_real_distribution<float> durDist(
           minD, std::nextafter(maxD, std::numeric_limits<float>::infinity()));
-      durationMs = std::max(100, (int)(durDist(rng) * 1000));
+
+      // If shock is being re-sent, don't recalculate duration
+      if (!item.duration.has_value()) {
+        durationMs = std::max(100, (int)(durDist(rng) * 1000));
+      } else {
+        durationMs = item.duration.value();
+      }
 
       std::array<CurvePoint, 3>* pts = &curvePoints;
       if (parameterIndex >= 0 &&
