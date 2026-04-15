@@ -136,8 +136,7 @@ static void registerGlobalHotkey(int glfwKey, int mods) {
 #define GLFW_EXPOSE_NATIVE_X11
 #include <GLFW/glfw3native.h>
 
-static Display* g_x11HotkeyDisplay =
-    nullptr;  // CHANGED: separate connection, not GLFW's
+static Display* g_x11HotkeyDisplay = nullptr;
 static Window g_x11Root = 0;
 static KeyCode g_x11GrabbedKey = 0;
 static unsigned int g_x11GrabbedMods = 0;
@@ -165,7 +164,6 @@ static void unregisterGlobalHotkeyLinux() {
 }
 
 static void registerGlobalHotkey(int glfwKey, int mods) {
-  // CHANGED: open dedicated display connection
   if (!g_x11HotkeyDisplay) {
     g_x11HotkeyDisplay = XOpenDisplay(nullptr);
     if (!g_x11HotkeyDisplay) {
@@ -193,9 +191,7 @@ static void registerGlobalHotkey(int glfwKey, int mods) {
   if (mods & 4) x11Mods |= ShiftMask;
 
   unsigned int ignoreMasks[] = {0, LockMask, Mod2Mask, LockMask | Mod2Mask};
-  XSetErrorHandler([](Display*, XErrorEvent*) -> int {
-    return 0;
-  });  // ADDED: suppress grab-failed errors
+  XSetErrorHandler([](Display*, XErrorEvent*) -> int { return 0; });
   for (auto ig : ignoreMasks)
     XGrabKey(g_x11HotkeyDisplay, kc, x11Mods | ig, g_x11Root, True,
              GrabModeAsync, GrabModeAsync);
@@ -212,7 +208,6 @@ static void registerGlobalHotkey(int glfwKey, int mods) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         continue;
       }
-      // CHANGED: use select() so we don't block forever on XNextEvent
       int fd = ConnectionNumber(g_x11HotkeyDisplay);
       fd_set fds;
       FD_ZERO(&fds);
@@ -751,8 +746,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     logMsg("[GLFW] Error {}: {}", err, desc);
   });
 #ifndef _WIN32
-  // This is needed because I am lazy and made the global hotkeys easy to
-  // implement
   glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
 #endif
   if (!glfwInit()) {
@@ -1054,7 +1047,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                           statsAnimating || settAnimating || forceFrame;
 
     if (minimized) {
-      // If minimized don't render
       glfwWaitEvents();
       continue;
     }
@@ -1125,8 +1117,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     applyUiTheme(settings);
 
-    // statsW is the current animated left-panel width; used throughout the
-    // frame
     float statsW = statsAnim * 280.f;
     ImGui::SetNextWindowPos({statsW, 0});
     ImGui::SetNextWindowSize(
@@ -1137,7 +1127,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                      ImGuiWindowFlags_NoScrollWithMouse |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    // Compute panel width from the font size so it scales with DPI
     float fontSize = ImGui::GetFontSize();
 
     // Left panel
@@ -1150,7 +1139,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     float bottomH = rowH + logH + sepH;
 
     ImGui::BeginChild("##controls", ImVec2(leftPanelWidth, -bottomH), true);
-    // Connected Icon
     ImGui::SetCursorPosY(ImGui::GetStyle().WindowPadding.y * 0.5f);
 
     ImGui::Spacing();
@@ -1159,12 +1147,20 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (ImGui::IsItemDeactivatedAfterEdit()) {
       minDur = std::min(minDur, maxDur - 0.1f);
       settings.minShockDuration = minDur;
+      // Write back to current curve immediately
+      if (currentCurveIndex >= 0 &&
+          currentCurveIndex < (int)settings.curves.size())
+        settings.curves[currentCurveIndex].minShockDuration = minDur;
     }
 
     ImGui::SliderFloat("##maxd", &maxDur, 0.1f, 5.f, "%.1f");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
       maxDur = std::max(maxDur, minDur + 0.1f);
       settings.maxShockDuration = maxDur;
+      // Write back to current curve immediately
+      if (currentCurveIndex >= 0 &&
+          currentCurveIndex < (int)settings.curves.size())
+        settings.curves[currentCurveIndex].maxShockDuration = maxDur;
     }
 
     ImGui::Spacing();
@@ -1191,40 +1187,32 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       if (isDefault) ImGui::PopStyleColor();
 
-      // Left click - load preset
+      // Left click - load preset: replace all curves with preset's full set
       if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && hasData) {
+        // Flush current curve state before switching
+        if (currentCurveIndex >= 0 &&
+            currentCurveIndex < (int)settings.curves.size()) {
+          settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
+          settings.curves[currentCurveIndex].xViewMin = xViewMin;
+          settings.curves[currentCurveIndex].xViewMax = xViewMax;
+          settings.curves[currentCurveIndex].minShockDuration = minDur;
+          settings.curves[currentCurveIndex].maxShockDuration = maxDur;
+        }
+
         auto& preset = *settings.presets[i];
-        int ai = preset.activeCurveIndex;
-        if (ai >= (int)preset.curves.size()) ai = 0;
 
-        // Merge preset curves into global list
-        for (auto& pc : preset.curves) {
-          bool found = false;
-          for (auto& gc : settings.curves) {
-            if (gc.name == pc.name) {
-              gc = pc;  // update data
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
-            settings.curves.push_back(pc);
-          }
+        // Replace the entire curve list with what the preset stored
+        settings.curves = preset.curves;
+        if (settings.curves.empty()) {
+          settings.curves.push_back(Preset());
+          settings.curves[0].name = "Default";
         }
 
-        // Find the active curve in the global list
-        currentCurveIndex = 0;
-        if (!preset.curves.empty()) {
-          std::string activeName = preset.curves[ai].name;
-          for (int k = 0; k < (int)settings.curves.size(); ++k) {
-            if (settings.curves[k].name == activeName) {
-              currentCurveIndex = k;
-              break;
-            }
-          }
-        }
+        currentCurveIndex = preset.activeCurveIndex;
+        if (currentCurveIndex >= (int)settings.curves.size())
+          currentCurveIndex = 0;
 
-        // Load the active curve data
+        // Load the active curve's per-curve settings
         hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
         xViewMin = settings.curves[currentCurveIndex].xViewMin;
         xViewMax = settings.curves[currentCurveIndex].xViewMax;
@@ -1234,21 +1222,19 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         settings.minShockDuration = minDur;
         settings.maxShockDuration = maxDur;
 
-        // IMPORTANT: Parameters keep their curveIndex (even if the curve wasn't
-        // in this preset) Only clamp if a parameter now points past the end of
-        // the list
+        // Clamp parameter curve indices to the new curve list size
         for (auto& param : settings.parameters) {
-          if (param.curveIndex >= (int)settings.curves.size()) {
+          if (param.curveIndex >= (int)settings.curves.size())
             param.curveIndex = 0;
-          }
         }
       }
+
       // Middle click - set default
       if (ImGui::IsItemClicked(ImGuiMouseButton_Middle)) {
         settings.defaultPreset = i;
         settings.save(settingsPath);
       }
-      // Right click - open rename popoup
+      // Right click - open rename popup
       if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && hasData)
         ImGui::OpenPopup(("##rename" + std::to_string(i)).c_str());
 
@@ -1270,7 +1256,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SameLine();
       ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
                            (ImGui::GetFrameHeight() - 16.f) * 0.5f);
+      // Save preset: snapshot ALL current curves into this slot
       if (drawSaveIconButton(("##save" + std::to_string(i)).c_str())) {
+        // Flush active curve state first
         if (currentCurveIndex >= 0 &&
             currentCurveIndex < (int)settings.curves.size()) {
           settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
@@ -1280,16 +1268,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           settings.curves[currentCurveIndex].maxShockDuration = maxDur;
         }
 
-        // Snapshot all curves into this preset slot
+        // Snapshot ALL curves into this preset slot
         SavedPreset sp;
         sp.curves = settings.curves;
         sp.activeCurveIndex = currentCurveIndex;
-
-        if (settings.presets[i].has_value()) {
-          sp.name = settings.presets[i]->name;
-        } else {
-          sp.name = "Preset " + std::to_string(i + 1);
-        }
+        sp.name = settings.presets[i].has_value()
+                      ? settings.presets[i]->name
+                      : ("Preset " + std::to_string(i + 1));
 
         settings.presets[i] = sp;
         settings.save(settingsPath);
@@ -1306,8 +1291,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (ImGui::Button("Test Shock", {-1, 0})) hub.queueShock(-1, false);
     ImGui::SetItemTooltip("Sends a Shock command");
 
-    // Set cursor position based on buttons being visible or not
-    // Prevents Stats/Settings buttons being pushed down
     {
       int extraRows = (!hub.isConnected ? 1 : 0) + (hub.shocksDisabled ? 1 : 0);
       float totalBtnsH = (1 + extraRows) * ImGui::GetFrameHeightWithSpacing() +
@@ -1373,7 +1356,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
           currentCurveIndex = i;
 
-          // Load the selected curve's data
+          // Load the selected curve's per-curve data
           hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
           xViewMin = settings.curves[currentCurveIndex].xViewMin;
           xViewMax = settings.curves[currentCurveIndex].xViewMax;
@@ -1399,24 +1382,63 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             Preset cloned = settings.curves[i];
             cloned.name = cloned.name + " (copy)";
             settings.curves.push_back(cloned);
+            // Add cloned version to all saved presets, matching by source name
+            std::string srcName = settings.curves[i].name;
+            for (auto& p : settings.presets) {
+              if (!p.has_value()) continue;
+              bool found = false;
+              for (auto& pc : p->curves) {
+                if (pc.name == srcName) {
+                  Preset pCloned = pc;
+                  pCloned.name = cloned.name;
+                  p->curves.push_back(pCloned);
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) p->curves.push_back(cloned);
+            }
             settings.save(settingsPath);
           }
           if (ImGui::MenuItem("Delete")) {
             saveCurrentCurve();
+            std::string deletedName = settings.curves[i].name;
             settings.curves.erase(settings.curves.begin() + i);
-            if (currentCurveIndex >= (int)settings.curves.size() &&
-                !settings.curves.empty())
-              currentCurveIndex = (int)settings.curves.size() - 1;
-
-            if (!settings.curves.empty()) {
-              hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
-              xViewMin = settings.curves[currentCurveIndex].xViewMin;
-              xViewMax = settings.curves[currentCurveIndex].xViewMax;
-              minDur = settings.curves[currentCurveIndex].minShockDuration;
-              maxDur = settings.curves[currentCurveIndex].maxShockDuration;
-              settings.minShockDuration = minDur;
-              settings.maxShockDuration = maxDur;
+            // Ensure at least one curve always exists
+            if (settings.curves.empty()) {
+              settings.curves.push_back(Preset());
+              settings.curves[0].name = "Default";
             }
+            if (currentCurveIndex >= (int)settings.curves.size())
+              currentCurveIndex = (int)settings.curves.size() - 1;
+            // Remove matching curve from all saved presets
+            for (auto& p : settings.presets) {
+              if (!p.has_value()) continue;
+              auto& pc = p->curves;
+              pc.erase(std::remove_if(pc.begin(), pc.end(),
+                                      [&](const Preset& c) {
+                                        return c.name == deletedName;
+                                      }),
+                       pc.end());
+              if (pc.empty()) {
+                pc.push_back(Preset());
+                pc[0].name = "Default";
+              }
+              if (p->activeCurveIndex >= (int)pc.size())
+                p->activeCurveIndex = std::max(0, (int)pc.size() - 1);
+            }
+            // Fallback any parameters that pointed at the deleted curve
+            for (auto& param : settings.parameters) {
+              if (param.curveIndex >= (int)settings.curves.size())
+                param.curveIndex = 0;
+            }
+            hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
+            xViewMin = settings.curves[currentCurveIndex].xViewMin;
+            xViewMax = settings.curves[currentCurveIndex].xViewMax;
+            minDur = settings.curves[currentCurveIndex].minShockDuration;
+            maxDur = settings.curves[currentCurveIndex].maxShockDuration;
+            settings.minShockDuration = minDur;
+            settings.maxShockDuration = maxDur;
             settings.save(settingsPath);
           }
           ImGui::EndPopup();
@@ -1432,6 +1454,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         Preset newCurve;
         newCurve.name = "Curve " + std::to_string(settings.curves.size() + 1);
         settings.curves.push_back(newCurve);
+        // Add a default version of the new curve to all saved presets
+        for (auto& p : settings.presets) {
+          if (p.has_value()) p->curves.push_back(newCurve);
+        }
         currentCurveIndex = (int)settings.curves.size() - 1;
         hub.curvePoints = newCurve.curvePoints;
         xViewMin = newCurve.xViewMin;
@@ -1451,8 +1477,17 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                              sizeof(renameCurveBuf),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
           if (wantsRenameCurve >= 0 &&
-              wantsRenameCurve < (int)settings.curves.size())
+              wantsRenameCurve < (int)settings.curves.size()) {
+            std::string oldName = settings.curves[wantsRenameCurve].name;
             settings.curves[wantsRenameCurve].name = renameCurveBuf;
+            // Sync the rename to all saved presets
+            for (auto& p : settings.presets) {
+              if (!p.has_value()) continue;
+              for (auto& pc : p->curves) {
+                if (pc.name == oldName) pc.name = renameCurveBuf;
+              }
+            }
+          }
           settings.save(settingsPath);
           wantsRenameCurve = -1;
           ImGui::CloseCurrentPopup();
@@ -1653,7 +1688,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::TextDisabled("|");
       ImGui::SameLine(0, 12);
 
-      // Shock counter
       // \xe2\x9a\xa1 = ⚡ symbol
       ImGui::Text("\xe2\x9a\xa1 %d", gStats.sessionShocks);
 
@@ -1866,8 +1900,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::Spacing();
 
       if (stgUseSerial) {
-        // Serial mode fields
-        // Shocker IDs label stays the same for serial
         ImGui::InputTextWithHint("Serial Port##s", "(blank = auto)",
                                  stgSerialPort, sizeof(stgSerialPort));
         ImGui::SetItemTooltip("Leave blank to auto-detect");
@@ -1883,9 +1915,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             "randomizing or using them sequentially\n"
             "No for random // Yes for sequential");
       } else {
-        // API mode fields
         if (stgUsePishock) {
-          // Pishock API
           ImGui::InputText("Username##psa", stgPishockUser,
                            sizeof(stgPishockUser));
           ImGui::SetItemTooltip("Your PiShock account username");
@@ -1900,7 +1930,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
               "Found on the PiShock website under your shocker.\nIf left "
               "empty, will try to get the IDs automatically");
         } else {
-          // OpenShock API
           ImGui::InputText("API Token##ost", stgOpenshockToken,
                            sizeof(stgOpenshockToken),
                            ImGuiInputTextFlags_Password);
@@ -1961,7 +1990,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::TextDisabled("Provider:");
         ImGui::SameLine();
 
-        // XSOverlay button
         if (!stgNotifUseOvr)
           ImGui::PushStyleColor(
               ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
@@ -1974,7 +2002,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
         ImGui::SameLine(0, 0);
 
-        // OVRToolkit button
         if (stgNotifUseOvr)
           ImGui::PushStyleColor(
               ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
@@ -1986,8 +2013,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::PopStyleColor();
       }
 #else
-      // Linux: Force XSOverlay, grey out OVRToolkit(WayVR uses XSOverlays
-      // notification system)
       ImGui::Checkbox("Enable WayVR Notifications##notif", &stgNotifEnabled);
       ImGui::SetItemTooltip(
           "Send a VR notification showing shock strength and duration");
@@ -1998,7 +2023,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::TextDisabled("37%% | 1.3s");
       }
 
-      // Force XSOverlay on Linux
       stgNotifUseOvr = false;
 #endif
       ImGui::Spacing();
@@ -2070,7 +2094,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                          "%.1f");
       ImGui::SetItemTooltip("Width of the curve line");
 
-      // Increase luminance to make the color pickers always visible
       auto liftMinLum = [](ImVec4 c, float minLum) {
         float lum = c.x * 0.299f + c.y * 0.587f + c.z * 0.114f;
         if (lum < minLum) {
@@ -2087,7 +2110,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGuiCol_FrameBg,
           ImVec4(base.x * 1.25f, base.y * 1.25f, base.z * 1.25f, 1.0f));
 
-      // Color pickers
       ImGui::ColorEdit4("Background##s", (float*)&settings.backgroundColor,
                         ImGuiColorEditFlags_NoInputs);
       ImGui::SetItemTooltip("Main window background color.");
@@ -2199,11 +2221,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                        ImGuiWindowFlags_NoScrollbar |
                        ImGuiWindowFlags_NoScrollWithMouse);
 
-      // Fade the text in so it doesn't clip weirly during the slide
       float alpha = std::min(1.f, std::max(0.f, (statsW - 60.f) / 160.f));
       ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 
-      // Header row
       if (boldFont) ImGui::PushFont(boldFont);
       ImGui::Text("Statistics");
       if (boldFont) ImGui::PopFont();
@@ -2211,18 +2231,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (ImGui::SmallButton("X##sc")) settings.showStats = false;
       ImGui::Separator();
 
-      // Scrollable body
       ImGui::BeginChild("##statsscroll",
                         {0, -ImGui::GetFrameHeightWithSpacing() - 6}, false);
 
-      // Two-column row helper
       auto row = [&](const char* label, const std::string& val) {
         ImGui::TextDisabled("%s", label);
         ImGui::SameLine(112.f);
         ImGui::TextUnformatted(val.c_str());
       };
 
-      // Duration formatter
       auto fmtMs = [](double ms) -> std::string {
         int ts = (int)(ms / 1000.0);
         if (ts < 60) return fmt::format("{:.1f}s", ms / 1000.0);
@@ -2233,7 +2250,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         return fmt::format("{}h {:02d}m", h, m);
       };
 
-      // All-Time
       ImGui::SeparatorText("All-Time");
       row("Shocks", std::to_string(gStats.totalShocks));
       row("Vibrations", std::to_string(gStats.totalVibrations));
@@ -2246,7 +2262,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       row("Cooldown blocks", std::to_string(gStats.totalCooldownHits));
 
-      // This session
       ImGui::Spacing();
       ImGui::SeparatorText("This Session");
       row("Shocks", std::to_string(gStats.sessionShocks));
@@ -2254,7 +2269,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       row("Shock time", fmtMs(gStats.sessionShockDurationMs));
       row("Cooldown blocks", std::to_string(gStats.sessionCooldownHits));
 
-      // Records
       ImGui::Spacing();
       ImGui::SeparatorText("Records");
       {
@@ -2275,7 +2289,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::Text("%d shock%s", tdc, tdc == 1 ? "" : "s");
       }
 
-      // Last 7 Days bar chart
       ImGui::Spacing();
       ImGui::SeparatorText("Last 7 Days");
       {
@@ -2292,7 +2305,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImPlot::SetupAxisLimits(ImAxis_X1, 0.0, 6.5, ImPlotCond_Always);
           ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, 0.0, DBL_MAX);
 
-          // Days of the month
           static std::string dayStrings[7];
           const char* dayLabels[7] = {};
           for (int i = 0; i < 7; i++) {
@@ -2305,12 +2317,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           double dayPositions[7] = {0, 1, 2, 3, 4, 5, 6};
           ImPlot::SetupAxisTicks(ImAxis_X1, dayPositions, 7, dayLabels);
 
-          // Smart vertical tics
           static std::vector<double> yticks;
           yticks.clear();
           double maxv = *std::max_element(vals, vals + 7);
           int max_i = (int)std::ceil(maxv);
-          // 4 vertical tics max, will show 5 due to 0 not being counted
           int step = max_i <= 4 ? 1 : (int)std::ceil(max_i / 4.0);
           for (int i = 0; i <= max_i; i += step) yticks.push_back((double)i);
           if (yticks.back() < max_i) yticks.push_back((double)max_i);
@@ -2322,7 +2332,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         }
       }
 
-      // Footer: reset button
       ImGui::Separator();
       if (ImGui::Button("Reset Stats", {-1, 0}))
         ImGui::OpenPopup("Confirm Reset##sr");
@@ -2399,7 +2408,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   settings.minShockDuration = minDur;
-  // Save current curve before exiting
+  // Save current curve state before exiting
   if (currentCurveIndex >= 0 &&
       currentCurveIndex < (int)settings.curves.size()) {
     settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
