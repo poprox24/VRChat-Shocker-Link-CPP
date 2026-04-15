@@ -273,7 +273,7 @@ class Settings {
             // Old format migration - single curvePoints entry becomes one curve
             else if (item.contains("curvePoints")) {
               Preset cp;
-              cp.name = sp.name;
+              cp.name = "Default";
               cp.minShockDuration = item.value("minShockDuration", 1.f);
               cp.maxShockDuration = item.value("maxShockDuration", 2.f);
               cp.xViewMin = item.value("xViewMin", 0.f);
