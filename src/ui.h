@@ -1197,6 +1197,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         settings.curves[currentCurveIndex].minShockDuration = minDur;
     }
 
+    ImGui::Text("Max Duration (s)");
     ImGui::SliderFloat("##maxd", &maxDur, 0.1f, 5.f, "%.1f");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
       maxDur = std::max(maxDur, minDur + 0.1f);
@@ -1426,7 +1427,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             Preset cloned = settings.curves[i];
             cloned.name = cloned.name + " (copy)";
             settings.curves.push_back(cloned);
-            // Add cloned version to all saved presets, matching by source name
+            // Add cloned version to all saved presets, matching by source
+            // name
             std::string srcName = settings.curves[i].name;
             for (auto& p : settings.presets) {
               if (!p.has_value()) continue;
@@ -1531,7 +1533,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         if (isCurrent) ImGui::PopStyleColor();
         ImGui::SameLine();
       }
-
       // Add new curve
       if (ImGui::Button("+", {tabButtonWidth, 0})) {
         saveCurrentCurve();

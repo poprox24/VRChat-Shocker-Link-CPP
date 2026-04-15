@@ -456,7 +456,7 @@ class ShockerHub {
     return ports;
 #else
     std::vector<std::string> ports;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 20; i++) {
       ports.push_back("/dev/ttyUSB" + std::to_string(i));
       ports.push_back("/dev/ttyACM" + std::to_string(i));
     }
