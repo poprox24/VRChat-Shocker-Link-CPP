@@ -1072,6 +1072,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   std::array<CurvePoint, 3>& pts = hub.curvePoints;
   std::array<CurvePoint, 3> lastPts = {};
   std::vector<double> cx, cy;
+  int lastCachedCurveIndex = -1;
 
   ImVec4& clear = settings.backgroundColor;
   bool forceFrame = true;
@@ -1638,8 +1639,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         std::sort(
             sorted.begin(), sorted.end(),
             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
-        if (sorted != lastPts) {
+        if (sorted != lastPts || currentCurveIndex != lastCachedCurveIndex) {
           lastPts = sorted;
+          lastCachedCurveIndex = currentCurveIndex;
           auto curve = bezierInterpolate(sorted[0], sorted[1], sorted[2]);
           cx.resize(curve.size());
           cy.resize(curve.size());
