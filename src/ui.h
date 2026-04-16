@@ -2011,6 +2011,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                            ImGuiInputTextFlags_Password);
           ImGui::SetItemTooltip(
               "Your PiShock API key (from Account > API Access)");
+          ImGui::SameLine();
+          ImGui::TextLinkOpenURL("?", "https://login.pishock.com/Account");
           ImGui::InputText("Shocker IDs (ID, ID, ...)##ps", stgShockerIDs,
                            sizeof(stgShockerIDs));
           ImGui::SetItemTooltip(
@@ -2024,6 +2026,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGui::SetItemTooltip(
               "Your OpenShock API token.\n"
               "Create one at your OpenShock dashboard under API Tokens.");
+          ImGui::SameLine();
+          ImGui::TextLinkOpenURL("?",
+                                 "https://openshock.app/#/dashboard/tokens");
           ImGui::InputText("Server URL##oss", stgOpenshockServer,
                            sizeof(stgOpenshockServer));
           ImGui::SetItemTooltip(
