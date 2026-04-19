@@ -1,3 +1,5 @@
+#pragma once
+
 #define GLFW_INCLUDE_NONE
 #include <GL/gl.h>
 #include <GLFW/glfw3.h>
@@ -32,7 +34,6 @@ using namespace std::chrono;
 #include "settings.h"
 #include "shockerhub.h"
 #include "stats.h"
-#include "ui.h"
 #include "updater.h"
 
 static constexpr const char* kWindowTitle = "Shocker Link";
