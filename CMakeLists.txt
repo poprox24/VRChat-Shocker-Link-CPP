@@ -40,8 +40,9 @@ set(SHOCKER_COMMON_SOURCES
     src/shockerhub.cpp
 
     src/ui/logger.cpp
-    src/ui/submenus/settings.cpp
-    src/ui/submenus/stats.cpp
+    
+    src/config/settings.cpp
+    src/config/stats.cpp
 
     src/network/chatbox.cpp
     src/network/oscclient.cpp
@@ -93,7 +94,7 @@ else()
 endif()
 
 target_include_directories(ShockerLink PRIVATE
-    lib src src/ui src/ui/submenus src/network
+    lib src src/ui src/config src/network
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
     ${implot_SOURCE_DIR}
