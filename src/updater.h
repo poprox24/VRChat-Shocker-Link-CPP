@@ -217,7 +217,6 @@ inline bool newerThan(const std::string& remote, const std::string& local) {
   return parse(remote) > parse(local);
 }
 
-// ADDED: curl write helper (static so no ODR issues)
 static size_t curlWriteUpd(void* ptr, size_t sz, size_t n, std::string* out) {
   out->append(static_cast<char*>(ptr), sz * n);
   return sz * n;
