@@ -37,6 +37,17 @@ FetchContent_MakeAvailable(glfw)
 
 set(SHOCKER_COMMON_SOURCES
     src/main.cpp
+    src/shockerhub.cpp
+
+    src/ui/logger.cpp
+    
+    src/config/settings.cpp
+    src/config/stats.cpp
+
+    src/network/chatbox.cpp
+    src/network/oscclient.cpp
+    src/network/mdns_advertiser.cpp
+
     lib/serialib.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -83,7 +94,7 @@ else()
 endif()
 
 target_include_directories(ShockerLink PRIVATE
-    lib src
+    lib src src/ui src/config src/network
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
     ${implot_SOURCE_DIR}
