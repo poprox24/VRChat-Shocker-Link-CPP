@@ -512,9 +512,25 @@ void ShockerHub::workerLoop() {
     }
 
     std::vector<std::string> ids;
+    bool useSeq = settings.randomOrSeq;  // Start with global fallback
     {
       std::lock_guard<std::mutex> lock(queueMutex);
-      ids = settings.shockerIDs;
+      // Use per-parameter list if set, else fall back to global
+      if (parameterIndex >= 0 &&
+          parameterIndex < (int)settings.parameters.size()) {
+        const auto& param = settings.parameters[parameterIndex];
+        ids = param.shockerIDs.empty() ? settings.shockerIDs : param.shockerIDs;
+        useSeq = param.randomOrSeq;
+      } else {
+        ids = settings.shockerIDs;
+      }
+      // Aggregate all per-parameter IDs (if no global shocker IDs are set)
+      if (ids.empty()) {
+        for (const auto& param : settings.parameters)
+          for (const auto& id : param.shockerIDs)
+            if (std::find(ids.begin(), ids.end(), id) == ids.end())
+              ids.push_back(id);
+      }
     }
 
     if (ids.empty()) {
@@ -524,9 +540,11 @@ void ShockerHub::workerLoop() {
 
     // Choose shocker depending on settings
     std::string chosenShocker;
-    if (settings.randomOrSeq) {
-      lastShockerIndex = (lastShockerIndex + 1) % (int)ids.size();
-      chosenShocker = ids[lastShockerIndex];
+    if (useSeq) {
+      // Per-parameter index
+      int& idx = lastShockerIndexPerParam[parameterIndex];
+      idx = (idx + 1) % (int)ids.size();
+      chosenShocker = ids[idx];
     } else {
       std::uniform_int_distribution<int> idxDist(0, (int)ids.size() - 1);
       chosenShocker = ids[idxDist(rng)];

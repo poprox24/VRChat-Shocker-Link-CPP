@@ -1918,6 +1918,31 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                      IM_ARRAYSIZE(rangeNames));
         param.range = static_cast<CurveRange>(rangeIndex);
 
+        {
+          std::string shockerStr;
+          for (int j = 0; j < (int)param.shockerIDs.size(); j++)
+            shockerStr += (j ? ", " : "") + param.shockerIDs[j];
+          char shockerBuf[512] = {};
+          snprintf(shockerBuf, sizeof(shockerBuf), "%s", shockerStr.c_str());
+          if (ImGui::InputText("Shocker IDs", shockerBuf, sizeof(shockerBuf))) {
+            param.shockerIDs.clear();
+            std::istringstream ss(shockerBuf);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) {
+              auto s = tok.find_first_not_of(" \t");
+              if (s != std::string::npos)
+                param.shockerIDs.push_back(tok.substr(s));
+            }
+          }
+          ImGui::SetItemTooltip(
+              "Shocker IDs for this parameter only.\n"
+              "Leave empty to use the global list from Hardware settings.");
+          ImGui::Checkbox("Sequential order (vs Random)##seq",
+                          &param.randomOrSeq);
+          ImGui::SetItemTooltip(
+              "Sequential cycling vs random for this parameter's shockers.");
+        }
+
         if (ImGui::Button("Delete")) {
           stgParameters.erase(stgParameters.begin() + i);
           ImGui::PopID();

@@ -37,10 +37,14 @@ struct Parameter {
   std::string name = "Shock";
   int curveIndex = 0;
   CurveRange range = CurveRange::Full;
+  std::vector<std::string> shockerIDs;
+  bool randomOrSeq = false;
 };
 
 inline bool operator==(const Parameter& a, const Parameter& b) {
-  return a.name == b.name && a.curveIndex == b.curveIndex && a.range == b.range;
+  return a.name == b.name && a.curveIndex == b.curveIndex &&
+         a.range == b.range && a.shockerIDs == b.shockerIDs &&
+         a.randomOrSeq == b.randomOrSeq;
 }
 
 class Settings {

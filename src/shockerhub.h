@@ -76,7 +76,7 @@ class ShockerHub {
 
  private:
   Settings& settings;
-  int lastShockerIndex = -1;
+  std::unordered_map<int, int> lastShockerIndexPerParam;
   std::vector<double> shockTimestamps;
   serialib serial;
 
