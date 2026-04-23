@@ -47,7 +47,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 
 ### Installation
 
-1. Go to [Releases](https://github.com/poprox24/VRChat-Shocker-Link-CPP/releases/latest) and download `Shocker_Link.exe`
+1. Go to [Releases](https://github.com/poprox24/VRChat-Shocker-Link-CPP/releases/latest) and download `Shocker_Link.exe` (`Shocker_Link` on linux)
 2. Place it in any folder and run it
 3. Open Settings (bottom left)
 4. Set your `Shock Parameter` to match the parameter name on your VRChat avatar
