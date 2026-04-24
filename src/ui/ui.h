@@ -1110,10 +1110,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       int ww, wh, wx, wy;
       glfwGetWindowPos(g_window, &wx, &wy);
       glfwGetWindowSize(g_window, &ww, &wh);
-      int sw_i = (int)roundf(statsAnim * 280.f);
-      int settW_i = (int)roundf(settingsAnim * 550.f);
-      settings.windowX = wx + sw_i;
-      settings.windowW = ww - sw_i - settW_i;
+      if (!statsAnimating && !settAnimating) {
+        int sw_i = (int)roundf(statsAnim * 280.f);
+        int settW_i = (int)roundf(settingsAnim * 550.f);
+        settings.windowX = wx + sw_i;
+        settings.windowW = ww - sw_i - settW_i;
+      }
       settings.windowY = wy;
       settings.windowH = wh;
     }
