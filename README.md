@@ -54,7 +54,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 5. Choose your connection mode: `PiShock` or `OpenShock`
    - Serial (USB hub): connect the hub and let the app scan, or enter the COM port manually
    - API: enter your credentials in Settings
-   - OpenShock serial users: add your shocker IDs manually in Settings, they cannot be auto-detected over serial
+   - OpenShock serial users: add your shocker IDs manually in hardware settings, they cannot be auto-detected over serial
 6. Click `Save` or `Save and Restart` if prompted
 
 ### Usage
