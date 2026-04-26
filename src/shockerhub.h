@@ -39,7 +39,14 @@ class ShockerHub {
 
   std::condition_variable queueCV;
 
-  OscSender chatbox;
+  OscSender oscSender;
+
+  static constexpr std::string_view kOscIntensityPct =
+      "/avatar/parameters/ShockerLink_IntensityPercentage";
+  static constexpr std::string_view kOscCooldownPct =
+      "/avatar/parameters/ShockerLink_CooldownPercentage";
+  static constexpr std::string_view kOscDurationSecs =
+      "/avatar/parameters/ShockerLink_DurationSeconds";
 
   bool isConnected = false;
   std::atomic<bool> shocksDisabled{false};
@@ -112,4 +119,20 @@ class ShockerHub {
   double calcDynamicCooldown() const;
   void sendShockApi(int durationMs, int strength, const std::string& shockerID,
                     bool vibrate);
+
+  struct VisualUpdate {
+    float intensityPct;
+    float durationSecs;
+    double cooldownEnd;
+    double cooldownDuration;
+  };
+
+  std::optional<VisualUpdate> pendingVisual;
+  std::thread visualParamThread;
+  std::mutex visualParamMutex_;
+  std::condition_variable visualParamCV_;
+  std::atomic<bool> stopVisual{false};
+
+  void triggerVisualParams(float intensityPct, float durationSecs);
+  void visualParamLoop();
 };

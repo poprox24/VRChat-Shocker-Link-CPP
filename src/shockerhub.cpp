@@ -1,7 +1,7 @@
 #include "shockerhub.h"
 
 ShockerHub::ShockerHub(Settings& set)
-    : settings(set), chatbox(set.vrchatHost) {}
+    : settings(set), oscSender(set.vrchatHost) {}
 
 bool ShockerHub::connectSerial() {
   if (!settings.useSerial) {
@@ -125,6 +125,10 @@ void ShockerHub::shutdown() {
   queueCV.notify_one();
   if (workerThread.joinable()) workerThread.join();
   serial.closeDevice();
+
+  stopVisual = true;
+  visualParamCV_.notify_one();
+  if (visualParamThread.joinable()) visualParamThread.join();
 }
 
 double ShockerHub::getCurrentTime() {
@@ -456,6 +460,8 @@ void ShockerHub::startWorkerThread() {
       logMsg("[ShockerHub] Connected on {}\n", settings.serialPort);
     workerThread = std::thread([this]() { workerLoop(); });
   }
+  if (!visualParamThread.joinable())
+    visualParamThread = std::thread([this] { visualParamLoop(); });
 }
 
 // Does all the repetitive logic
@@ -501,7 +507,7 @@ void ShockerHub::workerLoop() {
         std::string cooldownMsg =
             fmt::format("On cooldown: {:.1f}s", remaining);
         logMsg("{}\n", cooldownMsg);
-        if (settings.chatboxCooldownEnabled) chatbox.send(cooldownMsg);
+        if (settings.chatboxCooldownEnabled) oscSender.send(cooldownMsg);
 
         // Record to stats
         gStats.recordCooldownHit();
@@ -615,8 +621,8 @@ void ShockerHub::afterShockSent(int durationMs, int strength,
 
   if (settings.chatboxShockEnabled)
     // \xe2\x9a\xa1 = ⚡ symbol
-    chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
-                             durationMs / 1000.0f));
+    oscSender.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
+                               durationMs / 1000.0f));
   std::string notifMsg =
       fmt::format("{}% | {:.1f}s", strength, durationMs / 1000.0f);
   if (settings.notificationsEnabled) {
@@ -632,6 +638,8 @@ void ShockerHub::afterShockSent(int durationMs, int strength,
     gStats.recordShock(durationMs, strength);
   logMsg("[ShockerHub] Sent {}: {}%, {:.1f}s\n", opType, strength,
          durationMs / 1000.0f);
+
+  triggerVisualParams(strength / 100.0f, durationMs / 1000.0f);
 }
 
 void ShockerHub::sendShockSerial(int durationMs, int strength,
@@ -760,4 +768,60 @@ void ShockerHub::sendShockApi(int durationMs, int strength,
   }
 
   afterShockSent(durationMs, strength, opType);
+}
+
+void ShockerHub::triggerVisualParams(float intensityPct, float durationSecs) {
+  std::lock_guard<std::mutex> lock(visualParamMutex_);
+  double cooldownDur = settings.cooldownEnabled ? calcDynamicCooldown() : 0.0;
+  pendingVisual = VisualUpdate{
+      intensityPct, durationSecs, getCurrentTime() + cooldownDur,
+      std::max(cooldownDur, 0.001)  // Avoid div-by-zero
+  };
+  visualParamCV_.notify_one();
+}
+
+void ShockerHub::visualParamLoop() {
+  while (!stopVisual) {
+    std::unique_lock<std::mutex> lock(visualParamMutex_);
+    visualParamCV_.wait(lock, [this] {
+      return pendingVisual.has_value() || stopVisual.load();
+    });
+    if (stopVisual) break;
+
+    VisualUpdate upd = *pendingVisual;
+    pendingVisual.reset();
+    lock.unlock();
+
+    oscSender.sendFloat(std::string(kOscIntensityPct), upd.intensityPct);
+    oscSender.sendFloat(std::string(kOscDurationSecs), upd.durationSecs);
+    oscSender.sendFloat(std::string(kOscDurationSecs),
+                        std::clamp(upd.durationSecs / 10.0f, 0.0f,
+                                   1.0f));  // Normalize duration
+
+    // Stream cooldown percentage down to 0 while it's active.
+    while (!stopVisual) {
+      {
+        // A new shock fired - let the loop restart with fresh values.
+        std::lock_guard<std::mutex> l(visualParamMutex_);
+        if (pendingVisual.has_value()) break;
+      }
+      double remaining = upd.cooldownEnd - getCurrentTime();
+      if (remaining <= 0.0) break;
+
+      float pct = std::clamp(
+          static_cast<float>(remaining / upd.cooldownDuration), 0.0f, 1.0f);
+      oscSender.sendFloat(std::string(kOscCooldownPct), pct);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    // Only reset if no new shock is already pending.
+    {
+      std::lock_guard<std::mutex> l(visualParamMutex_);
+      if (!pendingVisual.has_value()) {
+        oscSender.sendFloat(std::string(kOscCooldownPct), 0.0f);
+        oscSender.sendFloat(std::string(kOscIntensityPct), 0.0f);
+        oscSender.sendFloat(std::string(kOscDurationSecs), 0.0f);
+      }
+    }
+  }
 }

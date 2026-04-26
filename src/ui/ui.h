@@ -1065,7 +1065,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     ImGui::Spacing();
     ImGui::Text("Min Duration (s)");
-    ImGui::SliderFloat("##mind", &minDur, 0.1f, 5.f, "%.1f");
+    ImGui::SliderFloat("##mind", &minDur, 0.1f, 10.f, "%.1f");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
       minDur = std::min(minDur, maxDur - 0.1f);
       settings.minShockDuration = minDur;
@@ -1076,7 +1076,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
 
     ImGui::Text("Max Duration (s)");
-    ImGui::SliderFloat("##maxd", &maxDur, 0.1f, 5.f, "%.1f");
+    ImGui::SliderFloat("##maxd", &maxDur, 0.1f, 10.f, "%.1f");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
       maxDur = std::max(maxDur, minDur + 0.1f);
       settings.maxShockDuration = maxDur;
