@@ -623,7 +623,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                                "C:\\Windows\\Fonts\\arialbd.ttf",
                                "C:\\Windows\\Fonts\\calibrib.ttf", nullptr};
 
-    const char* symPaths[] = {"C:\\Windows\\Fonts\\segoeui.ttf", nullptr};
+    const char* symPaths[] = {"C:\\Windows\\Fonts\\seguiemj.ttf",
+                              "C:\\Windows\\Fonts\\seguisym.ttf", nullptr};
 
     for (auto p = regularPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
