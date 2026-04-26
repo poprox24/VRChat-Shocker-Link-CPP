@@ -88,7 +88,6 @@ class ShockerHub {
   std::unordered_map<int, int> pishockShockerToClient;
   bool pishockResolved = false;
 
-  // ADDED: curl write callback
   static size_t curlWrite(void* ptr, size_t sz, size_t n, std::string* out);
 
   static std::string httpGet(const std::string& url,

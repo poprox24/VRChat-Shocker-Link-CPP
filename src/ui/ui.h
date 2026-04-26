@@ -242,7 +242,7 @@ struct AppState {
       stgVrchatHost, stgPishockUser, stgPishockKey, stgOpenshockToken,
       stgOpenshockServer;
   bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
-       stgNotifUseOvr = false, stgUseSerial = true, chatboxShockEnabled = true,
+       stgNotifUseOvr = false, stgUseSerial = true, chatbox.hockEnabled = true,
        chatboxCooldownEnabled = true;
   int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
       stgPresetCount = 3;
@@ -258,7 +258,7 @@ struct AppState {
            stgShockerIDs == o.stgShockerIDs &&
            stgSerialPort == o.stgSerialPort &&
            stgVrchatHost == o.stgVrchatHost &&
-           chatboxShockEnabled == o.chatboxShockEnabled &&
+           chatbox.hockEnabled == o.chatbox.hockEnabled &&
            chatboxCooldownEnabled == o.chatboxCooldownEnabled &&
            stgUsePishock == o.stgUsePishock &&
            stgRandomOrSeq == o.stgRandomOrSeq &&
@@ -302,7 +302,7 @@ struct UiContext {
   bool& stgNotifEnabled;
   bool& stgNotifUseOvr;
   bool& stgUseSerial;
-  bool& chatboxShockEnabled;
+  bool& chatbox.hockEnabled;
   bool& chatboxCooldownEnabled;
   char (&stgPishockUser)[128];
   char (&stgPishockKey)[128];
@@ -327,7 +327,7 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.stgShockerIDs = ui.stgShockerIDs;
   st.stgSerialPort = ui.stgSerialPort;
   st.stgVrchatHost = ui.stgVrchatHost;
-  st.chatboxShockEnabled = ui.chatboxShockEnabled;
+  st.chatbox.hockEnabled = ui.chatbox.hockEnabled;
   st.chatboxCooldownEnabled = ui.chatboxCooldownEnabled;
   st.stgUsePishock = ui.stgUsePishock;
   st.stgRandomOrSeq = ui.stgRandomOrSeq;
@@ -387,7 +387,7 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.stgPresetCount = st.stgPresetCount;
   ui.stgTouchThreshold = st.stgTouchThreshold;
   ui.stgParameters = st.stgParameters;
-  ui.chatboxShockEnabled = st.chatboxShockEnabled;
+  ui.chatbox.hockEnabled = st.chatbox.hockEnabled;
   ui.chatboxCooldownEnabled = st.chatboxCooldownEnabled;
 }
 
@@ -574,164 +574,6 @@ inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
     s += "None";
   }
   return s;
-}
-
-// Button to import old config from
-inline bool importLegacyPythonConfig(Settings& settings, ShockerHub& hub,
-                                     float& minDur, float& maxDur,
-                                     float& xViewMin, float& xViewMax,
-                                     const std::string& settingsPath,
-                                     const char* folderPathIn) {
-  if (!folderPathIn || folderPathIn[0] == '\0') return false;
-  std::string folder = folderPathIn;
-  if (!folder.empty() && folder.back() != '/') folder += '/';
-
-  // --- Import curve_settings.json ---
-  try {
-    std::ifstream f(folder + "curve_settings.json");
-    if (f.is_open()) {
-      nlohmann::json j = nlohmann::json::parse(f);
-      const nlohmann::json names =
-          j.contains("preset_names") ? j["preset_names"] : nlohmann::json{};
-      if (j.contains("curve_points") && j["curve_points"].size() == 3)
-        for (int i = 0; i < 3; i++)
-          hub.curvePoints[i] = {j["curve_points"][i][0].get<double>(),
-                                j["curve_points"][i][1].get<double>()};
-      if (j.contains("min_duration"))
-        minDur = settings.minShockDuration = j["min_duration"].get<float>();
-      if (j.contains("max_duration"))
-        maxDur = settings.maxShockDuration = j["max_duration"].get<float>();
-      if (j.contains("ui_min_x"))
-        xViewMin = settings.xViewMin = j["ui_min_x"].get<float>();
-      if (j.contains("ui_max_x"))
-        xViewMax = settings.xViewMax = j["ui_max_x"].get<float>();
-      auto& rawPresets = j["presets"];
-      for (int i = 0;
-           i < (int)settings.presets.size() && i < (int)rawPresets.size();
-           i++) {
-        auto& rp = rawPresets[i];
-        if (rp.is_null()) {
-          settings.presets[i] = std::nullopt;
-          continue;
-        }
-        Preset p;
-        p.name = (names.is_array() && i < (int)names.size())
-                     ? names[i].get<std::string>()
-                     : ("Preset " + std::to_string(i + 1));
-        p.minShockDuration = rp.value("min_duration", 1.0f);
-        p.maxShockDuration = rp.value("max_duration", 2.0f);
-        p.xViewMin = rp.value("ui_min_x", 0.f);
-        p.xViewMax = rp.value("ui_max_x", 100.f);
-        if (rp.contains("curve_points") && rp["curve_points"].size() == 3)
-          for (int k = 0; k < 3; k++)
-            p.curvePoints[k] = {rp["curve_points"][k][0].get<double>(),
-                                rp["curve_points"][k][1].get<double>()};
-        SavedPreset sp2;
-        sp2.name = p.name;
-        sp2.curves.push_back(p);
-        sp2.activeCurveIndex = 0;
-        settings.presets[i] = sp2;
-      }
-      settings.defaultPreset = j.value("default_preset", -1);
-
-      // Apply default preset if set
-      if (settings.defaultPreset >= 0 &&
-          settings.defaultPreset < (int)settings.presets.size() &&
-          settings.presets[settings.defaultPreset].has_value()) {
-        auto& dp = settings.presets[settings.defaultPreset];
-        int ai = dp->activeCurveIndex;
-        if (!dp->curves.empty()) {
-          if (ai >= (int)dp->curves.size()) ai = 0;
-          auto& ac = dp->curves[ai];
-          minDur = settings.minShockDuration = ac.minShockDuration;
-          maxDur = settings.maxShockDuration = ac.maxShockDuration;
-          hub.curvePoints = ac.curvePoints;
-          xViewMin = settings.xViewMin = ac.xViewMin;
-          xViewMax = settings.xViewMax = ac.xViewMax;
-        }
-      }
-      logMsg("Imported curve_settings.json");
-    } else {
-      logMsg("curve_settings.json not found in folder, skipping");
-    }
-  } catch (std::exception& e) {
-    logMsg("curve_settings.json import failed: {}", e.what());
-  }
-
-  // --- Import config.yml ---
-  try {
-    std::string srcYml = folder + "config.yml";
-    if (std::ifstream(srcYml).is_open()) {
-      YAML::Node c = YAML::LoadFile(srcYml);
-      settings.shockParameter = c["SHOCK_PARAMETER"].as<std::string>("Shock");
-      settings.secondShockParameter =
-          c["SECOND_SHOCK_PARAMETER"].as<std::string>("");
-      settings.usePishock = c["USE_PISHOCK"].as<bool>(false);
-      settings.randomOrSeq = c["RANDOM_OR_SEQUENTIAL"].as<bool>(false);
-      settings.serialPort = c["SERIAL_PORT"].as<std::string>("");
-      settings.baseCooldown = c["BASE_COOLDOWN_S"].as<int>(2);
-      settings.maxCooldown = c["MAX_COOLDOWN_S"].as<int>(6);
-      settings.cooldownFactor = c["COOLDOWN_FACTOR_S"].as<float>(0.4f);
-      settings.cooldownWindow = c["COOLDOWN_WINDOW_S"].as<int>(30);
-      settings.cooldownEnabled = c["COOLDOWN_ENABLED"].as<bool>(true);
-      settings.vrchatHost = c["VRCHAT_HOST"].as<std::string>("127.0.0.1");
-      settings.presetCount = c["PRESET_COUNT"].as<int>(3);
-      settings.touchSelectThreshold =
-          c["TOUCH_SELECT_THRESHOLD"].as<float>(8.f);
-      settings.touchMarkerSize = c["TOUCH_MARKER_SIZE"].as<float>(140.f);
-      settings.lineWidth = c["LINE_WIDTH"].as<float>(3.f);
-      auto hex = [](const std::string& h) {
-        unsigned r = 0, g = 0, b = 0;
-        sscanf(h.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
-        return ImVec4{r / 255.f, g / 255.f, b / 255.f, 1.f};
-      };
-      settings.outsideCurveBg =
-          hex(c["outside_CURVE_BG"].as<std::string>("#2C3749"));
-      settings.backgroundColor =
-          hex(c["BACKGROUND_COLOR"].as<std::string>("#202630"));
-      settings.curveLineColor =
-          hex(c["CURVE_LINE_COLOR"].as<std::string>("#00C2FF"));
-      settings.markerColor = hex(c["MARKER_COLOR"].as<std::string>("#D88A91"));
-      settings.labelColor = hex(c["LABEL_COLOR"].as<std::string>("#E6EEF6"));
-      settings.gradientLeftColor =
-          hex(c["GRADIENT_LEFT_COLOR"].as<std::string>("#42953b"));
-      settings.gradientRightColor =
-          hex(c["GRADIENT_RIGHT_COLOR"].as<std::string>("#6e173b"));
-      settings.shockerIDs.clear();
-      if (c["SHOCKER_IDS"]) {
-        for (auto id : c["SHOCKER_IDS"])
-          settings.shockerIDs.push_back(std::to_string(id.as<int>()));
-      } else {
-        std::string id;
-        if (c["PISHOCK_SHOCKER_ID"])
-          id = c["PISHOCK_SHOCKER_ID"].as<std::string>("");
-        else if (c["OPENSHOCK_SHOCKER_ID"])
-          id = c["OPENSHOCK_SHOCKER_ID"].as<std::string>("");
-        if (!id.empty()) settings.shockerIDs.push_back(id);
-      }
-      if (settings.shockerIDs.empty()) settings.shockerIDs = {"41838"};
-      bool oldXs = c["XSOVERLAY_NOTIFICATIONS"].as<bool>(false);
-      bool oldOvr = c["OVRTOOLKIT_NOTIFICATIONS"].as<bool>(false);
-      settings.notificationsEnabled = oldXs || oldOvr;
-      settings.parameters.clear();
-      if (!settings.shockParameter.empty())
-        settings.parameters.push_back(
-            {settings.shockParameter, 0, CurveRange::Full});
-      if (!settings.secondShockParameter.empty())
-        settings.parameters.push_back(
-            {settings.secondShockParameter, 0, CurveRange::SecondHalf});
-      if (settings.parameters.empty()) settings.parameters.push_back({});
-      settings.notifUseOvrToolkit = oldOvr;
-      logMsg("Imported config.yml");
-    } else {
-      logMsg("config.yml not found in folder, skipping");
-    }
-  } catch (std::exception& e) {
-    logMsg("config.yml import failed: {}", e.what());
-  }
-
-  settings.save(settingsPath);
-  return true;
 }
 
 // UI entry point
@@ -1082,7 +924,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     stgUseSerial = settings.useSerial;
     stgPresetCount = settings.presetCount;
     stgTouchThreshold = settings.touchSelectThreshold;
-    stgChatboxShockEnabled = settings.chatboxShockEnabled;
+    stgChatboxShockEnabled = settings.chatbox.hockEnabled;
     stgChatboxCooldownEnabled = settings.chatboxCooldownEnabled;
     stgParameters = settings.parameters;
   };
@@ -1473,7 +1315,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
          settings.openshockApiToken != stgOpenshockToken ||
          settings.openshockServerUrl != stgOpenshockServer ||
          settings.parameters != stgParameters ||
-         settings.chatboxShockEnabled != stgChatboxShockEnabled ||
+         settings.chatbox.hockEnabled != stgChatboxShockEnabled ||
          settings.chatboxCooldownEnabled != stgChatboxCooldownEnabled);
     if (settingsDirty)
       ImGui::PushStyleColor(ImGuiCol_Button, {0.50f, 0.35f, 0.05f, 1.f});
@@ -1975,7 +1817,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.presetCount = stgPresetCount;
       settings.touchSelectThreshold = stgTouchThreshold;
       settings.parameters = stgParameters;
-      settings.chatboxShockEnabled = stgChatboxShockEnabled;
+      settings.chatbox.hockEnabled = stgChatboxShockEnabled;
       settings.chatboxCooldownEnabled = stgChatboxCooldownEnabled;
       {
         std::lock_guard<std::mutex> lock(hub.queueMutex);
@@ -2398,20 +2240,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::InputText("VRChat Host##s", stgVrchatHost, sizeof(stgVrchatHost));
       ImGui::SetItemTooltip("Usually doesn't need a change.");
 
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::Spacing();
-
-      static char importPathBuf[512] = {};
-      ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - 135.f);
-      ImGui::InputTextWithHint("##importpath", "/path/to/python/shocker-link",
-                               importPathBuf, sizeof(importPathBuf));
-
-      ImGui::SameLine();
-      if (ImGui::Button("Import Python cfg"))
-        importLegacyPythonConfig(settings, hub, minDur, maxDur, xViewMin,
-                                 xViewMax, settingsPath, importPathBuf);
-      ImGui::SetItemTooltip("Point at your old Python ShockerLink folder");
       ImGui::Spacing();
 
       ImGui::EndChild();

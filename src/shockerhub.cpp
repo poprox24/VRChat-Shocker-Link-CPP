@@ -239,7 +239,6 @@ bool ShockerHub::resolvePiShockApi() {
   return true;
 }
 
-// ADDED: curl write callback
 size_t ShockerHub::curlWrite(void* ptr, size_t sz, size_t n, std::string* out) {
   out->append(static_cast<char*>(ptr), sz * n);
   return sz * n;
@@ -257,11 +256,10 @@ std::string ShockerHub::httpGet(const std::string& url,
   curl_easy_setopt(c, CURLOPT_WRITEDATA, &result);
   curl_easy_setopt(c, CURLOPT_TIMEOUT, 5L);
   curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 5L);
-  curl_easy_setopt(c, CURLOPT_SSL_OPTIONS,
-                   CURLSSLOPT_NATIVE_CA);  // ADDED: use Windows cert store
+  curl_easy_setopt(c, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
   if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
-  CURLcode res = curl_easy_perform(c);  // CHANGED: capture return value
-  if (res != CURLE_OK)                  // ADDED: log failures
+  CURLcode res = curl_easy_perform(c);
+  if (res != CURLE_OK)
     logMsg("[HTTP] GET failed: {}\n", curl_easy_strerror(res));
   if (hdrs) curl_slist_free_all(hdrs);
   curl_easy_cleanup(c);
@@ -615,7 +613,7 @@ void ShockerHub::afterShockSent(int durationMs, int strength,
 
   if (!settings.cooldownEnabled) cooldownUntil.store(0.0);
 
-  if (settings.chatboxShockEnabled)
+  if (settings.chatbox.hockEnabled)
     // \xe2\x9a\xa1 = ⚡ symbol
     chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
                              durationMs / 1000.0f));

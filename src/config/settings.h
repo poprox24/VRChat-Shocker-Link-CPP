@@ -124,7 +124,7 @@ class Settings {
 
   // VRChat Config
   std::string vrchatHost = "127.0.0.1";
-  bool chatboxShockEnabled = true;
+  bool chatbox.hockEnabled = true;
   bool chatboxCooldownEnabled = true;
 
   std::vector<Parameter> parameters = {Parameter()};

@@ -100,14 +100,6 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
     hotkeyVk = j.value("hotkeyVk", 298);  // GLFW_KEY_F9
     hotkeyMods = j.value("hotkeyMods", 0);
 
-    // Notification Config (migrate if old values are present)
-    {
-      bool oldXs = j.value("xsoverlayNotifications", false);
-      bool oldOvr = j.value("ovrToolkitNotifications", false);
-      notificationsEnabled = j.value("notificationsEnabled", oldXs || oldOvr);
-      notifUseOvrToolkit = j.value("notifUseOvrToolkit", oldOvr);
-    }
-
     // Style Config
     presetCount = j.value("presetCount", 3);
     touchSelectThreshold = j.value("touchSelectThreshold", 8.f);
@@ -124,7 +116,7 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
 
     // VRChat Config
     vrchatHost = j.value("vrchatHost", "127.0.0.1");
-    chatboxShockEnabled = j.value("chatboxShockEnabled", true);
+    chatbox.hockEnabled = j.value("chatbox.hockEnabled", true);
     chatboxCooldownEnabled = j.value("chatboxCooldownEnabled", true);
 
     // Resize and load presets
@@ -154,20 +146,6 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
                                        ci["curvePoints"][k]["y"].get<double>()};
               sp.curves.push_back(cp);
             }
-          }
-          // Old format migration - single curvePoints entry becomes one curve
-          else if (item.contains("curvePoints")) {
-            Preset cp;
-            cp.name = "Default";
-            cp.minShockDuration = item.value("minShockDuration", 1.f);
-            cp.maxShockDuration = item.value("maxShockDuration", 2.f);
-            cp.xViewMin = item.value("xViewMin", 0.f);
-            cp.xViewMax = item.value("xViewMax", 100.f);
-            if (item["curvePoints"].size() == 3)
-              for (int k = 0; k < 3; k++)
-                cp.curvePoints[k] = {item["curvePoints"][k]["x"].get<double>(),
-                                     item["curvePoints"][k]["y"].get<double>()};
-            sp.curves.push_back(cp);
           }
 
           // Ensure at least one curve, clamp active index
@@ -208,7 +186,6 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
       curves[0].name = "Default";
     }
 
-    // CHANGED: apply default preset using active curve index
     if (defaultPreset >= 0 && defaultPreset < (int)presets.size() &&
         presets[defaultPreset].has_value()) {
       auto& dp = presets[defaultPreset];
@@ -304,7 +281,7 @@ nlohmann::json Settings::toJson() const {
 
   // VRChat
   j["vrchatHost"] = vrchatHost;
-  j["chatboxShockEnabled"] = chatboxShockEnabled;
+  j["chatbox.hockEnabled"] = chatbox.hockEnabled;
   j["chatboxCooldownEnabled"] = chatboxCooldownEnabled;
 
   j["parameters"] = nlohmann::json::array();
@@ -391,7 +368,7 @@ bool Settings::operator==(const Settings& other) const {
          touchSelectThreshold == other.touchSelectThreshold &&
          touchMarkerSize == other.touchMarkerSize &&
          lineWidth == other.lineWidth && vrchatHost == other.vrchatHost &&
-         chatboxShockEnabled == other.chatboxShockEnabled &&
+         chatbox.hockEnabled == other.chatbox.hockEnabled &&
          chatboxCooldownEnabled == other.chatboxCooldownEnabled &&
          parameters == other.parameters &&
          presets.size() == other.presets.size() &&
