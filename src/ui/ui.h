@@ -640,7 +640,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         cfg.MergeMode = true;
         cfg.GlyphOffset = {0, 0.f};
         static const ImWchar ranges[] = {0x2600, 0x27FF, 0};
-        io.Fonts->AddFontFromFileTTF(*p, 18.0f, &cfg, ranges);
+        cfg.GlyphOffset = {0, 2.f};
+        cfg.GlyphMinAdvanceX = 18.f;
+        io.Fonts->AddFontFromFileTTF(*p, 14.0f, &cfg, ranges);
         break;
       }
     }
