@@ -91,6 +91,12 @@ else()
         yaml-cpp::yaml-cpp fmt::fmt-header-only nlohmann_json::nlohmann_json httplib::httplib
         glfw OpenGL::GL Threads::Threads CURL::libcurl PNG::PNG X11
     )
+
+    add_custom_command(TARGET ShockerLink POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/src/icon.png"
+            "$<TARGET_FILE_DIR:ShockerLink>/icon.png"
+    )
 endif()
 
 target_include_directories(ShockerLink PRIVATE

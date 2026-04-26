@@ -72,8 +72,16 @@ static bool setWindowIcon(GLFWwindow* window) {
   std::filesystem::path rootBuildPath =
       std::filesystem::current_path().parent_path() / "src" / "icon.png";
 
-  std::vector<std::filesystem::path> candidates = {sourcePath, buildPath,
-                                                   rootBuildPath};
+  std::filesystem::path exePath;
+  {
+    char buf[4096] = {};
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n > 0) exePath = std::filesystem::path(buf).parent_path() / "icon.png";
+  }
+
+  std::vector<std::filesystem::path> candidates = {exePath, sourcePath,
+                                                   buildPath, rootBuildPath};
+
   std::filesystem::path pngPath;
   for (auto& path : candidates) {
     if (std::filesystem::exists(path)) {
@@ -607,7 +615,16 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     return;
   }
 
-#ifndef _WIN32
+#ifdef _WIN32
+  {
+    HWND hwnd = glfwGetWin32Window(g_window);
+    HICON hIcon = LoadIconA(GetModuleHandle(nullptr), MAKEINTRESOURCEA(1));
+    if (hIcon) {
+      SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+      SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+    }
+  }
+#else
   if (!setWindowIcon(g_window)) {
     logMsg("[UI] Failed to load window icon");
   }
