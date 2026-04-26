@@ -32,6 +32,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
   - [Installation](#installation)
   - [Usage](#usage)
 - [Features](#features)
+- [Visual Parameters](#visual-parameters)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
@@ -79,6 +80,21 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 - Presets with per-preset curve and view state
 - VRChat chatbox output and VR notifications (XSOverlay / OVRToolkit / WayVR)
 - Stats tracking: shock count, duration, intensity, and daily history
+- Visual avatar parameters for animator integration
+
+---
+
+## Visual Parameters
+
+ShockerLink automatically sends three float parameters to your avatar after every shock. Add them to your avatar's animator and params file to drive animations, particle effects, or anything else.
+
+| Parameter | Type | Range | Description |
+|---|---|---|---|
+| `ShockerLink_IntensityPercentage` | Float | 0–1 | How strong the shock was (0 = 0%, 1 = 100%) |
+| `ShockerLink_CooldownPercentage` | Float | 0–1 | Starts at 1 right after a shock, drains to 0 as the cooldown expires |
+| `ShockerLink_DurationSeconds` | Float | 0–1 | Normalized shock duration (1 = 15 seconds, the hardware maximum) |
+
+`CooldownPercentage` updates at ~10Hz while the cooldown is active, so it can drive a smooth progress bar or blend tree on your avatar.
 
 ---
 
@@ -91,6 +107,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 - [x] Multiple OSC parameters with per-parameter curve and shocker config
 - [x] Multiple curves per preset
 - [x] Linux support (Arch, Wayland/XWayland)
+- [x] Visual avatar parameters
 
 See [open issues](https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues) for proposed features and known issues.
 
