@@ -13,8 +13,8 @@
   <h3 align="center">ShockerLink</h3>
 
   <p align="center">
-    Connects a VRChat avatar parameter to a PiShock or OpenShock device.<br />
-    Supports serial and API modes, a bezier intensity curve, cooldown system, chatbox output, and VR notifications.
+    Connects VRChat avatar parameters to PiShock or OpenShock devices.<br />
+    Supports serial and API modes, bezier intensity curves, a dynamic cooldown system, chatbox output, VR notifications, and more.
     <br /><br />
     <a href="https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues/new?labels=bug">Report Bug or Request Feature</a>
   </p>
@@ -47,27 +47,29 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 
 ### Installation
 
-1. Go to [Releases](https://github.com/poprox24/VRChat-Shocker-Link-CPP/releases/latest) and download `Shocker_Link.exe` (`Shocker_Link` on linux)
+1. Go to [Releases](https://github.com/poprox24/VRChat-Shocker-Link-CPP/releases/latest) and download `Shocker_Link.exe` (`Shocker_Link` on Linux)
 2. Place it in any folder and run it
 3. Open Settings (bottom left)
-4. Set your `Shock Parameter` to match the parameter name on your VRChat avatar
-5. Choose your connection mode: `PiShock` or `OpenShock`
-   - Serial (USB hub): connect the hub and let the app scan, or enter the COM port manually
+4. Add a parameter under **OSC / Avatar** and set its name to match a parameter on your VRChat avatar
+5. Choose your connection mode: `PiShock` or `OpenShock`, then `Serial` or `API`
+   - Serial (USB hub): connect the hub and let the app scan, or enter the port manually
    - API: enter your credentials in Settings
-   - OpenShock serial users: add your shocker IDs manually in hardware settings, they cannot be auto-detected over serial
+   - OpenShock serial users: add shocker IDs manually - they can't be auto-detected over serial
 6. Click `Save` or `Save and Restart` if prompted
 
 ### Usage
 
-- The intensity curve controls the probability distribution of shock strength.
-- Presets store the curve, duration range, and view state. Left-click to load, right-click to rename, middle-click to reset to default.
+- The **intensity curve** controls the probability distribution of shock strength.
+- **Curves** are named tabs above the plot. You can add, rename, clone, delete, or copy curves from saved presets via right-click.
+- **Presets** store a full set of curves. Left-click to load, right-click to rename, middle-click to set as default, click the floppy icon to save.
+- `Ctrl+S` to save the active preset quickly.
 - All inputs support undo/redo with `Ctrl+Z` / `Ctrl+Y`.
-- A second OSC parameter can optionally trigger shocks biased toward the upper half of the intensity curve.
-- The cooldown system dynamically increases the wait time between shocks based on recent trigger frequency.
-- The panic hotkey (default `F9`) disables shocks immediately.
+
+- Multiple **OSC parameters** can be configured, each with its own curve, intensity range, shocker list, and shocker selection order.
+- The **cooldown system** dynamically increases wait time between shocks based on recent trigger frequency.
+- The **panic hotkey** (default `F9`) disables shocks immediately from anywhere, even when the window isn't focused.
 
 ---
-
 
 ## Features
 
@@ -86,7 +88,9 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 - [x] Auto-updater
 - [x] Stats menu
 - [x] PiShock and OpenShock API support
-- [x] Linux support (Tested on Arch with Wayland, built with XWayland) 
+- [x] Multiple OSC parameters with per-parameter curve and shocker config
+- [x] Multiple curves per preset
+- [x] Linux support (Arch, Wayland/XWayland)
 
 See [open issues](https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues) for proposed features and known issues.
 
