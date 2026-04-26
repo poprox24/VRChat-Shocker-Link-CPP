@@ -39,66 +39,19 @@ using namespace std::chrono;
 static constexpr const char* kWindowTitle = "Shocker Link";
 
 #ifndef _WIN32
-static bool loadPngRgbaFromFile(const std::filesystem::path& pngPath,
-                                int& width, int& height,
-                                std::vector<uint8_t>& pixels) {
-  std::ifstream file(pngPath, std::ios::binary);
-  if (!file) return false;
-  std::vector<uint8_t> pngData((std::istreambuf_iterator<char>(file)), {});
-  if (pngData.empty()) return false;
+#include "icon_png.h"
 
+static bool setWindowIcon(GLFWwindow* window) {
   png_image image;
   memset(&image, 0, sizeof(image));
   image.version = PNG_IMAGE_VERSION;
-  if (!png_image_begin_read_from_memory(&image, pngData.data(), pngData.size()))
+  if (!png_image_begin_read_from_memory(&image, kIconPngData, kIconPngSize))
     return false;
-
   image.format = PNG_FORMAT_RGBA;
-  size_t size = PNG_IMAGE_SIZE(image);
-  pixels.assign(size, 0);
+  std::vector<uint8_t> pixels(PNG_IMAGE_SIZE(image));
   if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr))
     return false;
-
-  width = static_cast<int>(image.width);
-  height = static_cast<int>(image.height);
-  return true;
-}
-
-static bool setWindowIcon(GLFWwindow* window) {
-  std::filesystem::path sourcePath =
-      std::filesystem::path(__FILE__).parent_path() / "icon.png";
-  std::filesystem::path buildPath =
-      std::filesystem::current_path() / "src" / "icon.png";
-  std::filesystem::path rootBuildPath =
-      std::filesystem::current_path().parent_path() / "src" / "icon.png";
-
-  std::filesystem::path exePath;
-  {
-    char buf[4096] = {};
-    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (n > 0) exePath = std::filesystem::path(buf).parent_path() / "icon.png";
-  }
-
-  std::vector<std::filesystem::path> candidates = {exePath, sourcePath,
-                                                   buildPath, rootBuildPath};
-
-  std::filesystem::path pngPath;
-  for (auto& path : candidates) {
-    if (std::filesystem::exists(path)) {
-      pngPath = path;
-      break;
-    }
-  }
-  if (pngPath.empty()) return false;
-
-  std::vector<uint8_t> pixels;
-  int width = 0, height = 0;
-  if (!loadPngRgbaFromFile(pngPath, width, height, pixels)) return false;
-
-  GLFWimage icon;
-  icon.width = width;
-  icon.height = height;
-  icon.pixels = pixels.data();
+  GLFWimage icon{(int)image.width, (int)image.height, pixels.data()};
   glfwSetWindowIcon(window, 1, &icon);
   return true;
 }

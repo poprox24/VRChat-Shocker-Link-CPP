@@ -48,7 +48,7 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
 
     showStats = j.value("showStats", false);
 
-    defaultPreset = j.value("defaultPreset", -1);
+    defaultPreset = j.value("defaultPreset", 0);
     lastSerialPort = j.value("lastSerialPort", "");
 
     // Serial Config

@@ -63,7 +63,7 @@ class Settings {
   bool showStats = false;
 
   // Preset state
-  int defaultPreset = -1;
+  int defaultPreset = 0;
   float minShockDuration = 1.f;
   float maxShockDuration = 2.f;
   float xViewMin = 0.f;
