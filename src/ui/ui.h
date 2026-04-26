@@ -242,7 +242,7 @@ struct AppState {
       stgVrchatHost, stgPishockUser, stgPishockKey, stgOpenshockToken,
       stgOpenshockServer;
   bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
-       stgNotifUseOvr = false, stgUseSerial = true, chatbox.hockEnabled = true,
+       stgNotifUseOvr = false, stgUseSerial = true, chatboxShockEnabled = true,
        chatboxCooldownEnabled = true;
   int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
       stgPresetCount = 3;
@@ -258,7 +258,7 @@ struct AppState {
            stgShockerIDs == o.stgShockerIDs &&
            stgSerialPort == o.stgSerialPort &&
            stgVrchatHost == o.stgVrchatHost &&
-           chatbox.hockEnabled == o.chatbox.hockEnabled &&
+           chatboxShockEnabled == o.chatboxShockEnabled &&
            chatboxCooldownEnabled == o.chatboxCooldownEnabled &&
            stgUsePishock == o.stgUsePishock &&
            stgRandomOrSeq == o.stgRandomOrSeq &&
@@ -302,7 +302,7 @@ struct UiContext {
   bool& stgNotifEnabled;
   bool& stgNotifUseOvr;
   bool& stgUseSerial;
-  bool& chatbox.hockEnabled;
+  bool& chatboxShockEnabled;
   bool& chatboxCooldownEnabled;
   char (&stgPishockUser)[128];
   char (&stgPishockKey)[128];
@@ -327,7 +327,7 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.stgShockerIDs = ui.stgShockerIDs;
   st.stgSerialPort = ui.stgSerialPort;
   st.stgVrchatHost = ui.stgVrchatHost;
-  st.chatbox.hockEnabled = ui.chatbox.hockEnabled;
+  st.chatboxShockEnabled = ui.chatboxShockEnabled;
   st.chatboxCooldownEnabled = ui.chatboxCooldownEnabled;
   st.stgUsePishock = ui.stgUsePishock;
   st.stgRandomOrSeq = ui.stgRandomOrSeq;
@@ -387,7 +387,7 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.stgPresetCount = st.stgPresetCount;
   ui.stgTouchThreshold = st.stgTouchThreshold;
   ui.stgParameters = st.stgParameters;
-  ui.chatbox.hockEnabled = st.chatbox.hockEnabled;
+  ui.chatboxShockEnabled = st.chatboxShockEnabled;
   ui.chatboxCooldownEnabled = st.chatboxCooldownEnabled;
 }
 
@@ -924,7 +924,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     stgUseSerial = settings.useSerial;
     stgPresetCount = settings.presetCount;
     stgTouchThreshold = settings.touchSelectThreshold;
-    stgChatboxShockEnabled = settings.chatbox.hockEnabled;
+    stgChatboxShockEnabled = settings.chatboxShockEnabled;
     stgChatboxCooldownEnabled = settings.chatboxCooldownEnabled;
     stgParameters = settings.parameters;
   };
@@ -1315,7 +1315,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
          settings.openshockApiToken != stgOpenshockToken ||
          settings.openshockServerUrl != stgOpenshockServer ||
          settings.parameters != stgParameters ||
-         settings.chatbox.hockEnabled != stgChatboxShockEnabled ||
+         settings.chatboxShockEnabled != stgChatboxShockEnabled ||
          settings.chatboxCooldownEnabled != stgChatboxCooldownEnabled);
     if (settingsDirty)
       ImGui::PushStyleColor(ImGuiCol_Button, {0.50f, 0.35f, 0.05f, 1.f});
@@ -1817,7 +1817,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.presetCount = stgPresetCount;
       settings.touchSelectThreshold = stgTouchThreshold;
       settings.parameters = stgParameters;
-      settings.chatbox.hockEnabled = stgChatboxShockEnabled;
+      settings.chatboxShockEnabled = stgChatboxShockEnabled;
       settings.chatboxCooldownEnabled = stgChatboxCooldownEnabled;
       {
         std::lock_guard<std::mutex> lock(hub.queueMutex);

@@ -116,7 +116,7 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
 
     // VRChat Config
     vrchatHost = j.value("vrchatHost", "127.0.0.1");
-    chatbox.hockEnabled = j.value("chatbox.hockEnabled", true);
+    chatboxShockEnabled = j.value("chatboxShockEnabled", true);
     chatboxCooldownEnabled = j.value("chatboxCooldownEnabled", true);
 
     // Resize and load presets
@@ -281,7 +281,7 @@ nlohmann::json Settings::toJson() const {
 
   // VRChat
   j["vrchatHost"] = vrchatHost;
-  j["chatbox.hockEnabled"] = chatbox.hockEnabled;
+  j["chatboxShockEnabled"] = chatboxShockEnabled;
   j["chatboxCooldownEnabled"] = chatboxCooldownEnabled;
 
   j["parameters"] = nlohmann::json::array();
@@ -368,7 +368,7 @@ bool Settings::operator==(const Settings& other) const {
          touchSelectThreshold == other.touchSelectThreshold &&
          touchMarkerSize == other.touchMarkerSize &&
          lineWidth == other.lineWidth && vrchatHost == other.vrchatHost &&
-         chatbox.hockEnabled == other.chatbox.hockEnabled &&
+         chatboxShockEnabled == other.chatboxShockEnabled &&
          chatboxCooldownEnabled == other.chatboxCooldownEnabled &&
          parameters == other.parameters &&
          presets.size() == other.presets.size() &&

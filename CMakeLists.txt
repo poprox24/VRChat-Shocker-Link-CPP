@@ -44,8 +44,8 @@ set(SHOCKER_COMMON_SOURCES
     src/config/settings.cpp
     src/config/stats.cpp
 
-    src/network/chatbox.cpp
-    src/network/oscclient.cpp
+    src/network/oscsender.cpp
+    src/network/oscqclient.cpp
     src/network/mdns_advertiser.cpp
 
     lib/serialib.cpp

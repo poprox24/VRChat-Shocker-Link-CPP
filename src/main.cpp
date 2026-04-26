@@ -13,7 +13,7 @@
 #include <future>
 
 #include "logger.h"
-#include "oscclient.h"
+#include "oscqclient.h"
 #include "settings.h"
 #include "shockerhub.h"
 #include "stats.h"

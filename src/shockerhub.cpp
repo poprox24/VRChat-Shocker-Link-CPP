@@ -613,7 +613,7 @@ void ShockerHub::afterShockSent(int durationMs, int strength,
 
   if (!settings.cooldownEnabled) cooldownUntil.store(0.0);
 
-  if (settings.chatbox.hockEnabled)
+  if (settings.chatboxShockEnabled)
     // \xe2\x9a\xa1 = ⚡ symbol
     chatbox.send(fmt::format("\xe2\x9a\xa1 {}% | {:.1f}s", strength,
                              durationMs / 1000.0f));

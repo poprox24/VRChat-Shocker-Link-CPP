@@ -18,10 +18,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "chatbox.h"
 #include "curve.h"
 #include "logger.h"
 #include "notifications.h"
+#include "oscsender.h"
 #include "settings.h"
 #include "stats.h"
 #include "version.h"
@@ -39,7 +39,7 @@ class ShockerHub {
 
   std::condition_variable queueCV;
 
-  ChatboxSender chatbox;
+  OscSender chatbox;
 
   bool isConnected = false;
   std::atomic<bool> shocksDisabled{false};
