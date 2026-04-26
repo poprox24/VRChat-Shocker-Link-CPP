@@ -19,6 +19,13 @@ Settings::Settings() : presets(3), parameters(1) {
   // Initialize with 1 default curve
   curves.push_back(Preset());
   curves[0].name = "Default";
+
+  SavedPreset sp;
+  sp.name = "Default";
+  sp.curves = curves;
+  sp.activeCurveIndex = 0;
+  presets[0] = sp;
+  defaultPreset = 0;
 }
 
 Settings::Settings(const std::string& path) : presets(3), parameters(1) {

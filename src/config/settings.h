@@ -25,6 +25,13 @@ struct Preset {
   float xViewMax = 100.f;
 };
 
+inline bool operator==(const Preset& a, const Preset& b) {
+  return a.curvePoints == b.curvePoints &&
+         a.minShockDuration == b.minShockDuration &&
+         a.maxShockDuration == b.maxShockDuration && a.xViewMin == b.xViewMin &&
+         a.xViewMax == b.xViewMax;
+}
+
 struct SavedPreset {
   std::string name;
   std::vector<Preset> curves;

@@ -921,9 +921,41 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
   int currentCurveIndex = 0;
 
+  int loadedPresetIndex = -1;
+  std::vector<Preset> loadedPresetSnapshot;
+  int loadedPresetCurveIndex = -1;
+  int pendingLoadPresetIndex = -1;
+
+  auto flushCurrentCurve = [&]() {
+    if (currentCurveIndex >= 0 &&
+        currentCurveIndex < (int)settings.curves.size()) {
+      settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
+      settings.curves[currentCurveIndex].xViewMin = xViewMin;
+      settings.curves[currentCurveIndex].xViewMax = xViewMax;
+      settings.curves[currentCurveIndex].minShockDuration = minDur;
+      settings.curves[currentCurveIndex].maxShockDuration = maxDur;
+    }
+  };
+
+  auto isLoadedPresetDirty = [&]() -> bool {
+    if (loadedPresetIndex < 0 || loadedPresetSnapshot.empty()) return false;
+    flushCurrentCurve();
+    if (settings.curves.size() != loadedPresetSnapshot.size()) return true;
+    if (currentCurveIndex != loadedPresetCurveIndex) return true;
+    for (int i = 0; i < (int)settings.curves.size(); i++)
+      if (!(settings.curves[i] == loadedPresetSnapshot[i])) return true;
+    return false;
+  };
+
+  auto commitLoadedPresetSnapshot = [&]() {
+    flushCurrentCurve();
+    loadedPresetSnapshot = settings.curves;
+    loadedPresetCurveIndex = currentCurveIndex;
+  };
+
   std::deque<AppState> undoStack, redoStack;
   bool isPerformingUndoRedo = false;
-  bool ctrlZPrev = false, ctrlYPrev = false;
+  bool ctrlZPrev = false, ctrlYPrev = false, ctrlSPrev = false;
   bool stateChangedPreviousFrame = false;
 
   if (settings.defaultPreset >= 0 &&
@@ -952,6 +984,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       minDur = settings.curves[currentCurveIndex].minShockDuration;
       maxDur = settings.curves[currentCurveIndex].maxShockDuration;
     }
+
+    loadedPresetIndex = settings.defaultPreset;
+    commitLoadedPresetSnapshot();
   }
 
   // Settings/Stats modal state
@@ -1220,58 +1255,76 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::Text("Presets");
     for (int i = 0; i < (int)settings.presets.size(); i++) {
       bool hasData = settings.presets[i].has_value();
+
+      bool isLoaded = (loadedPresetIndex == i);
+      bool isDirty = isLoaded && isLoadedPresetDirty();
       std::string label = hasData ? settings.presets[i]->name
                                   : ("Preset " + std::to_string(i + 1));
+      if (isDirty) label += " *";
 
       bool isDefault = (settings.defaultPreset == i);
-      if (isDefault)
+      if (isDirty)
+        ImGui::PushStyleColor(ImGuiCol_Button, {0.50f, 0.38f, 0.10f, 1.f});
+      else if (isDefault)
         ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.54f, 0.34f, 1.f});
+      else if (isLoaded && !isDirty)
+        ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.38f, 0.54f, 1.f});
+      else
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
+
       ImGui::Button(label.c_str(),
                     ImVec2(fontSize * 10.f - fontSize * 2.5f, 0));
-      ImGui::SetItemTooltip(
-          "LClick - Load\nMClick - Startup default\nRClick - Rename");
 
-      if (isDefault) ImGui::PopStyleColor();
+      if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::Text("LClick - Load | MClick - Set default | RClick - Rename");
+        if (isDefault) {
+          ImGui::TextColored({0.4f, 1.0f, 0.8f, 1.f}, "Default preset");
+        }
+        if (isDirty) {
+          ImGui::TextColored(
+              {1.f, 0.75f, 0.2f, 1.f},
+              "* Unsaved changes - save icon or CTRL + S to keep them");
+        } else if (isLoaded)
+          ImGui::TextColored({0.4f, 0.8f, 1.f, 1.f}, "Currently loaded");
+        ImGui::EndTooltip();
+      }
+
+      ImGui::PopStyleColor();
 
       // Left click - load preset: replace all curves with preset's full set
       if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && hasData) {
-        // Flush current curve state before switching
-        if (currentCurveIndex >= 0 &&
-            currentCurveIndex < (int)settings.curves.size()) {
-          settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
-          settings.curves[currentCurveIndex].xViewMin = xViewMin;
-          settings.curves[currentCurveIndex].xViewMax = xViewMax;
-          settings.curves[currentCurveIndex].minShockDuration = minDur;
-          settings.curves[currentCurveIndex].maxShockDuration = maxDur;
-        }
+        if (isLoadedPresetDirty()) {
+          pendingLoadPresetIndex = i;
+          ImGui::OpenPopup("##confirmload");
+        } else {
+          flushCurrentCurve();
+          auto& preset = *settings.presets[i];
+          settings.curves = preset.curves;
+          if (settings.curves.empty()) {
+            settings.curves.push_back(Preset());
+            settings.curves[0].name = "Default";
+          }
 
-        auto& preset = *settings.presets[i];
+          currentCurveIndex = preset.activeCurveIndex;
+          if (currentCurveIndex >= (int)settings.curves.size())
+            currentCurveIndex = 0;
 
-        // Replace the entire curve list with what the preset stored
-        settings.curves = preset.curves;
-        if (settings.curves.empty()) {
-          settings.curves.push_back(Preset());
-          settings.curves[0].name = "Default";
-        }
+          hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
+          xViewMin = settings.curves[currentCurveIndex].xViewMin;
+          xViewMax = settings.curves[currentCurveIndex].xViewMax;
+          minDur = settings.curves[currentCurveIndex].minShockDuration;
+          maxDur = settings.curves[currentCurveIndex].maxShockDuration;
+          settings.minShockDuration = minDur;
+          settings.maxShockDuration = maxDur;
 
-        currentCurveIndex = preset.activeCurveIndex;
-        if (currentCurveIndex >= (int)settings.curves.size())
-          currentCurveIndex = 0;
+          for (auto& param : settings.parameters)
+            if (param.curveIndex >= (int)settings.curves.size())
+              param.curveIndex = 0;
 
-        // Load the active curve's per-curve settings
-        hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
-        xViewMin = settings.curves[currentCurveIndex].xViewMin;
-        xViewMax = settings.curves[currentCurveIndex].xViewMax;
-        minDur = settings.curves[currentCurveIndex].minShockDuration;
-        maxDur = settings.curves[currentCurveIndex].maxShockDuration;
-
-        settings.minShockDuration = minDur;
-        settings.maxShockDuration = maxDur;
-
-        // Clamp parameter curve indices to the new curve list size
-        for (auto& param : settings.parameters) {
-          if (param.curveIndex >= (int)settings.curves.size())
-            param.curveIndex = 0;
+          loadedPresetIndex = i;
+          commitLoadedPresetSnapshot();
         }
       }
 
@@ -1324,7 +1377,53 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
         settings.presets[i] = sp;
         settings.save(settingsPath);
+        if (loadedPresetIndex == i) commitLoadedPresetSnapshot();
       }
+    }
+
+    if (ImGui::BeginPopupModal("##confirmload", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "Unsaved changes");
+      ImGui::Text(
+          "The loaded preset has unsaved changes.\nLoad anyway and discard "
+          "them?\nTip: use CTRL + S to save faster.");
+      ImGui::Spacing();
+      if (ImGui::Button("Load anyway", {110, 0})) {
+        if (pendingLoadPresetIndex >= 0 &&
+            settings.presets[pendingLoadPresetIndex].has_value()) {
+          int i = pendingLoadPresetIndex;
+          flushCurrentCurve();
+          auto& preset = *settings.presets[i];
+          settings.curves = preset.curves;
+          if (settings.curves.empty()) {
+            settings.curves.push_back(Preset());
+            settings.curves[0].name = "Default";
+          }
+          currentCurveIndex = preset.activeCurveIndex;
+          if (currentCurveIndex >= (int)settings.curves.size())
+            currentCurveIndex = 0;
+          hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
+          xViewMin = settings.curves[currentCurveIndex].xViewMin;
+          xViewMax = settings.curves[currentCurveIndex].xViewMax;
+          minDur = settings.curves[currentCurveIndex].minShockDuration;
+          maxDur = settings.curves[currentCurveIndex].maxShockDuration;
+          settings.minShockDuration = minDur;
+          settings.maxShockDuration = maxDur;
+          for (auto& param : settings.parameters)
+            if (param.curveIndex >= (int)settings.curves.size())
+              param.curveIndex = 0;
+          loadedPresetIndex = i;
+          commitLoadedPresetSnapshot();
+        }
+        pendingLoadPresetIndex = -1;
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Cancel", {80, 0})) {
+        pendingLoadPresetIndex = -1;
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
     }
 
     ImGui::Spacing();
@@ -1354,13 +1453,38 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (ImGui::Button("Stats", {halfBtn, 0}))
       settings.showStats = !settings.showStats;
     ImGui::SameLine();
-    if (ImGui::Button("Settings", {-1, 0})) {
+    bool settingsDirty =
+        showSettings &&
+        (settings.shockParameter != stgShockParam ||
+         settings.secondShockParameter != stgSecondParam ||
+         settings.serialPort != stgSerialPort ||
+         settings.vrchatHost != stgVrchatHost ||
+         settings.usePishock != stgUsePishock ||
+         settings.useSerial != stgUseSerial ||
+         settings.randomOrSeq != stgRandomOrSeq ||
+         settings.baseCooldown != stgBaseCooldown ||
+         settings.maxCooldown != stgMaxCooldown ||
+         settings.cooldownFactor != stgCooldownFactor ||
+         settings.cooldownWindow != stgCooldownWindow ||
+         settings.notificationsEnabled != stgNotifEnabled ||
+         settings.notifUseOvrToolkit != stgNotifUseOvr ||
+         settings.pishockUsername != stgPishockUser ||
+         settings.pishockApiKey != stgPishockKey ||
+         settings.openshockApiToken != stgOpenshockToken ||
+         settings.openshockServerUrl != stgOpenshockServer ||
+         settings.parameters != stgParameters ||
+         settings.chatboxShockEnabled != stgChatboxShockEnabled ||
+         settings.chatboxCooldownEnabled != stgChatboxCooldownEnabled);
+    if (settingsDirty)
+      ImGui::PushStyleColor(ImGuiCol_Button, {0.50f, 0.35f, 0.05f, 1.f});
+    if (ImGui::Button(settingsDirty ? "Settings *" : "Settings", {-1, 0})) {
       if (!showSettings) {
         openSettingsModal();
         showSettings = true;
       } else
         closeSettingsModal();
     }
+    if (settingsDirty) ImGui::PopStyleColor();
 
     if (showSettings)
       ImGui::SetItemTooltip("Will close settings without saving.");
@@ -1878,7 +2002,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                        ImGuiWindowFlags_NoTitleBar);
 
-      ImGui::BeginChild("##settingsscroll", {0, -40}, false);
+      ImGui::BeginChild("##settingsscroll", {0, -56}, false);
       ImGui::TextDisabled("(?) Hover for details | CTRL+Z/Y to Undo/Redo");
       ImGui::Spacing();
 
@@ -2293,6 +2417,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::EndChild();
 
       ImGui::Separator();
+
+      if (settingsDirty)
+        ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "* Unsaved changes");
+      ImGui::Separator();
       std::string currentIDs;
       for (int i = 0; i < (int)settings.shockerIDs.size(); i++)
         currentIDs += (i ? ", " : "") + settings.shockerIDs[i];
@@ -2480,6 +2608,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                     glfwGetKey(g_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
     bool zDown = glfwGetKey(g_window, GLFW_KEY_Z) == GLFW_PRESS;
     bool yDown = glfwGetKey(g_window, GLFW_KEY_Y) == GLFW_PRESS;
+    bool sDown = glfwGetKey(g_window, GLFW_KEY_S) == GLFW_PRESS;
     bool didUndoRedo = false;
 
     if (!editingText) {
@@ -2491,9 +2620,33 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         performUndoRedo(false, undoStack, redoStack, ui, isPerformingUndoRedo);
         didUndoRedo = true;
       }
+      if (ctrlDown && sDown && !ctrlSPrev) {
+        // Flush active curve state first
+        if (currentCurveIndex >= 0 &&
+            currentCurveIndex < (int)settings.curves.size()) {
+          settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
+          settings.curves[currentCurveIndex].xViewMin = xViewMin;
+          settings.curves[currentCurveIndex].xViewMax = xViewMax;
+          settings.curves[currentCurveIndex].minShockDuration = minDur;
+          settings.curves[currentCurveIndex].maxShockDuration = maxDur;
+        }
+
+        // Snapshot ALL curves into this preset slot
+        SavedPreset sp;
+        sp.curves = settings.curves;
+        sp.activeCurveIndex = currentCurveIndex;
+        sp.name = settings.presets[loadedPresetIndex].has_value()
+                      ? settings.presets[loadedPresetIndex]->name
+                      : ("Preset " + std::to_string(loadedPresetIndex + 1));
+
+        settings.presets[loadedPresetIndex] = sp;
+        settings.save(settingsPath);
+        commitLoadedPresetSnapshot();
+      }
     }
     ctrlZPrev = ctrlDown && zDown;
     ctrlYPrev = ctrlDown && yDown;
+    ctrlSPrev = ctrlDown && sDown;
 
     AppState currentState = snapshotAppState(ui);
     bool isEditingThisFrame = ImGui::IsAnyItemActive() || io.WantTextInput;
