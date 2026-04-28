@@ -121,7 +121,6 @@ void OscSender::send(const std::string& message, bool clearAfter) {
 void OscSender::sendFloat(const std::string& path, float value) {
   std::lock_guard<std::mutex> lock(sendMutex_);
   sendRawPacket(buildFloatPacket(path, value));
-  logMsg("sent {}, {}", path, value);
 }
 
 void OscSender::sendBool(const std::string& path, bool value) {
