@@ -92,7 +92,7 @@ ShockerLink automatically sends three float parameters to your avatar after ever
 |---|---|---|---|
 | `ShockerLink_IntensityPercentage` | Float | 0–1 | How strong the shock was (0 = 0%, 1 = 100%) |
 | `ShockerLink_CooldownPercentage` | Float | 0–1 | Starts at 1 right after a shock, drains to 0 as the cooldown expires |
-| `ShockerLink_DurationSeconds` | Float | 0–1 | Normalized shock duration (1 = 15 seconds, the hardware maximum) |
+| `ShockerLink_DurationSeconds` | Float | 0–1 | Normalized shock duration (1 = 10 seconds, the software maximum) |
 
 `CooldownPercentage` updates at ~10Hz while the cooldown is active, so it can drive a smooth progress bar or blend tree on your avatar.
 
