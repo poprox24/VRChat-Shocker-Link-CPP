@@ -479,36 +479,144 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
 
 inline void applyUiTheme(Settings& settings) {
   ImGuiStyle& style = ImGui::GetStyle();
-  style.Colors[ImGuiCol_WindowBg] = settings.backgroundColor;
-  style.Colors[ImGuiCol_ChildBg] = settings.backgroundColor;
-  style.Colors[ImGuiCol_Text] = settings.labelColor;
+
+  // --- Geometry ---
+  style.WindowRounding = 8.f;
+  style.ChildRounding = 6.f;
+  style.FrameRounding = 5.f;
+  style.PopupRounding = 6.f;
+  style.ScrollbarRounding = 6.f;
+  style.GrabRounding = 4.f;
+  style.TabRounding = 4.f;
+  style.WindowBorderSize = 1.f;
+  style.ChildBorderSize = 1.f;
+  style.FrameBorderSize = 0.f;
+  style.PopupBorderSize = 1.f;
+  style.WindowPadding = {10.f, 10.f};
+  style.FramePadding = {8.f, 5.f};
+  style.ItemSpacing = {8.f, 6.f};
+  style.ItemInnerSpacing = {6.f, 4.f};
+  style.ScrollbarSize = 10.f;
+  style.GrabMinSize = 8.f;
+  style.IndentSpacing = 16.f;
+
+  // --- Color helpers ---
+  auto mul = [](ImVec4 c, float s) -> ImVec4 {
+    return {std::min(c.x * s, 1.f), std::min(c.y * s, 1.f),
+            std::min(c.z * s, 1.f), c.w};
+  };
+  auto withA = [](ImVec4 c, float a) -> ImVec4 { return {c.x, c.y, c.z, a}; };
+
+  ImVec4 bg = settings.backgroundColor;
+  ImVec4 txt = settings.labelColor;
   ImVec4 a = settings.accentColor;
-  ImVec4 aH = {a.x * 1.2f, a.y * 1.2f, a.z * 1.2f, a.w};
-  ImVec4 aA = {a.x * 0.8f, a.y * 0.8f, a.z * 0.8f, a.w};
-  ImVec4 aD = {a.x * 0.5f, a.y * 0.5f, a.z * 0.5f, a.w};
-  style.Colors[ImGuiCol_Button] = aA;
-  style.Colors[ImGuiCol_ButtonHovered] = a;
-  style.Colors[ImGuiCol_ButtonActive] = aH;
-  style.Colors[ImGuiCol_FrameBg] = aD;
-  style.Colors[ImGuiCol_FrameBgHovered] = {aD.x * 1.3f, aD.y * 1.3f,
-                                           aD.z * 1.3f, aD.w};
-  style.Colors[ImGuiCol_FrameBgActive] = aA;
-  style.Colors[ImGuiCol_SliderGrab] = a;
-  style.Colors[ImGuiCol_SliderGrabActive] = aH;
-  style.Colors[ImGuiCol_CheckMark] = aH;
-  style.Colors[ImGuiCol_Header] = aA;
-  style.Colors[ImGuiCol_HeaderHovered] = a;
-  style.Colors[ImGuiCol_HeaderActive] = aH;
-  style.Colors[ImGuiCol_SeparatorHovered] = a;
-  style.Colors[ImGuiCol_SeparatorActive] = aH;
-  style.Colors[ImGuiCol_TitleBgActive] = aD;
-  ImPlot::GetStyle().Colors[ImPlotCol_FrameBg] = settings.outsideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] = settings.outsideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_AxisText] = settings.labelColor;
-  ImPlot::GetStyle().Colors[ImPlotCol_LegendText] = settings.labelColor;
+
+  // Ensure accent is usable as an interactive color
+  float lum = a.x * 0.299f + a.y * 0.587f + a.z * 0.114f;
+  if (lum < 0.12f) {
+    float sc = 0.12f / (lum + 1e-5f);
+    a = {std::min(a.x * sc, 1.f), std::min(a.y * sc, 1.f),
+         std::min(a.z * sc, 1.f), a.w};
+  }
+
+  ImVec4 aH = mul(a, 1.30f);   // hover
+  ImVec4 aA = mul(a, 0.85f);   // active / pressed
+  ImVec4 aD = mul(a, 0.40f);   // dim — used for frame bg, idle tabs
+  ImVec4 aDH = mul(a, 0.60f);  // dim hover
+
+  // Border: cool-tinted, semi-transparent
+  ImVec4 border = {std::min(bg.x + 0.10f, 1.f), std::min(bg.y + 0.10f, 1.f),
+                   std::min(bg.z + 0.14f, 1.f), 0.55f};
+
+  ImVec4 bgD = mul(bg, 0.75f);  // title bars
+  ImVec4 bgP = {std::min(bg.x * 1.08f, 1.f),
+                std::min(bg.y * 1.08f, 1.f),  // popups
+                std::min(bg.z * 1.13f, 1.f), 0.97f};
+
+  // --- Assign ---
+  auto& c = style.Colors;
+
+  c[ImGuiCol_WindowBg] = bg;
+  c[ImGuiCol_ChildBg] = bg;
+  c[ImGuiCol_PopupBg] = bgP;
+  c[ImGuiCol_Border] = border;
+  c[ImGuiCol_BorderShadow] = {0, 0, 0, 0};
+
+  c[ImGuiCol_Text] = txt;
+  c[ImGuiCol_TextDisabled] = withA(txt, 0.38f);
+  c[ImGuiCol_TextSelectedBg] = withA(a, 0.35f);
+
+  c[ImGuiCol_TitleBg] = bgD;
+  c[ImGuiCol_TitleBgActive] = mul(bgD, 0.90f);
+  c[ImGuiCol_TitleBgCollapsed] = withA(bgD, 0.75f);
+  c[ImGuiCol_MenuBarBg] = bgD;
+
+  // Ensure slider track is always legible regardless of accent darkness
+  ImVec4 frameBgBase = mul(a, 0.55f);
+  float fbLum =
+      frameBgBase.x * 0.299f + frameBgBase.y * 0.587f + frameBgBase.z * 0.114f;
+  if (fbLum < 0.10f) {
+    float sc = 0.10f / (fbLum + 1e-5f);
+    frameBgBase = {std::min(frameBgBase.x * sc, 1.f),
+                   std::min(frameBgBase.y * sc, 1.f),
+                   std::min(frameBgBase.z * sc, 1.f), frameBgBase.w};
+  }
+  c[ImGuiCol_FrameBg] = withA(frameBgBase, 0.80f);
+  c[ImGuiCol_FrameBgHovered] = withA(mul(frameBgBase, 1.30f), 0.85f);
+  c[ImGuiCol_FrameBgActive] = withA(aA, 0.70f);
+
+  c[ImGuiCol_Button] = aA;
+  c[ImGuiCol_ButtonHovered] = a;
+  c[ImGuiCol_ButtonActive] = aH;
+
+  c[ImGuiCol_SliderGrab] = a;
+  c[ImGuiCol_SliderGrabActive] = aH;
+  c[ImGuiCol_CheckMark] = aH;
+
+  c[ImGuiCol_Header] = withA(aA, 0.60f);
+  c[ImGuiCol_HeaderHovered] = withA(a, 0.80f);
+  c[ImGuiCol_HeaderActive] = aH;
+
+  c[ImGuiCol_Separator] = border;
+  c[ImGuiCol_SeparatorHovered] = a;
+  c[ImGuiCol_SeparatorActive] = aH;
+
+  c[ImGuiCol_ResizeGrip] = withA(aD, 0.30f);
+  c[ImGuiCol_ResizeGripHovered] = withA(a, 0.55f);
+  c[ImGuiCol_ResizeGripActive] = a;
+
+  c[ImGuiCol_Tab] = withA(aD, 0.90f);
+  c[ImGuiCol_TabHovered] = a;
+  c[ImGuiCol_TabActive] = aA;
+
+  c[ImGuiCol_ScrollbarBg] = withA(bgD, 0.45f);
+  c[ImGuiCol_ScrollbarGrab] = aD;
+  c[ImGuiCol_ScrollbarGrabHovered] = a;
+  c[ImGuiCol_ScrollbarGrabActive] = aH;
+
+  c[ImGuiCol_PlotLines] = txt;
+  c[ImGuiCol_PlotHistogram] = a;
+
+  c[ImGuiCol_TableHeaderBg] = withA(aD, 0.60f);
+  c[ImGuiCol_TableBorderStrong] = border;
+  c[ImGuiCol_TableBorderLight] = withA(border, 0.45f);
+
+  c[ImGuiCol_ModalWindowDimBg] = {0.f, 0.f, 0.f, 0.55f};
+  c[ImGuiCol_NavHighlight] = a;
+
+  // --- ImPlot ---
+  auto& ip = ImPlot::GetStyle().Colors;
   ImVec4& bgColor = settings.outsideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] = {bgColor.x, bgColor.y,
-                                                   bgColor.z, 0.84f};
+  ip[ImPlotCol_FrameBg] = bgColor;
+  ip[ImPlotCol_PlotBg] = bgColor;
+  ip[ImPlotCol_AxisText] = settings.labelColor;
+  ip[ImPlotCol_LegendText] = settings.labelColor;
+  ip[ImPlotCol_LegendBg] = withA(bgColor, 0.88f);
+  ip[ImPlotCol_LegendBorder] = border;
+  ip[ImPlotCol_PlotBorder] = border;
+  ImPlot::GetStyle().LegendPadding = ImVec2(10, 8);
+  ImPlot::GetStyle().LegendInnerPadding = ImVec2(6, 4);
+  ImPlot::GetStyle().LegendSpacing = ImVec2(6, 4);
 }
 
 static void registerPanicHotkey(const Settings& settings) {
@@ -1025,7 +1133,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     float fontSize = ImGui::GetFontSize();
 
     // Left panel
-    float leftPanelWidth = std::max(180.f, fontSize * 10.0f);
+    float leftPanelWidth = std::max(200.f, fontSize * 11.5f);
 
     float lineH = ImGui::GetTextLineHeightWithSpacing();
     float logH = lineH * 3.f + ImGui::GetStyle().WindowPadding.y * 2.f;
@@ -1088,8 +1196,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::PushStyleColor(ImGuiCol_Button,
                               ImGui::GetStyle().Colors[ImGuiCol_Button]);
 
+      float saveIconW = 16.f + ImGui::GetStyle().ItemSpacing.x;
       ImGui::Button(label.c_str(),
-                    ImVec2(fontSize * 10.f - fontSize * 2.5f, 0));
+                    ImVec2(ImGui::GetContentRegionAvail().x - saveIconW, 0));
 
       if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
@@ -1245,7 +1354,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (ImGui::Button("Test Vibrate", {80.0f, 0})) hub.queueShock(-1, true);
+    float halfBtn =
+        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
+        0.5f;
+    if (ImGui::Button("Test Vibrate", {halfBtn, 0})) hub.queueShock(-1, true);
     ImGui::SetItemTooltip("Sends a vibration command");
     ImGui::SameLine();
     if (ImGui::Button("Test Shock", {-1, 0})) hub.queueShock(-1, false);
@@ -1262,9 +1374,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (hub.shocksDisabled)
       if (ImGui::Button("Enable Shocks", {-1, 0})) hub.enableShocks();
 
-    float halfBtn =
-        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
-        0.5f;
     if (ImGui::Button("Stats", {halfBtn, 0}))
       settings.showStats = !settings.showStats;
     ImGui::SameLine();
@@ -1536,8 +1645,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (ImPlot::BeginPlot(" ", {-1, -sliderH})) {
       ImPlot::SetupAxes("Intensity (%)", "Weight", ImPlotAxisFlags_NoGridLines,
                         ImPlotAxisFlags_NoGridLines);
-      ImPlot::SetupAxisLimits(ImAxis_X1, xViewMin, xViewMax, ImPlotCond_Always);
-      ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 1, ImPlotCond_Always);
+      ImPlot::SetupAxisLimits(ImAxis_X1, xViewMin - 1.0, xViewMax + 1.0,
+                              ImPlotCond_Always);
+      ImPlot::SetupAxisLimits(
+          ImAxis_Y1, -0.02, 1.02,
+          ImPlotCond_Always);  // Limits just slightly above 1.0 of the plot to
+                               // make sure 100% is reachable
       ImPlot::SetupLegend(ImPlotLocation_NorthEast, ImPlotLegendFlags_None);
       ImPlot::SetupFinish();
 
@@ -1706,8 +1819,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       // Connection circle
       ImU32 connCol = hub.isConnected ? IM_COL32(60, 220, 80, 255)
                                       : IM_COL32(220, 60, 60, 255);
+      ImU32 glowCol = hub.isConnected ? IM_COL32(60, 220, 80, 45)
+                                      : IM_COL32(220, 60, 60, 45);
+      dl2->AddCircleFilled({cx2 + 7.f, cy2}, 9.f, glowCol);  // Glow halo
       dl2->AddCircleFilled({cx2 + 7.f, cy2}, 5.f, connCol);
-      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 17.f);
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20.f);
       if (!hub.shocksDisabled)
         ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
       else
@@ -1718,7 +1834,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SameLine(0, 12);
 
       // \xe2\x9a\xa1 = ⚡ symbol
-      ImGui::Text("\xe2\x9a\xa1 %d", gStats.sessionShocks);
+      ImGui::TextColored(settings.curveLineColor, "\xe2\x9a\xa1 %d",
+                         gStats.sessionShocks);
 
       ImGui::SameLine(0, 12);
       ImGui::TextDisabled("|");
@@ -1743,12 +1860,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImVec2 p = ImGui::GetCursorScreenPos();
         p.y += (textH - height) * 0.7f;
         float len = ImGui::GetContentRegionAvail().x * 0.28f;
+        float rnd = height * 0.5f;
         dl2->AddRectFilled(p, {p.x + len, p.y + height},
                            ImGui::ColorConvertFloat4ToU32(
-                               ImGui::GetStyle().Colors[ImGuiCol_FrameBg]));
+                               ImGui::GetStyle().Colors[ImGuiCol_FrameBg]),
+                           rnd);
         if (fraction > 0.f)
           dl2->AddRectFilled(p, {p.x + len * fraction, p.y + height},
-                             IM_COL32(220, 80, 80, 255));
+                             IM_COL32(220, 80, 80, 220), rnd);
         ImGui::Dummy({len, height});
       }
 
@@ -2349,8 +2468,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImPlot::SetupAxes(
               nullptr, nullptr,
               ImPlotAxisFlags_NoGridLines | ImPlotAxisFlags_NoLabel,
-              ImPlotAxisFlags_NoGridLines | ImPlotAxisFlags_AutoFit |
-                  ImPlotAxisFlags_NoLabel);
+              ImPlotAxisFlags_AutoFit | ImPlotAxisFlags_NoLabel);
           ImPlot::SetupAxisLimits(ImAxis_X1, 0.0, 6.5, ImPlotCond_Always);
           ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, 0.0, DBL_MAX);
 
