@@ -474,8 +474,8 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
       ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrab]);
   ImU32 grabActCol =
       ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrabActive]);
-  dl->AddRectFilled({trackX0, trackY - 3.5}, {trackX1, trackY + 3.5}, trackCol,
-                    3);
+  dl->AddRectFilled({trackX0, trackY - 3.5f}, {trackX1, trackY + 3.5f},
+                    trackCol, 3);
   dl->AddRectFilled({hMinPos.x, trackY - 3}, {hMaxPos.x, trackY + 3}, fillCol,
                     3);
   dl->AddCircleFilled(hMinPos, hRadius,
