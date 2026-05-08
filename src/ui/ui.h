@@ -2466,7 +2466,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         int tdm = gStats.todayMaxIntensity();
         if (tdm > 0) {
           ImGui::SameLine(0, 8);
-          ImGui::TextDisabled("| peak:");
+          ImGui::TextDisabled("| Peak:");
           ImGui::SameLine(0, 4);
           ImGui::Text("%d%%", tdm);
         }
