@@ -419,12 +419,14 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
   float height = ImGui::GetFrameHeight();
   ImVec2 pos = ImGui::GetCursorScreenPos();
   ImGui::Dummy({width, height});
+
   bool changed = false;
   float trackY = pos.y + height * 0.5f;
   float trackX0 = pos.x + height * 0.5f;
   float trackX1 = pos.x + width - height * 0.5f;
   float trackW = trackX1 - trackX0;
   float hRadius = height * 0.5f;
+
   auto valToX = [&](float v) {
     return trackX0 + (v - min) / (max - min) * trackW;
   };
@@ -435,10 +437,12 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
   ImVec2 hMaxPos = {valToX(*vMax), trackY};
   static int dragging = 0;
   ImVec2 mouse = io.MousePos;
+
   auto inCircle = [&](ImVec2 c) {
     float dx = mouse.x - c.x, dy = mouse.y - c.y;
     return dx * dx + dy * dy <= hRadius * hRadius;
   };
+
   if (ImGui::IsMouseClicked(0) && dragging == 0) {
     bool onMin = inCircle(hMinPos), onMax = inCircle(hMaxPos);
     if (onMin && onMax)
@@ -448,14 +452,17 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
     else if (onMax)
       dragging = 2;
   }
+
   if (!ImGui::IsMouseDown(0)) dragging = 0;
   if (dragging == 1) {
     *vMin = std::min(xToVal(mouse.x), *vMax - 1.f);
     changed = true;
+
   } else if (dragging == 2) {
     *vMax = std::max(xToVal(mouse.x), *vMin + 1.f);
     changed = true;
   }
+
   hMinPos = {valToX(*vMin), trackY};
   hMaxPos = {valToX(*vMax), trackY};
   bool hovMin = inCircle(hMinPos), hovMax = inCircle(hMaxPos);
@@ -467,7 +474,8 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
       ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrab]);
   ImU32 grabActCol =
       ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_SliderGrabActive]);
-  dl->AddRectFilled({trackX0, trackY - 3}, {trackX1, trackY + 3}, trackCol, 3);
+  dl->AddRectFilled({trackX0, trackY - 3.5}, {trackX1, trackY + 3.5}, trackCol,
+                    3);
   dl->AddRectFilled({hMinPos.x, trackY - 3}, {hMaxPos.x, trackY + 3}, fillCol,
                     3);
   dl->AddCircleFilled(hMinPos, hRadius,
