@@ -18,6 +18,7 @@ struct Stats {
   double longestShockMs = 0.0;
 
   std::map<std::string, int> dailyShocks;
+  std::map<std::string, int> dailyMaxIntensity;
 
   int sessionShocks = 0;
   int sessionVibrations = 0;
@@ -33,6 +34,7 @@ struct Stats {
   double averageIntensity() const;
   std::pair<std::string, int> mostShockedDay() const;
   int todayCount() const;
+  int todayMaxIntensity() const;
 
   // Returns the last N days oldest to newest, filling gaps with 0
   std::vector<std::pair<std::string, int>> lastNDays(int n) const;

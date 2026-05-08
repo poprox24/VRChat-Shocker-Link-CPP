@@ -15,6 +15,11 @@ std::string Stats::today() {
   return {buf};
 }
 
+int Stats::todayMaxIntensity() const {
+  auto it = dailyMaxIntensity.find(today());
+  return it != dailyMaxIntensity.end() ? it->second : 0;
+}
+
 void Stats::recordShock(int durationMs, int intensity) {
   totalShocks++;
   sessionShocks++;
@@ -24,6 +29,8 @@ void Stats::recordShock(int durationMs, int intensity) {
   if (intensity > highestIntensity) highestIntensity = intensity;
   if (durationMs > longestShockMs) longestShockMs = durationMs;
   dailyShocks[today()]++;
+  auto& todayMax = dailyMaxIntensity[today()];
+  if (intensity > todayMax) todayMax = intensity;
 }
 
 void Stats::recordVibration(int durationMs) {
@@ -91,6 +98,9 @@ void Stats::save(const std::string& path) {
     nlohmann::json ds = nlohmann::json::object();
     for (auto& [k, v] : dailyShocks) ds[k] = v;
     j["dailyShocks"] = ds;
+    nlohmann::json dm = nlohmann::json::object();
+    for (auto& [k, v] : dailyMaxIntensity) dm[k] = v;
+    j["dailyMaxIntensity"] = dm;
     std::ofstream f(path);
     f << j.dump(2);
   } catch (...) {
@@ -113,6 +123,12 @@ void Stats::load(const std::string& path) {
     if (j.contains("dailyShocks"))
       for (auto& [k, v] : j["dailyShocks"].items())
         dailyShocks[k] = v.get<int>();
+    if (j.contains("dailyShocks"))
+      for (auto& [k, v] : j["dailyShocks"].items())
+        dailyShocks[k] = v.get<int>();
+    if (j.contains("dailyMaxIntensity"))
+      for (auto& [k, v] : j["dailyMaxIntensity"].items())
+        dailyMaxIntensity[k] = v.get<int>();
   } catch (...) {
   }
 }

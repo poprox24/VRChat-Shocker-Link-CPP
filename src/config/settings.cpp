@@ -100,6 +100,10 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
     hotkeyVk = j.value("hotkeyVk", 298);  // GLFW_KEY_F9
     hotkeyMods = j.value("hotkeyMods", 0);
 
+    // Notification Config
+    notificationsEnabled = j.value("notificationsEnabled", false);
+    notifUseOvrToolkit = j.value("notifUseOvrToolkit", false);
+
     // Style Config
     presetCount = j.value("presetCount", 3);
     touchSelectThreshold = j.value("touchSelectThreshold", 8.f);

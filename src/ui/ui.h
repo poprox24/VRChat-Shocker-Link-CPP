@@ -2463,6 +2463,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::TextDisabled("Today:");
         ImGui::SameLine();
         ImGui::Text("%d shock%s", tdc, tdc == 1 ? "" : "s");
+        int tdm = gStats.todayMaxIntensity();
+        if (tdm > 0) {
+          ImGui::SameLine(0, 8);
+          ImGui::TextDisabled("| peak:");
+          ImGui::SameLine(0, 4);
+          ImGui::Text("%d%%", tdm);
+        }
       }
 
       ImGui::Spacing();
