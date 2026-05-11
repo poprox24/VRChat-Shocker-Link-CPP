@@ -854,7 +854,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
   int loadedPresetIndex = -1;
   std::vector<Preset> loadedPresetSnapshot;
-  int loadedPresetCurveIndex = -1;
   int pendingLoadPresetIndex = -1;
 
   auto flushCurrentCurve = [&]() {
@@ -872,7 +871,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (loadedPresetIndex < 0 || loadedPresetSnapshot.empty()) return false;
     flushCurrentCurve();
     if (settings.curves.size() != loadedPresetSnapshot.size()) return true;
-    if (currentCurveIndex != loadedPresetCurveIndex) return true;
     for (int i = 0; i < (int)settings.curves.size(); i++)
       if (!(settings.curves[i] == loadedPresetSnapshot[i])) return true;
     return false;
@@ -881,7 +879,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   auto commitLoadedPresetSnapshot = [&]() {
     flushCurrentCurve();
     loadedPresetSnapshot = settings.curves;
-    loadedPresetCurveIndex = currentCurveIndex;
   };
 
   std::deque<AppState> undoStack, redoStack;
@@ -1034,11 +1031,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool capturingHotkey = false;
   bool panicWasPressedLastFrame = false;
 
-  // Curve cache
+  // Curve cache - One entry per curve
   std::array<CurvePoint, 3>& pts = hub.curvePoints;
-  std::array<CurvePoint, 3> lastPts = {};
-  std::vector<double> cx, cy;
-  int lastCachedCurveIndex = -1;
+  struct CurveCache {
+    std::array<CurvePoint, 3> lastPts{};
+    std::vector<double> cx, cy;
+  };
+  std::vector<CurveCache> curveCache(settings.curves.size());
 
   ImVec4& clear = settings.backgroundColor;
   bool forceFrame = true;
@@ -1239,7 +1238,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             settings.curves[0].name = "Default";
           }
 
-          currentCurveIndex = preset.activeCurveIndex;
           if (currentCurveIndex >= (int)settings.curves.size())
             currentCurveIndex = 0;
 
@@ -1327,13 +1325,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           flushCurrentCurve();
           auto& preset = *settings.presets[i];
           settings.curves = preset.curves;
+
           if (settings.curves.empty()) {
             settings.curves.push_back(Preset());
             settings.curves[0].name = "Default";
           }
-          currentCurveIndex = preset.activeCurveIndex;
+
           if (currentCurveIndex >= (int)settings.curves.size())
             currentCurveIndex = 0;
+
           hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
           xViewMin = settings.curves[currentCurveIndex].xViewMin;
           xViewMax = settings.curves[currentCurveIndex].xViewMax;
@@ -1341,20 +1341,25 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           maxDur = settings.curves[currentCurveIndex].maxShockDuration;
           settings.minShockDuration = minDur;
           settings.maxShockDuration = maxDur;
+
           for (auto& param : settings.parameters)
             if (param.curveIndex >= (int)settings.curves.size())
               param.curveIndex = 0;
+
           loadedPresetIndex = i;
           commitLoadedPresetSnapshot();
         }
+
         pendingLoadPresetIndex = -1;
         ImGui::CloseCurrentPopup();
       }
+
       ImGui::SameLine();
       if (ImGui::Button("Cancel", {80, 0})) {
         pendingLoadPresetIndex = -1;
         ImGui::CloseCurrentPopup();
       }
+
       ImGui::EndPopup();
     }
 
@@ -1650,6 +1655,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImVec2 plotFramePos = ImGui::GetCursorScreenPos();
     float plotFrameWidth = ImGui::GetContentRegionAvail().x;
 
+    if (curveCache.size() != settings.curves.size())
+      curveCache.resize(settings.curves.size());
     if (ImPlot::BeginPlot(" ", {-1, -sliderH})) {
       ImPlot::SetupAxes("Intensity (%)", "Weight", ImPlotAxisFlags_NoGridLines,
                         ImPlotAxisFlags_NoGridLines);
@@ -1699,15 +1706,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         std::sort(
             sorted.begin(), sorted.end(),
             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
-        if (sorted != lastPts || currentCurveIndex != lastCachedCurveIndex) {
-          lastPts = sorted;
-          lastCachedCurveIndex = currentCurveIndex;
+        auto& cache = curveCache[currentCurveIndex];  // Per curve cache
+        if (sorted != cache.lastPts) {
+          cache.lastPts = sorted;
           auto curve = bezierInterpolate(sorted[0], sorted[1], sorted[2]);
-          cx.resize(curve.size());
-          cy.resize(curve.size());
+          cache.cx.resize(curve.size());
+          cache.cy.resize(curve.size());
           for (size_t i = 0; i < curve.size(); i++) {
-            cx[i] = curve[i].x;
-            cy[i] = curve[i].y;
+            cache.cx[i] = curve[i].x;
+            cache.cy[i] = curve[i].y;
           }
         }
 
@@ -1756,7 +1763,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         drawDashedV(sorted[2].x, maxCol, 1.5f);
 
         ImPlot::SetNextLineStyle(settings.curveLineColor, settings.lineWidth);
-        ImPlot::PlotLine("##curve", cx.data(), cy.data(), (int)cx.size());
+        ImPlot::PlotLine("##curve", cache.cx.data(), cache.cy.data(),
+                         (int)cache.cx.size());
         for (int i = 0; i < 3; i++) {
           ImPlot::DragPoint(i, &pts[i].x, &pts[i].y, settings.markerColor,
                             settings.touchMarkerSize / 15.f,
@@ -2145,26 +2153,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::TextDisabled("Changes here require a restart");
       ImGui::Spacing();
 
-      // Cooldown
-      ImGui::SeparatorText("Cooldown");
-      ImGui::SliderInt("Base Cooldown (s)##s", &stgBaseCooldown, 1, 15);
-      ImGui::SetItemTooltip(
-          "Starting cooldown after each shock.\nFormula: Base + Factor * "
-          "shocks_in_window");
-      ImGui::SliderInt("Max Cooldown (s)##s", &stgMaxCooldown, 1, 30);
-      ImGui::SetItemTooltip(
-          "Cooldown is capped at this value regardless of shock count.");
-      ImGui::SliderFloat("Cooldown Factor##s", &stgCooldownFactor, 0.f, 2.f,
-                         "%.2f");
-      ImGui::SetItemTooltip(
-          "Added to cooldown per shock within the window.\nHigher = longer "
-          "cooldown after bursts.");
-      ImGui::SliderInt("Cooldown Window (s)##s", &stgCooldownWindow, 5, 120);
-      ImGui::SetItemTooltip(
-          "How far back to count shocks for the factor.\nShocks older than "
-          "this are ignored.");
-
-      ImGui::Spacing();
+      // Notification
       ImGui::SeparatorText("Notifications");
 
 #ifdef _WIN32
@@ -2211,6 +2200,27 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       stgNotifUseOvr = false;
 #endif
+      ImGui::Spacing();
+
+      // Cooldown
+      ImGui::SeparatorText("Cooldown");
+      ImGui::SliderInt("Base Cooldown (s)##s", &stgBaseCooldown, 1, 15);
+      ImGui::SetItemTooltip(
+          "Starting cooldown after each shock.\nFormula: Base + Factor * "
+          "shocks_in_window");
+      ImGui::SliderInt("Max Cooldown (s)##s", &stgMaxCooldown, 1, 30);
+      ImGui::SetItemTooltip(
+          "Cooldown is capped at this value regardless of shock count.");
+      ImGui::SliderFloat("Cooldown Factor##s", &stgCooldownFactor, 0.f, 2.f,
+                         "%.2f");
+      ImGui::SetItemTooltip(
+          "Added to cooldown per shock within the window.\nHigher = longer "
+          "cooldown after bursts.");
+      ImGui::SliderInt("Cooldown Window (s)##s", &stgCooldownWindow, 5, 120);
+      ImGui::SetItemTooltip(
+          "How far back to count shocks for the factor.\nShocks older than "
+          "this are ignored.");
+
       ImGui::Spacing();
 
       ImGui::SeparatorText("Hotkey");
