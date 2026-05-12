@@ -61,7 +61,6 @@ static GLFWwindow* g_window = nullptr;
 static ShockerHub* g_hub = nullptr;
 static Settings* g_settingsForHotkey = nullptr;
 
-// Hotkey Manager
 #ifdef _WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -385,28 +384,27 @@ static void performUndoRedo(bool is_undo, std::deque<AppState>& undoStack,
   isPerformingUndoRedo = false;
 }
 
-// Save button icon
+// Floppy disk save icon button
 static bool drawSaveIconButton(const char* id) {
-  ImVec2 size(16, 16);
+  ImVec2 size(18, 18);
   ImGui::InvisibleButton(id, size);
   bool clicked = ImGui::IsItemClicked();
   bool hovered = ImGui::IsItemHovered();
   ImDrawList* dl = ImGui::GetWindowDrawList();
   ImVec2 p = ImGui::GetItemRectMin();
-  ImU32 col = hovered
-                  ? ImGui::ColorConvertFloat4ToU32(ImVec4(1.f, 1.f, 1.f, 1.f))
-                  : ImGui::ColorConvertFloat4ToU32(
-                        ImGui::GetStyle().Colors[ImGuiCol_Text]);
-  // Floppy disk body
-  dl->AddRectFilled(p, {p.x + 14, p.y + 14}, col, 1.f);
-  // Inner label area (cutout)
-  dl->AddRectFilled({p.x + 2, p.y + 6}, {p.x + 12, p.y + 13},
-                    ImGui::ColorConvertFloat4ToU32(
-                        ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
-  // Shutter slot
-  dl->AddRectFilled({p.x + 4, p.y + 1}, {p.x + 10, p.y + 5},
-                    ImGui::ColorConvertFloat4ToU32(
-                        ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
+  // Slightly larger hover area glow
+  if (hovered)
+    dl->AddRectFilled({p.x - 2, p.y - 2}, {p.x + 20, p.y + 20},
+                      IM_COL32(255, 255, 255, 18), 4.f);
+  ImU32 col = hovered ? IM_COL32(255, 255, 255, 255)
+                      : ImGui::ColorConvertFloat4ToU32(
+                            ImGui::GetStyle().Colors[ImGuiCol_Text]);
+  ImU32 bg = ImGui::ColorConvertFloat4ToU32(
+      ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+  dl->AddRectFilled(p, {p.x + 15, p.y + 15}, col, 2.f);
+  dl->AddRectFilled({p.x + 2, p.y + 7}, {p.x + 13, p.y + 14}, bg);
+  dl->AddRectFilled({p.x + 4, p.y + 1}, {p.x + 11, p.y + 6}, bg);
+  dl->AddRectFilled({p.x + 6, p.y + 2}, {p.x + 9, p.y + 6}, col);
   return clicked;
 }
 
@@ -457,7 +455,6 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
   if (dragging == 1) {
     *vMin = std::min(xToVal(mouse.x), *vMax - 1.f);
     changed = true;
-
   } else if (dragging == 2) {
     *vMax = std::max(xToVal(mouse.x), *vMin + 1.f);
     changed = true;
@@ -479,147 +476,164 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
   dl->AddRectFilled({hMinPos.x, trackY - 3}, {hMaxPos.x, trackY + 3}, fillCol,
                     3);
   dl->AddCircleFilled(hMinPos, hRadius,
-                      (dragging == 1 || hovMin) ? grabActCol : grabCol, 12);
+                      (dragging == 1 || hovMin) ? grabActCol : grabCol, 16);
   dl->AddCircleFilled(hMaxPos, hRadius,
-                      (dragging == 2 || hovMax) ? grabActCol : grabCol, 12);
+                      (dragging == 2 || hovMax) ? grabActCol : grabCol, 16);
   return changed;
 }
 
+// ─── Theme
+// ────────────────────────────────────────────────────────────────────
 inline void applyUiTheme(Settings& settings) {
   ImGuiStyle& style = ImGui::GetStyle();
 
-  // --- Geometry ---
-  style.WindowRounding = 8.f;
-  style.ChildRounding = 6.f;
-  style.FrameRounding = 5.f;
-  style.PopupRounding = 6.f;
-  style.ScrollbarRounding = 6.f;
-  style.GrabRounding = 4.f;
-  style.TabRounding = 4.f;
+  // Geometry - more modern, breathing room
+  style.WindowRounding = 10.f;
+  style.ChildRounding = 8.f;
+  style.FrameRounding = 6.f;
+  style.PopupRounding = 8.f;
+  style.ScrollbarRounding = 8.f;
+  style.GrabRounding = 6.f;
+  style.TabRounding = 6.f;
+  style.TabBarBorderSize = 0.f;
   style.WindowBorderSize = 1.f;
   style.ChildBorderSize = 1.f;
   style.FrameBorderSize = 0.f;
   style.PopupBorderSize = 1.f;
-  style.WindowPadding = {10.f, 10.f};
-  style.FramePadding = {8.f, 5.f};
-  style.ItemSpacing = {8.f, 6.f};
+  style.WindowPadding = {12.f, 12.f};
+  style.FramePadding = {10.f, 6.f};
+  style.CellPadding = {8.f, 5.f};
+  style.ItemSpacing = {8.f, 8.f};
   style.ItemInnerSpacing = {6.f, 4.f};
-  style.ScrollbarSize = 10.f;
-  style.GrabMinSize = 8.f;
-  style.IndentSpacing = 16.f;
+  style.ScrollbarSize = 8.f;
+  style.GrabMinSize = 10.f;
+  style.IndentSpacing = 18.f;
+  style.SeparatorTextBorderSize = 2.f;
+  style.SeparatorTextPadding = {8.f, 3.f};
 
-  // --- Color helpers ---
+  // Color helpers
   auto mul = [](ImVec4 c, float s) -> ImVec4 {
     return {std::min(c.x * s, 1.f), std::min(c.y * s, 1.f),
             std::min(c.z * s, 1.f), c.w};
   };
   auto withA = [](ImVec4 c, float a) -> ImVec4 { return {c.x, c.y, c.z, a}; };
+  auto lerp4 = [](ImVec4 a, ImVec4 b, float t) -> ImVec4 {
+    return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t,
+            a.w + (b.w - a.w) * t};
+  };
 
   ImVec4 bg = settings.backgroundColor;
   ImVec4 txt = settings.labelColor;
   ImVec4 a = settings.accentColor;
 
-  // Ensure accent is usable as an interactive color
+  // Ensure accent is usable
   float lum = a.x * 0.299f + a.y * 0.587f + a.z * 0.114f;
-  if (lum < 0.12f) {
-    float sc = 0.12f / (lum + 1e-5f);
+  if (lum < 0.15f) {
+    float sc = 0.15f / (lum + 1e-5f);
     a = {std::min(a.x * sc, 1.f), std::min(a.y * sc, 1.f),
          std::min(a.z * sc, 1.f), a.w};
   }
 
-  ImVec4 aH = mul(a, 1.30f);   // hover
-  ImVec4 aA = mul(a, 0.85f);   // active / pressed
-  ImVec4 aD = mul(a, 0.40f);   // dim — used for frame bg, idle tabs
-  ImVec4 aDH = mul(a, 0.60f);  // dim hover
+  ImVec4 aH = mul(a, 1.25f);   // hover
+  ImVec4 aA = mul(a, 0.80f);   // active / pressed
+  ImVec4 aD = mul(a, 0.38f);   // dim (idle state)
+  ImVec4 aDH = mul(a, 0.58f);  // dim hover
 
-  // Border: cool-tinted, semi-transparent
-  ImVec4 border = {std::min(bg.x + 0.10f, 1.f), std::min(bg.y + 0.10f, 1.f),
-                   std::min(bg.z + 0.14f, 1.f), 0.55f};
+  // Border: subtle blue-grey tint
+  ImVec4 border = {std::min(bg.x + 0.12f, 1.f), std::min(bg.y + 0.12f, 1.f),
+                   std::min(bg.z + 0.18f, 1.f), 0.50f};
 
-  ImVec4 bgD = mul(bg, 0.75f);  // title bars
-  ImVec4 bgP = {std::min(bg.x * 1.08f, 1.f),
-                std::min(bg.y * 1.08f, 1.f),  // popups
-                std::min(bg.z * 1.13f, 1.f), 0.97f};
+  // Derived backgrounds
+  ImVec4 bgD = mul(bg, 0.72f);  // title bars, menu bar
+  ImVec4 bgP =
+      lerp4(bg, ImVec4(bg.x, bg.y, std::min(bg.z + 0.05f, 1.f), 1.f), 0.3f);
+  bgP.w = 0.97f;  // popups
 
-  // --- Assign ---
+  // Frame bg: ensure always readable
+  ImVec4 frameBgBase = lerp4(bg, a, 0.30f);
+  float fbLum =
+      frameBgBase.x * 0.299f + frameBgBase.y * 0.587f + frameBgBase.z * 0.114f;
+  if (fbLum < 0.12f) {
+    float sc = 0.12f / (fbLum + 1e-5f);
+    frameBgBase = {std::min(frameBgBase.x * sc, 1.f),
+                   std::min(frameBgBase.y * sc, 1.f),
+                   std::min(frameBgBase.z * sc, 1.f), frameBgBase.w};
+  }
+
   auto& c = style.Colors;
 
   c[ImGuiCol_WindowBg] = bg;
-  c[ImGuiCol_ChildBg] = bg;
+  c[ImGuiCol_ChildBg] = withA(bg, 0.f);  // transparent children by default
   c[ImGuiCol_PopupBg] = bgP;
   c[ImGuiCol_Border] = border;
   c[ImGuiCol_BorderShadow] = {0, 0, 0, 0};
 
   c[ImGuiCol_Text] = txt;
-  c[ImGuiCol_TextDisabled] = withA(txt, 0.38f);
-  c[ImGuiCol_TextSelectedBg] = withA(a, 0.35f);
+  c[ImGuiCol_TextDisabled] = withA(txt, 0.42f);
+  c[ImGuiCol_TextSelectedBg] = withA(a, 0.38f);
 
   c[ImGuiCol_TitleBg] = bgD;
-  c[ImGuiCol_TitleBgActive] = mul(bgD, 0.90f);
-  c[ImGuiCol_TitleBgCollapsed] = withA(bgD, 0.75f);
+  c[ImGuiCol_TitleBgActive] = mul(bgD, 0.88f);
+  c[ImGuiCol_TitleBgCollapsed] = withA(bgD, 0.80f);
   c[ImGuiCol_MenuBarBg] = bgD;
 
-  // Ensure slider track is always legible regardless of accent darkness
-  ImVec4 frameBgBase = mul(a, 0.55f);
-  float fbLum =
-      frameBgBase.x * 0.299f + frameBgBase.y * 0.587f + frameBgBase.z * 0.114f;
-  if (fbLum < 0.10f) {
-    float sc = 0.10f / (fbLum + 1e-5f);
-    frameBgBase = {std::min(frameBgBase.x * sc, 1.f),
-                   std::min(frameBgBase.y * sc, 1.f),
-                   std::min(frameBgBase.z * sc, 1.f), frameBgBase.w};
-  }
-  c[ImGuiCol_FrameBg] = withA(frameBgBase, 0.80f);
-  c[ImGuiCol_FrameBgHovered] = withA(mul(frameBgBase, 1.30f), 0.85f);
-  c[ImGuiCol_FrameBgActive] = withA(aA, 0.70f);
+  c[ImGuiCol_FrameBg] = withA(frameBgBase, 0.75f);
+  c[ImGuiCol_FrameBgHovered] = withA(mul(frameBgBase, 1.35f), 0.85f);
+  c[ImGuiCol_FrameBgActive] = withA(aA, 0.65f);
 
-  c[ImGuiCol_Button] = aA;
-  c[ImGuiCol_ButtonHovered] = a;
-  c[ImGuiCol_ButtonActive] = aH;
+  c[ImGuiCol_Button] = withA(aD, 0.90f);
+  c[ImGuiCol_ButtonHovered] = withA(a, 0.92f);
+  c[ImGuiCol_ButtonActive] = aA;
 
   c[ImGuiCol_SliderGrab] = a;
   c[ImGuiCol_SliderGrabActive] = aH;
   c[ImGuiCol_CheckMark] = aH;
 
-  c[ImGuiCol_Header] = withA(aA, 0.60f);
-  c[ImGuiCol_HeaderHovered] = withA(a, 0.80f);
-  c[ImGuiCol_HeaderActive] = aH;
+  c[ImGuiCol_Header] = withA(aA, 0.55f);
+  c[ImGuiCol_HeaderHovered] = withA(a, 0.78f);
+  c[ImGuiCol_HeaderActive] = a;
 
   c[ImGuiCol_Separator] = border;
-  c[ImGuiCol_SeparatorHovered] = a;
-  c[ImGuiCol_SeparatorActive] = aH;
+  c[ImGuiCol_SeparatorHovered] = withA(a, 0.70f);
+  c[ImGuiCol_SeparatorActive] = a;
 
-  c[ImGuiCol_ResizeGrip] = withA(aD, 0.30f);
-  c[ImGuiCol_ResizeGripHovered] = withA(a, 0.55f);
+  c[ImGuiCol_ResizeGrip] = withA(aD, 0.25f);
+  c[ImGuiCol_ResizeGripHovered] = withA(a, 0.50f);
   c[ImGuiCol_ResizeGripActive] = a;
 
-  c[ImGuiCol_Tab] = withA(aD, 0.90f);
-  c[ImGuiCol_TabHovered] = a;
-  c[ImGuiCol_TabActive] = aA;
+  // Tabs - active tab is clearly distinguished
+  c[ImGuiCol_Tab] = withA(lerp4(bgD, aD, 0.5f), 0.95f);
+  c[ImGuiCol_TabHovered] = withA(a, 0.85f);
+  c[ImGuiCol_TabActive] = withA(lerp4(aD, a, 0.6f), 1.f);
+  c[ImGuiCol_TabUnfocused] = withA(bgD, 0.95f);
+  c[ImGuiCol_TabUnfocusedActive] = withA(aD, 0.95f);
 
-  c[ImGuiCol_ScrollbarBg] = withA(bgD, 0.45f);
-  c[ImGuiCol_ScrollbarGrab] = aD;
-  c[ImGuiCol_ScrollbarGrabHovered] = a;
-  c[ImGuiCol_ScrollbarGrabActive] = aH;
+  c[ImGuiCol_ScrollbarBg] = withA(bgD, 0.40f);
+  c[ImGuiCol_ScrollbarGrab] = withA(aD, 0.80f);
+  c[ImGuiCol_ScrollbarGrabHovered] = withA(a, 0.70f);
+  c[ImGuiCol_ScrollbarGrabActive] = a;
 
   c[ImGuiCol_PlotLines] = txt;
   c[ImGuiCol_PlotHistogram] = a;
 
-  c[ImGuiCol_TableHeaderBg] = withA(aD, 0.60f);
+  c[ImGuiCol_TableHeaderBg] = withA(aD, 0.55f);
   c[ImGuiCol_TableBorderStrong] = border;
-  c[ImGuiCol_TableBorderLight] = withA(border, 0.45f);
+  c[ImGuiCol_TableBorderLight] = withA(border, 0.40f);
+  c[ImGuiCol_TableRowBg] = withA(bg, 0.f);
+  c[ImGuiCol_TableRowBgAlt] = withA(frameBgBase, 0.15f);
 
-  c[ImGuiCol_ModalWindowDimBg] = {0.f, 0.f, 0.f, 0.55f};
+  c[ImGuiCol_ModalWindowDimBg] = {0.f, 0.f, 0.f, 0.60f};
   c[ImGuiCol_NavHighlight] = a;
+  c[ImGuiCol_DragDropTarget] = a;
 
-  // --- ImPlot ---
+  // ImPlot
   auto& ip = ImPlot::GetStyle().Colors;
   ImVec4& bgColor = settings.outsideCurveBg;
   ip[ImPlotCol_FrameBg] = bgColor;
   ip[ImPlotCol_PlotBg] = bgColor;
   ip[ImPlotCol_AxisText] = settings.labelColor;
   ip[ImPlotCol_LegendText] = settings.labelColor;
-  ip[ImPlotCol_LegendBg] = withA(bgColor, 0.88f);
+  ip[ImPlotCol_LegendBg] = withA(bgColor, 0.90f);
   ip[ImPlotCol_LegendBorder] = border;
   ip[ImPlotCol_PlotBorder] = border;
   ImPlot::GetStyle().LegendPadding = ImVec2(10, 8);
@@ -653,12 +667,23 @@ inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
   return s;
 }
 
-// UI entry point
+// ─── Helper: small colored pill/badge ────────────────────────────────────────
+static void drawBadge(ImDrawList* dl, ImVec2 pos, const char* text, ImU32 bgCol,
+                      ImU32 textCol) {
+  ImVec2 ts = ImGui::CalcTextSize(text);
+  float padX = 6.f, padY = 2.f;
+  ImVec2 bMin = {pos.x, pos.y};
+  ImVec2 bMax = {pos.x + ts.x + padX * 2, pos.y + ts.y + padY * 2};
+  dl->AddRectFilled(bMin, bMax, bgCol, 4.f);
+  dl->AddText({bMin.x + padX, bMin.y + padY}, textCol, text);
+}
+
+// ─── UI entry point
+// ───────────────────────────────────────────────────────────
 inline void runUI(Settings& settings, ShockerHub& hub,
                   const std::string& settingsPath) {
   extern std::atomic<bool> running;
 
-  static bool g_canSetWindowPos = true;
   glfwSetErrorCallback([](int err, const char* desc) {
     if (err == 65548) return;
     if (err == 65540) return;
@@ -703,7 +728,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   glfwSetWindowPos(g_window, settings.windowX, settings.windowY);
 #endif
   glfwMakeContextCurrent(g_window);
-  glfwSwapInterval(1);  // vsync
+  glfwSwapInterval(1);
 
   g_hub = &hub;
   g_settingsForHotkey = &settings;
@@ -713,12 +738,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
     glfwSetWindowShouldClose(win, GLFW_TRUE);
     running = false;
-
     g_wakeUiFunc = nullptr;
-
-    if (g_hub) {
-      g_hub->queueCV.notify_all();
-    }
+    if (g_hub) g_hub->queueCV.notify_all();
   });
 
   IMGUI_CHECKVERSION();
@@ -734,14 +755,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     const char* regularPaths[] = {"C:\\Windows\\Fonts\\segoeui.ttf",
                                   "C:\\Windows\\Fonts\\arial.ttf",
                                   "C:\\Windows\\Fonts\\calibri.ttf", nullptr};
-
     const char* boldPaths[] = {"C:\\Windows\\Fonts\\segoeuib.ttf",
                                "C:\\Windows\\Fonts\\arialbd.ttf",
                                "C:\\Windows\\Fonts\\calibrib.ttf", nullptr};
-
     const char* symPaths[] = {"C:\\Windows\\Fonts\\seguiemj.ttf",
                               "C:\\Windows\\Fonts\\seguisym.ttf", nullptr};
-
     for (auto p = regularPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
         io.Fonts->AddFontFromFileTTF(*p, 18.0f);
@@ -749,12 +767,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
     }
     if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
-
     for (auto p = symPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
         ImFontConfig cfg;
         cfg.MergeMode = true;
-        cfg.GlyphOffset = {0, 0.f};
         static const ImWchar ranges[] = {0x2600, 0x27FF, 0};
         cfg.GlyphOffset = {0, 2.f};
         cfg.GlyphMinAdvanceX = 18.f;
@@ -762,16 +778,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         break;
       }
     }
-
     for (auto p = boldPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
         boldFont = io.Fonts->AddFontFromFileTTF(*p, 18.0f);
         break;
       }
     }
-    if (!boldFont) {
-      boldFont = io.Fonts->Fonts.back();
-    }
+    if (!boldFont) boldFont = io.Fonts->Fonts.back();
   }
 #else
   ImFont* boldFont = nullptr;
@@ -799,7 +812,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
         "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf",
         nullptr};
-
     for (auto p = regularPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
         io.Fonts->AddFontFromFileTTF(*p, 18.0f);
@@ -807,19 +819,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
     }
     if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
-
-    // Merge symbol font for ⚡ (U+26A1)
     for (auto p = symPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
         ImFontConfig cfg;
         cfg.MergeMode = true;
-        cfg.GlyphOffset = {0, 0.f};
         static const ImWchar ranges[] = {0x2600, 0x27FF, 0};
         io.Fonts->AddFontFromFileTTF(*p, 18.0f, &cfg, ranges);
         break;
       }
     }
-
     for (auto p = boldPaths; *p; ++p) {
       if (std::filesystem::exists(*p)) {
         boldFont = io.Fonts->AddFontFromFileTTF(*p, 18.0f);
@@ -829,21 +837,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   }
 #endif
 
-  ImVec4& bgColor = settings.outsideCurveBg;
-  ImPlot::GetStyle().Colors[ImPlotCol_LegendBg] = {bgColor.x, bgColor.y,
-                                                   bgColor.z, 0.84f};
-  ImPlot::GetStyle().Colors[ImPlotCol_LegendBorder] = {0.4f, 0.4f, 0.5f, 0.8f};
-  ImPlot::GetStyle().LegendPadding = ImVec2(10, 8);
-  ImPlot::GetStyle().LegendInnerPadding = ImVec2(6, 4);
-  ImPlot::GetStyle().LegendSpacing = ImVec2(6, 4);
-
   ImGui::StyleColorsDark();
   applyUiTheme(settings);
 
   ImGui_ImplGlfw_InitForOpenGL(g_window, true);
   ImGui_ImplOpenGL3_Init("#version 330 core");
 
-  // Dynamic UI state
   float minDur = settings.minShockDuration;
   float maxDur = settings.maxShockDuration;
   bool cooldownEnabled = settings.cooldownEnabled;
@@ -851,7 +850,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   float xViewMax = settings.xViewMax;
 
   int currentCurveIndex = 0;
-
   int loadedPresetIndex = -1;
   std::vector<Preset> loadedPresetSnapshot;
   int pendingLoadPresetIndex = -1;
@@ -886,25 +884,21 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool ctrlZPrev = false, ctrlYPrev = false, ctrlSPrev = false;
   bool stateChangedPreviousFrame = false;
 
+  // Load default preset
   if (settings.defaultPreset >= 0 &&
       settings.defaultPreset < (int)settings.presets.size() &&
       settings.presets[settings.defaultPreset].has_value()) {
     auto& dp = settings.presets[settings.defaultPreset];
-    // Preserve names across preset load
     std::vector<std::string> savedNames;
     for (auto& c : settings.curves) savedNames.push_back(c.name);
-
     settings.curves = dp->curves;
     currentCurveIndex = dp->activeCurveIndex;
-
     for (int k = 0;
          k < (int)settings.curves.size() && k < (int)savedNames.size(); k++)
       settings.curves[k].name = savedNames[k];
-
     if (currentCurveIndex >= (int)settings.curves.size()) currentCurveIndex = 0;
     for (auto& param : settings.parameters)
       if (param.curveIndex >= (int)settings.curves.size()) param.curveIndex = 0;
-
     if (!settings.curves.empty()) {
       hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
       xViewMin = settings.curves[currentCurveIndex].xViewMin;
@@ -912,26 +906,22 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       minDur = settings.curves[currentCurveIndex].minShockDuration;
       maxDur = settings.curves[currentCurveIndex].maxShockDuration;
     }
-
     loadedPresetIndex = settings.defaultPreset;
     commitLoadedPresetSnapshot();
   }
 
-  // Settings/Stats modal state
   bool showSettings = false;
   float settingsAnim = 0.f, statsAnim = 0.f;
   if (settings.showStats) statsAnim = 1.f;
 
-  // Fixes launching the app when stats is saved open
   {
     int sw = (int)roundf(statsAnim * 280.f);
-    int settW = (int)roundf(settingsAnim * 550.f);
+    int settW = (int)roundf(settingsAnim * 560.f);
     glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
     glfwSetWindowSize(g_window, settings.windowW + sw + settW,
                       settings.windowH);
   }
 
-  // Editable staging copies (only written back on save)
   char stgShockParam[64] = {}, stgSecondParam[64] = {}, stgShockerIDs[256] = {},
        stgSerialPort[64] = {}, stgVrchatHost[64] = {};
   bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
@@ -977,7 +967,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
   AppState lastCommittedState = snapshotAppState(ui);
 
-  // Style copies apply live on edit, so point directly at settings field
   auto openSettingsModal = [&]() {
     snprintf(stgShockParam, sizeof(stgShockParam), "%s",
              settings.shockParameter.c_str());
@@ -1031,7 +1020,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool capturingHotkey = false;
   bool panicWasPressedLastFrame = false;
 
-  // Curve cache - One entry per curve
   std::array<CurvePoint, 3>& pts = hub.curvePoints;
   struct CurveCache {
     std::array<CurvePoint, 3> lastPts{};
@@ -1043,6 +1031,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool forceFrame = true;
   auto lastAnimTime = steady_clock::now();
 
+  // ─── Main loop ─────────────────────────────────────────────────────────────
   while (!glfwWindowShouldClose(g_window) && running.load()) {
     bool minimized = glfwGetWindowAttrib(g_window, GLFW_ICONIFIED);
     bool focused = glfwGetWindowAttrib(g_window, GLFW_FOCUSED) || showSettings;
@@ -1061,11 +1050,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       continue;
     }
 
-    if (forceFrame) {
+    if (forceFrame)
       glfwPollEvents();
-    } else if (!needsAnimation) {
+    else if (!needsAnimation)
       glfwWaitEvents();
-    } else {
+    else {
       double targetInterval = focused ? (1.0 / 60.0) : (1.0 / 16.0);
       glfwWaitEventsTimeout(targetInterval);
     }
@@ -1077,7 +1066,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       glfwGetWindowSize(g_window, &ww, &wh);
       if (!statsAnimating && !settAnimating) {
         int sw_i = (int)roundf(statsAnim * 280.f);
-        int settW_i = (int)roundf(settingsAnim * 550.f);
+        int settW_i = (int)roundf(settingsAnim * 560.f);
         settings.windowX = wx + sw_i;
         settings.windowW = ww - sw_i - settW_i;
       }
@@ -1094,14 +1083,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       float settTarget = showSettings ? 1.f : 0.f;
       float statsTarget = settings.showStats ? 1.f : 0.f;
       float prevSett = settingsAnim, prevStats = statsAnim;
-      settingsAnim += (settTarget - settingsAnim) * std::min(1.f, dt * 12.f);
-      statsAnim += (statsTarget - statsAnim) * std::min(1.f, dt * 12.f);
+      settingsAnim += (settTarget - settingsAnim) * std::min(1.f, dt * 14.f);
+      statsAnim += (statsTarget - statsAnim) * std::min(1.f, dt * 14.f);
       if (settingsAnim < 0.001f) settingsAnim = 0.f;
       if (statsAnim < 0.043f) statsAnim = 0.f;
       if (fabs(statsAnim - prevStats) > 0.001f ||
           fabs(settingsAnim - prevSett) > 0.001f) {
         int sw = (int)roundf(statsAnim * 280.f);
-        int settW = (int)roundf(settingsAnim * 550.f);
+        int settW = (int)roundf(settingsAnim * 560.f);
         glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
         glfwSetWindowSize(g_window, settings.windowW + sw + settW,
                           settings.windowH);
@@ -1111,7 +1100,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         forceFrame = true;
     }
 
-    // Panic hotkey polling (window-focused only on Linux)
+    // Panic hotkey polling
     if (settings.hotkeyVk != 0) {
       bool pressed = glfwGetKey(g_window, settings.hotkeyVk) == GLFW_PRESS;
       if (pressed && !panicWasPressedLastFrame) {
@@ -1139,141 +1128,140 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     float fontSize = ImGui::GetFontSize();
 
-    // Left panel
-    float leftPanelWidth = std::max(200.f, fontSize * 11.5f);
-
+    // ── Left panel ──────────────────────────────────────────────────────────
+    float leftPanelWidth = std::max(210.f, fontSize * 12.f);
     float lineH = ImGui::GetTextLineHeightWithSpacing();
     float logH = lineH * 3.f + ImGui::GetStyle().WindowPadding.y * 2.f;
     float rowH = ImGui::GetTextLineHeightWithSpacing() + 3.f;
     float sepH = 1.f + ImGui::GetStyle().ItemSpacing.y * 2.f;
     float bottomH = rowH + logH + sepH;
 
+    // Left panel has a subtle background tint
+    ImGui::PushStyleColor(
+        ImGuiCol_ChildBg,
+        ImGui::ColorConvertFloat4ToU32(
+            ImVec4(settings.backgroundColor.x * 0.92f,
+                   settings.backgroundColor.y * 0.92f,
+                   settings.backgroundColor.z * 1.05f,
+                   1.f))
+            ? settings.backgroundColor  // just use as-is, color is via
+                                        // alpha/blend below
+            : settings.backgroundColor);
+    ImGui::PopStyleColor();
+
     ImGui::BeginChild("##controls", ImVec2(leftPanelWidth, -bottomH), true);
-    ImGui::SetCursorPosY(ImGui::GetStyle().WindowPadding.y * 0.5f);
 
-    ImGui::Spacing();
-    ImGui::Text("Min Duration (s)");
-    ImGui::SliderFloat("##mind", &minDur, 0.1f, 10.f, "%.1f");
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-      minDur = std::min(minDur, maxDur - 0.1f);
-      settings.minShockDuration = minDur;
-      // Write back to current curve immediately
-      if (currentCurveIndex >= 0 &&
-          currentCurveIndex < (int)settings.curves.size())
-        settings.curves[currentCurveIndex].minShockDuration = minDur;
-    }
+    // ── Presets section ─────────────────────────────────────────────────────
+    ImGui::SeparatorText("Presets");
 
-    ImGui::Text("Max Duration (s)");
-    ImGui::SliderFloat("##maxd", &maxDur, 0.1f, 10.f, "%.1f");
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-      maxDur = std::max(maxDur, minDur + 0.1f);
-      settings.maxShockDuration = maxDur;
-      // Write back to current curve immediately
-      if (currentCurveIndex >= 0 &&
-          currentCurveIndex < (int)settings.curves.size())
-        settings.curves[currentCurveIndex].maxShockDuration = maxDur;
-    }
-
-    ImGui::Spacing();
-    if (ImGui::Checkbox("Enable Cooldown", &cooldownEnabled))
-      settings.cooldownEnabled = cooldownEnabled;
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::Text("Presets");
     for (int i = 0; i < (int)settings.presets.size(); i++) {
       bool hasData = settings.presets[i].has_value();
-
       bool isLoaded = (loadedPresetIndex == i);
       bool isDirty = isLoaded && isLoadedPresetDirty();
+      bool isDefault = (settings.defaultPreset == i);
+
       std::string label = hasData ? settings.presets[i]->name
                                   : ("Preset " + std::to_string(i + 1));
-      if (isDirty) label += " *";
+      if (isDirty) label += "  *";
 
-      bool isDefault = (settings.defaultPreset == i);
+      // Button color: dirty=amber, default=green, loaded=blue, else normal
+      ImVec4 btnCol;
       if (isDirty)
-        ImGui::PushStyleColor(ImGuiCol_Button, {0.50f, 0.38f, 0.10f, 1.f});
+        btnCol = {0.52f, 0.36f, 0.06f, 1.f};
       else if (isDefault)
-        ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.54f, 0.34f, 1.f});
-      else if (isLoaded && !isDirty)
-        ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.38f, 0.54f, 1.f});
+        btnCol = {0.13f, 0.48f, 0.30f, 1.f};
+      else if (isLoaded)
+        btnCol = {0.13f, 0.34f, 0.52f, 1.f};
       else
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
+        btnCol = ImGui::GetStyle().Colors[ImGuiCol_Button];
 
-      float saveIconW = 16.f + ImGui::GetStyle().ItemSpacing.x;
-      ImGui::Button(label.c_str(),
-                    ImVec2(ImGui::GetContentRegionAvail().x - saveIconW, 0));
+      ImGui::PushStyleColor(ImGuiCol_Button, btnCol);
+      ImGui::PushStyleColor(
+          ImGuiCol_ButtonHovered,
+          {std::min(btnCol.x + 0.10f, 1.f), std::min(btnCol.y + 0.10f, 1.f),
+           std::min(btnCol.z + 0.10f, 1.f), 1.f});
+
+      float saveIconW = 22.f + ImGui::GetStyle().ItemSpacing.x;
+      float btnW = ImGui::GetContentRegionAvail().x - saveIconW;
+
+      // Indicator dot on left edge
+      {
+        ImVec2 cp = ImGui::GetCursorScreenPos();
+        float fh = ImGui::GetFrameHeight();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImU32 dotCol = isDirty     ? IM_COL32(255, 190, 50, 220)
+                       : isDefault ? IM_COL32(60, 220, 130, 220)
+                       : isLoaded  ? IM_COL32(80, 160, 255, 220)
+                                   : IM_COL32(80, 80, 100, 120);
+        dl->AddCircleFilled({cp.x + 5.f, cp.y + fh * 0.5f}, 3.5f, dotCol);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 2.f);
+      }
+
+      if (ImGui::Button(label.c_str(), ImVec2(btnW - 2.f, 0))) {
+        if (hasData) {
+          if (isLoadedPresetDirty()) {
+            pendingLoadPresetIndex = i;
+            ImGui::OpenPopup("##confirmload");
+          } else {
+            flushCurrentCurve();
+            auto& preset = *settings.presets[i];
+            settings.curves = preset.curves;
+            if (settings.curves.empty()) {
+              settings.curves.push_back(Preset());
+              settings.curves[0].name = "Default";
+            }
+            if (currentCurveIndex >= (int)settings.curves.size())
+              currentCurveIndex = 0;
+            hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
+            xViewMin = settings.curves[currentCurveIndex].xViewMin;
+            xViewMax = settings.curves[currentCurveIndex].xViewMax;
+            minDur = settings.curves[currentCurveIndex].minShockDuration;
+            maxDur = settings.curves[currentCurveIndex].maxShockDuration;
+            settings.minShockDuration = minDur;
+            settings.maxShockDuration = maxDur;
+            for (auto& param : settings.parameters)
+              if (param.curveIndex >= (int)settings.curves.size())
+                param.curveIndex = 0;
+            loadedPresetIndex = i;
+            commitLoadedPresetSnapshot();
+          }
+        }
+      }
 
       if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
-        ImGui::Text("LClick - Load | MClick - Set default | RClick - Rename");
-        if (isDefault) {
-          ImGui::TextColored({0.4f, 1.0f, 0.8f, 1.f}, "Default preset");
-        }
-        if (isDirty) {
-          ImGui::TextColored(
-              {1.f, 0.75f, 0.2f, 1.f},
-              "* Unsaved changes - save icon or CTRL + S to keep them");
-        } else if (isLoaded)
-          ImGui::TextColored({0.4f, 0.8f, 1.f, 1.f}, "Currently loaded");
+        if (boldFont) ImGui::PushFont(boldFont);
+        ImGui::Text("%s", hasData
+                              ? settings.presets[i]->name.c_str()
+                              : ("Preset " + std::to_string(i + 1)).c_str());
+        if (boldFont) ImGui::PopFont();
+        ImGui::Separator();
+        ImGui::TextDisabled("LClick  Load");
+        ImGui::TextDisabled("MClick  Set as default");
+        ImGui::TextDisabled("RClick  Rename");
+        if (isDefault)
+          ImGui::TextColored({0.4f, 1.f, 0.7f, 1.f}, "\xe2\x98\x86 Default");
+        if (isDirty)
+          ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "* Unsaved changes");
+        if (isLoaded && !isDirty)
+          ImGui::TextColored({0.4f, 0.8f, 1.f, 1.f}, "Loaded");
         ImGui::EndTooltip();
       }
 
-      ImGui::PopStyleColor();
+      ImGui::PopStyleColor(2);
 
-      // Left click - load preset: replace all curves with preset's full set
-      if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && hasData) {
-        if (isLoadedPresetDirty()) {
-          pendingLoadPresetIndex = i;
-          ImGui::OpenPopup("##confirmload");
-        } else {
-          flushCurrentCurve();
-          auto& preset = *settings.presets[i];
-          settings.curves = preset.curves;
-          if (settings.curves.empty()) {
-            settings.curves.push_back(Preset());
-            settings.curves[0].name = "Default";
-          }
+      if (ImGui::IsItemClicked(ImGuiMouseButton_Middle))
+        settings.defaultPreset = i, settings.save(settingsPath);
 
-          if (currentCurveIndex >= (int)settings.curves.size())
-            currentCurveIndex = 0;
-
-          hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
-          xViewMin = settings.curves[currentCurveIndex].xViewMin;
-          xViewMax = settings.curves[currentCurveIndex].xViewMax;
-          minDur = settings.curves[currentCurveIndex].minShockDuration;
-          maxDur = settings.curves[currentCurveIndex].maxShockDuration;
-          settings.minShockDuration = minDur;
-          settings.maxShockDuration = maxDur;
-
-          for (auto& param : settings.parameters)
-            if (param.curveIndex >= (int)settings.curves.size())
-              param.curveIndex = 0;
-
-          loadedPresetIndex = i;
-          commitLoadedPresetSnapshot();
-        }
-      }
-
-      // Middle click - set default
-      if (ImGui::IsItemClicked(ImGuiMouseButton_Middle)) {
-        settings.defaultPreset = i;
-        settings.save(settingsPath);
-      }
-      // Right click - open rename popup
       if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && hasData)
         ImGui::OpenPopup(("##rename" + std::to_string(i)).c_str());
 
-      // Rename popup
       if (ImGui::BeginPopup(("##rename" + std::to_string(i)).c_str())) {
         static char nameBuf[64] = {};
         if (ImGui::IsWindowAppearing())
           snprintf(nameBuf, sizeof(nameBuf), "%s", label.c_str());
         ImGui::SetKeyboardFocusHere();
-        if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf),
+        if (ImGui::InputText("Name##rn", nameBuf, sizeof(nameBuf),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
           settings.presets[i]->name = nameBuf;
           settings.save(settingsPath);
@@ -1285,9 +1273,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SameLine();
       ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
                            (ImGui::GetFrameHeight() - 16.f) * 0.5f);
-      // Save preset: snapshot ALL current curves into this slot
       if (drawSaveIconButton(("##save" + std::to_string(i)).c_str())) {
-        // Flush active curve state first
         if (currentCurveIndex >= 0 &&
             currentCurveIndex < (int)settings.curves.size()) {
           settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
@@ -1296,27 +1282,26 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           settings.curves[currentCurveIndex].minShockDuration = minDur;
           settings.curves[currentCurveIndex].maxShockDuration = maxDur;
         }
-
-        // Snapshot ALL curves into this preset slot
         SavedPreset sp;
         sp.curves = settings.curves;
         sp.activeCurveIndex = currentCurveIndex;
         sp.name = settings.presets[i].has_value()
                       ? settings.presets[i]->name
                       : ("Preset " + std::to_string(i + 1));
-
         settings.presets[i] = sp;
         settings.save(settingsPath);
         if (loadedPresetIndex == i) commitLoadedPresetSnapshot();
       }
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("Save to slot");
     }
 
+    // Confirm load popup
     if (ImGui::BeginPopupModal("##confirmload", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
       ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "Unsaved changes");
-      ImGui::Text(
-          "The loaded preset has unsaved changes.\nLoad anyway and discard "
-          "them?\nTip: use CTRL + S to save faster.");
+      ImGui::Spacing();
+      ImGui::Text("The loaded preset has unsaved changes.\nLoad anyway?");
+      ImGui::TextDisabled("Tip: CTRL+S to save quickly.");
       ImGui::Spacing();
       if (ImGui::Button("Load anyway", {110, 0})) {
         if (pendingLoadPresetIndex >= 0 &&
@@ -1325,15 +1310,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           flushCurrentCurve();
           auto& preset = *settings.presets[i];
           settings.curves = preset.curves;
-
           if (settings.curves.empty()) {
             settings.curves.push_back(Preset());
             settings.curves[0].name = "Default";
           }
-
           if (currentCurveIndex >= (int)settings.curves.size())
             currentCurveIndex = 0;
-
           hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
           xViewMin = settings.curves[currentCurveIndex].xViewMin;
           xViewMax = settings.curves[currentCurveIndex].xViewMax;
@@ -1341,55 +1323,135 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           maxDur = settings.curves[currentCurveIndex].maxShockDuration;
           settings.minShockDuration = minDur;
           settings.maxShockDuration = maxDur;
-
           for (auto& param : settings.parameters)
             if (param.curveIndex >= (int)settings.curves.size())
               param.curveIndex = 0;
-
           loadedPresetIndex = i;
           commitLoadedPresetSnapshot();
         }
-
         pendingLoadPresetIndex = -1;
         ImGui::CloseCurrentPopup();
       }
-
       ImGui::SameLine();
       if (ImGui::Button("Cancel", {80, 0})) {
         pendingLoadPresetIndex = -1;
         ImGui::CloseCurrentPopup();
       }
-
       ImGui::EndPopup();
     }
 
+    // ── Curve parameters ────────────────────────────────────────────────────
     ImGui::Spacing();
-    ImGui::Separator();
+    ImGui::SeparatorText("Duration");
+
+    // Duration sliders side-by-side in compact form
+
+    float halfW =
+        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
+        0.5f;
+
+    // Labels on the same line
+    ImGui::TextDisabled("Min (s)");
+    ImGui::SameLine(halfW + ImGui::GetStyle().ItemSpacing.x);
+    ImGui::TextDisabled("Max (s)");
+
+    // Sliders on the same line
+    ImGui::SetNextItemWidth(halfW);
+    ImGui::SliderFloat("##mind", &minDur, 0.1f, 10.f, "%.1f");
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+      minDur = std::min(minDur, maxDur - 0.1f);
+      settings.minShockDuration = minDur;
+      if (currentCurveIndex >= 0 &&
+          currentCurveIndex < (int)settings.curves.size())
+        settings.curves[currentCurveIndex].minShockDuration = minDur;
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(halfW);
+    ImGui::SliderFloat("##maxd", &maxDur, 0.1f, 10.f, "%.1f");
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+      maxDur = std::max(maxDur, minDur + 0.1f);
+      settings.maxShockDuration = maxDur;
+      if (currentCurveIndex >= 0 &&
+          currentCurveIndex < (int)settings.curves.size())
+        settings.curves[currentCurveIndex].maxShockDuration = maxDur;
+    }
+
     ImGui::Spacing();
 
+    // Cooldown toggle - more prominent
+    {
+      ImVec4 cdCol = cooldownEnabled
+                         ? ImVec4(0.13f, 0.48f, 0.30f, 1.f)
+                         : ImGui::GetStyle().Colors[ImGuiCol_Button];
+      ImGui::PushStyleColor(ImGuiCol_Button, cdCol);
+      ImGui::PushStyleColor(
+          ImGuiCol_ButtonHovered,
+          {cdCol.x + 0.1f, cdCol.y + 0.1f, cdCol.z + 0.1f, 1.f});
+      if (ImGui::Button(cooldownEnabled ? "Cooldown  ON " : "Cooldown  OFF",
+                        {-1, 0})) {
+        cooldownEnabled = !cooldownEnabled;
+        settings.cooldownEnabled = cooldownEnabled;
+      }
+      ImGui::PopStyleColor(2);
+    }
+
+    // ── Test buttons ────────────────────────────────────────────────────────
+    ImGui::Spacing();
+    ImGui::SeparatorText("Test");
+
+    // Two equal-width test buttons with icons
+    {
+      float bw =
+          (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
+          0.5f;
+      // Vibrate — softer blue-purple
+      ImGui::PushStyleColor(ImGuiCol_Button, {0.20f, 0.18f, 0.45f, 1.f});
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.28f, 0.25f, 0.60f, 1.f});
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, {0.15f, 0.13f, 0.35f, 1.f});
+      if (ImGui::Button("~  Vibrate", {bw, 0})) hub.queueShock(-1, true);
+      ImGui::SetItemTooltip("Send a test vibration");
+      ImGui::PopStyleColor(3);
+
+      ImGui::SameLine();
+
+      // Shock — warm red-orange
+      ImGui::PushStyleColor(ImGuiCol_Button, {0.45f, 0.18f, 0.18f, 1.f});
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.62f, 0.24f, 0.24f, 1.f});
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, {0.35f, 0.12f, 0.12f, 1.f});
+      if (ImGui::Button("\xe2\x9a\xa1  Shock", {-1, 0}))
+        hub.queueShock(-1, false);
+      ImGui::SetItemTooltip("Send a test shock");
+      ImGui::PopStyleColor(3);
+    }
+
+    // ── Bottom action buttons ────────────────────────────────────────────────
+    {
+      int extraRows = (!hub.isConnected ? 1 : 0) + (hub.shocksDisabled ? 1 : 0);
+      float totalBtnsH =
+          (0.8f + extraRows) * ImGui::GetFrameHeightWithSpacing() +
+          ImGui::GetStyle().WindowPadding.y;
+      ImGui::SetCursorPosY(ImGui::GetWindowHeight() - totalBtnsH);
+    }
+
+    if (!hub.isConnected) {
+      ImGui::PushStyleColor(ImGuiCol_Button, {0.45f, 0.28f, 0.05f, 1.f});
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.60f, 0.36f, 0.08f, 1.f});
+      if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
+      ImGui::PopStyleColor(2);
+    }
+
+    if (hub.shocksDisabled) {
+      ImGui::PushStyleColor(ImGuiCol_Button, {0.55f, 0.12f, 0.12f, 1.f});
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.70f, 0.18f, 0.18f, 1.f});
+      if (ImGui::Button("Enable Shocks", {-1, 0})) hub.enableShocks();
+      ImGui::PopStyleColor(2);
+    }
+
+    // Stats / Settings buttons - equal width, at very bottom
     float halfBtn =
         (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
         0.5f;
-    if (ImGui::Button("Test Vibrate", {halfBtn, 0})) hub.queueShock(-1, true);
-    ImGui::SetItemTooltip("Sends a vibration command");
-    ImGui::SameLine();
-    if (ImGui::Button("Test Shock", {-1, 0})) hub.queueShock(-1, false);
-    ImGui::SetItemTooltip("Sends a Shock command");
 
-    {
-      int extraRows = (!hub.isConnected ? 1 : 0) + (hub.shocksDisabled ? 1 : 0);
-      float totalBtnsH = (1 + extraRows) * ImGui::GetFrameHeightWithSpacing() +
-                         ImGui::GetStyle().WindowPadding.y;
-      ImGui::SetCursorPosY(ImGui::GetWindowHeight() - totalBtnsH);
-    }
-    if (!hub.isConnected)
-      if (ImGui::Button("Retry Connection", {-1, 0})) hub.tryReconnect();
-    if (hub.shocksDisabled)
-      if (ImGui::Button("Enable Shocks", {-1, 0})) hub.enableShocks();
-
-    if (ImGui::Button("Stats", {halfBtn, 0}))
-      settings.showStats = !settings.showStats;
-    ImGui::SameLine();
     bool settingsDirty =
         showSettings &&
         (settings.shockParameter != stgShockParam ||
@@ -1412,8 +1474,26 @@ inline void runUI(Settings& settings, ShockerHub& hub,
          settings.parameters != stgParameters ||
          settings.chatboxShockEnabled != stgChatboxShockEnabled ||
          settings.chatboxCooldownEnabled != stgChatboxCooldownEnabled);
+
+    // Stats button
+    ImVec4 statsCol = settings.showStats
+                          ? ImVec4(0.13f, 0.34f, 0.52f, 1.f)
+                          : ImGui::GetStyle().Colors[ImGuiCol_Button];
+    ImGui::PushStyleColor(ImGuiCol_Button, statsCol);
+    if (ImGui::Button("Stats", {halfBtn, 0}))
+      settings.showStats = !settings.showStats;
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+
+    // Settings button
     if (settingsDirty)
-      ImGui::PushStyleColor(ImGuiCol_Button, {0.50f, 0.35f, 0.05f, 1.f});
+      ImGui::PushStyleColor(ImGuiCol_Button, {0.52f, 0.36f, 0.06f, 1.f});
+    else if (showSettings)
+      ImGui::PushStyleColor(ImGuiCol_Button, {0.13f, 0.34f, 0.52f, 1.f});
+    else
+      ImGui::PushStyleColor(ImGuiCol_Button,
+                            ImGui::GetStyle().Colors[ImGuiCol_Button]);
+
     if (ImGui::Button(settingsDirty ? "Settings *" : "Settings", {-1, 0})) {
       if (!showSettings) {
         openSettingsModal();
@@ -1421,18 +1501,17 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       } else
         closeSettingsModal();
     }
-    if (settingsDirty) ImGui::PopStyleColor();
-
-    if (showSettings)
-      ImGui::SetItemTooltip("Will close settings without saving.");
+    ImGui::PopStyleColor();
+    if (showSettings) ImGui::SetItemTooltip("Close without saving");
 
     ImGui::EndChild();
 
-    // Curve editor
+    // ── Curve editor ────────────────────────────────────────────────────────
     ImGui::SameLine();
-    ImGui::BeginChild("##plot", {settings.windowW - 220.f, -bottomH}, false);
+    ImGui::BeginChild(
+        "##plot", {settings.windowW - leftPanelWidth - 20.f, -bottomH}, false);
 
-    // Curve selector bar
+    // Curve tab bar
     {
       auto saveCurrentCurve = [&]() {
         if (currentCurveIndex >= 0 &&
@@ -1445,14 +1524,25 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         }
       };
 
-      float tabButtonWidth = fontSize * 4.f;
+      float tabButtonWidth = fontSize * 4.2f;
       static int wantsRenameCurve = -1;
       static char renameCurveBuf[256] = {};
 
       for (int i = 0; i < (int)settings.curves.size(); i++) {
         bool isCurrent = (currentCurveIndex == i);
-        if (isCurrent)
-          ImGui::PushStyleColor(ImGuiCol_Button, {0.17f, 0.54f, 0.34f, 1.f});
+
+        // Active tab: accent color; inactive: subtle
+        if (isCurrent) {
+          ImGui::PushStyleColor(ImGuiCol_Button,
+                                ImGui::GetStyle().Colors[ImGuiCol_TabActive]);
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                ImGui::GetStyle().Colors[ImGuiCol_TabHovered]);
+        } else {
+          ImGui::PushStyleColor(ImGuiCol_Button,
+                                ImGui::GetStyle().Colors[ImGuiCol_Tab]);
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                ImGui::GetStyle().Colors[ImGuiCol_TabHovered]);
+        }
 
         std::string label = settings.curves[i].name.empty()
                                 ? ("Curve " + std::to_string(i + 1))
@@ -1460,21 +1550,18 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
         if (ImGui::Button(label.c_str(), {tabButtonWidth, 0})) {
           saveCurrentCurve();
-
           currentCurveIndex = i;
-
-          // Load the selected curve's per-curve data
-          hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
-          xViewMin = settings.curves[currentCurveIndex].xViewMin;
-          xViewMax = settings.curves[currentCurveIndex].xViewMax;
-          minDur = settings.curves[currentCurveIndex].minShockDuration;
-          maxDur = settings.curves[currentCurveIndex].maxShockDuration;
-
+          hub.curvePoints = settings.curves[i].curvePoints;
+          xViewMin = settings.curves[i].xViewMin;
+          xViewMax = settings.curves[i].xViewMax;
+          minDur = settings.curves[i].minShockDuration;
+          maxDur = settings.curves[i].maxShockDuration;
           settings.minShockDuration = minDur;
           settings.maxShockDuration = maxDur;
         }
 
-        // Right-click menu
+        ImGui::PopStyleColor(2);
+
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
           ImGui::OpenPopup(("##curve_menu" + std::to_string(i)).c_str());
 
@@ -1489,8 +1576,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             Preset cloned = settings.curves[i];
             cloned.name = cloned.name + " (copy)";
             settings.curves.push_back(cloned);
-            // Add cloned version to all saved presets, matching by source
-            // name
             std::string srcName = settings.curves[i].name;
             for (auto& p : settings.presets) {
               if (!p.has_value()) continue;
@@ -1530,7 +1615,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                     dst.xViewMax = srcCurve.xViewMax;
                     dst.minShockDuration = srcCurve.minShockDuration;
                     dst.maxShockDuration = srcCurve.maxShockDuration;
-                    // If this is the active curve, update live UI state too
                     if (i == currentCurveIndex) {
                       hub.curvePoints = dst.curvePoints;
                       xViewMin = dst.xViewMin;
@@ -1552,14 +1636,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             saveCurrentCurve();
             std::string deletedName = settings.curves[i].name;
             settings.curves.erase(settings.curves.begin() + i);
-            // Ensure at least one curve always exists
             if (settings.curves.empty()) {
               settings.curves.push_back(Preset());
               settings.curves[0].name = "Default";
             }
             if (currentCurveIndex >= (int)settings.curves.size())
               currentCurveIndex = (int)settings.curves.size() - 1;
-            // Remove matching curve from all saved presets
             for (auto& p : settings.presets) {
               if (!p.has_value()) continue;
               auto& pc = p->curves;
@@ -1575,11 +1657,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
               if (p->activeCurveIndex >= (int)pc.size())
                 p->activeCurveIndex = std::max(0, (int)pc.size() - 1);
             }
-            // Fallback any parameters that pointed at the deleted curve
-            for (auto& param : settings.parameters) {
+            for (auto& param : settings.parameters)
               if (param.curveIndex >= (int)settings.curves.size())
                 param.curveIndex = 0;
-            }
             hub.curvePoints = settings.curves[currentCurveIndex].curvePoints;
             xViewMin = settings.curves[currentCurveIndex].xViewMin;
             xViewMax = settings.curves[currentCurveIndex].xViewMax;
@@ -1592,19 +1672,19 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGui::EndPopup();
         }
 
-        if (isCurrent) ImGui::PopStyleColor();
         ImGui::SameLine();
       }
-      // Add new curve
-      if (ImGui::Button("+", {tabButtonWidth, 0})) {
+
+      // Add curve button
+      ImGui::PushStyleColor(ImGuiCol_Button,
+                            ImGui::GetStyle().Colors[ImGuiCol_Tab]);
+      if (ImGui::Button("  +  ", {0, 0})) {
         saveCurrentCurve();
         Preset newCurve;
         newCurve.name = "Curve " + std::to_string(settings.curves.size() + 1);
         settings.curves.push_back(newCurve);
-        // Add a default version of the new curve to all saved presets
-        for (auto& p : settings.presets) {
+        for (auto& p : settings.presets)
           if (p.has_value()) p->curves.push_back(newCurve);
-        }
         currentCurveIndex = (int)settings.curves.size() - 1;
         hub.curvePoints = newCurve.curvePoints;
         xViewMin = newCurve.xViewMin;
@@ -1614,8 +1694,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         settings.save(settingsPath);
       }
       ImGui::SetItemTooltip("Add new curve");
+      ImGui::PopStyleColor();
 
-      // Rename popup
       if (wantsRenameCurve >= 0 && !ImGui::IsPopupOpen("##rename_curve_modal"))
         ImGui::OpenPopup("##rename_curve_modal");
       if (ImGui::BeginPopup("##rename_curve_modal")) {
@@ -1627,12 +1707,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
               wantsRenameCurve < (int)settings.curves.size()) {
             std::string oldName = settings.curves[wantsRenameCurve].name;
             settings.curves[wantsRenameCurve].name = renameCurveBuf;
-            // Sync the rename to all saved presets
             for (auto& p : settings.presets) {
               if (!p.has_value()) continue;
-              for (auto& pc : p->curves) {
+              for (auto& pc : p->curves)
                 if (pc.name == oldName) pc.name = renameCurveBuf;
-              }
             }
           }
           settings.save(settingsPath);
@@ -1657,19 +1735,19 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     if (curveCache.size() != settings.curves.size())
       curveCache.resize(settings.curves.size());
+
     if (ImPlot::BeginPlot(" ", {-1, -sliderH})) {
       ImPlot::SetupAxes("Intensity (%)", "Weight", ImPlotAxisFlags_NoGridLines,
                         ImPlotAxisFlags_NoGridLines);
       ImPlot::SetupAxisLimits(ImAxis_X1, xViewMin - 1.0, xViewMax + 1.0,
                               ImPlotCond_Always);
-      ImPlot::SetupAxisLimits(
-          ImAxis_Y1, -0.02, 1.02,
-          ImPlotCond_Always);  // Limits just slightly above 1.0 of the plot to
-                               // make sure 100% is reachable
+      ImPlot::SetupAxisLimits(ImAxis_Y1, -0.02, 1.02, ImPlotCond_Always);
       ImPlot::SetupLegend(ImPlotLocation_NorthEast, ImPlotLegendFlags_None);
       ImPlot::SetupFinish();
 
       ImDrawList* dl = ImPlot::GetPlotDrawList();
+
+      // Centered bold title
       const char* title = "Intensity Curve";
       ImVec2 plot_pos = ImPlot::GetPlotPos();
       ImVec2 plot_size = ImPlot::GetPlotSize();
@@ -1690,6 +1768,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                     title);
 
       ImPlot::PushPlotClipRect();
+      // Gradient background
       ImVec2 pmin = ImPlot::PlotToPixels({0, 0});
       ImVec2 pmax = ImPlot::PlotToPixels({100, 1});
       dl->AddRectFilledMultiColor(
@@ -1701,12 +1780,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImPlot::PopPlotClipRect();
 
       {
-        // Sort + cache curve
         auto sorted = pts;
         std::sort(
             sorted.begin(), sorted.end(),
             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
-        auto& cache = curveCache[currentCurveIndex];  // Per curve cache
+        auto& cache = curveCache[currentCurveIndex];
         if (sorted != cache.lastPts) {
           cache.lastPts = sorted;
           auto curve = bezierInterpolate(sorted[0], sorted[1], sorted[2]);
@@ -1733,8 +1811,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImPlot::PushPlotClipRect();
         ImDrawList* dl2 = ImPlot::GetPlotDrawList();
 
-        // Manual grid on top of gradient
-        ImU32 gridCol = ImGui::ColorConvertFloat4ToU32(ImVec4(1, 1, 1, 0.25f));
+        // Subtle grid
+        ImU32 gridCol = IM_COL32(255, 255, 255, 22);
         for (int x = 0; x <= 100; x += 10) {
           ImVec2 p0 = ImPlot::PlotToPixels({(double)x, 0.0});
           ImVec2 p1 = ImPlot::PlotToPixels({(double)x, 1.0});
@@ -1747,7 +1825,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           dl2->AddLine(p0, p1, gridCol, 1.f);
         }
 
-        // Dashed vertical lines for min/max
+        // Dashed min/max lines
         auto drawDashedV = [&](double x, ImVec4 col, float thickness) {
           ImVec2 top = ImPlot::PlotToPixels({x, 1.0});
           ImVec2 bot = ImPlot::PlotToPixels({x, 0.0});
@@ -1765,6 +1843,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImPlot::SetNextLineStyle(settings.curveLineColor, settings.lineWidth);
         ImPlot::PlotLine("##curve", cache.cx.data(), cache.cy.data(),
                          (int)cache.cx.size());
+
         for (int i = 0; i < 3; i++) {
           ImPlot::DragPoint(i, &pts[i].x, &pts[i].y, settings.markerColor,
                             settings.touchMarkerSize / 15.f,
@@ -1780,10 +1859,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       savedPlotPos = ImPlot::GetPlotPos();
       savedPlotSize = ImPlot::GetPlotSize();
-
       ImPlot::EndPlot();
     }
 
+    // X Scale range slider
     {
       ImVec2 sc = ImGui::GetCursorScreenPos();
       float gap = ImGui::GetStyle().ItemSpacing.y;
@@ -1793,12 +1872,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           {plotFramePos.x + plotFrameWidth - 1.f, sc.y + sliderRowH},
           ImGui::ColorConvertFloat4ToU32(settings.outsideCurveBg));
       ImGui::GetWindowDrawList()->AddText(
-          {plotFramePos.x + 6,
+          {plotFramePos.x + 8,
            sc.y +
                (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f +
                2},
           ImGui::ColorConvertFloat4ToU32(
-              ImGui::GetStyle().Colors[ImGuiCol_Text]),
+              ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]),
           "X Scale");
       ImGui::SetCursorScreenPos({savedPlotPos.x, sc.y + 2});
       drawRangeSliderFloat("##xrange", &xViewMin, &xViewMax, 0.f, 100.f,
@@ -1809,7 +1888,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     ImGui::EndChild();
 
-    // Log bar
+    // ── Log bar ──────────────────────────────────────────────────────────────
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - rowH - logH - sepH -
                          ImGui::GetStyle().WindowPadding.y);
     ImGui::Separator();
@@ -1823,78 +1902,86 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
 
-    // Status bar
+    // ── Status bar ───────────────────────────────────────────────────────────
     ImGui::Separator();
     {
       ImGui::SetCursorPosY(ImGui::GetWindowHeight() - rowH);
+
+      ImDrawList* dl2 = ImGui::GetWindowDrawList();
       float cy2 = ImGui::GetCursorScreenPos().y +
                   ImGui::GetTextLineHeight() * 0.5f + 2.f;
       float cx2 = ImGui::GetCursorScreenPos().x;
-      ImDrawList* dl2 = ImGui::GetWindowDrawList();
 
-      // Connection circle
-      ImU32 connCol = hub.isConnected ? IM_COL32(60, 220, 80, 255)
-                                      : IM_COL32(220, 60, 60, 255);
-      ImU32 glowCol = hub.isConnected ? IM_COL32(60, 220, 80, 45)
-                                      : IM_COL32(220, 60, 60, 45);
-      dl2->AddCircleFilled({cx2 + 7.f, cy2}, 9.f, glowCol);  // Glow halo
-      dl2->AddCircleFilled({cx2 + 7.f, cy2}, 5.f, connCol);
+      // Connection dot with glow
+      if (hub.isConnected) {
+        dl2->AddCircleFilled({cx2 + 7.f, cy2}, 10.f, IM_COL32(60, 220, 80, 30));
+        dl2->AddCircleFilled({cx2 + 7.f, cy2}, 5.5f,
+                             IM_COL32(60, 220, 80, 255));
+      } else {
+        dl2->AddCircleFilled({cx2 + 7.f, cy2}, 10.f, IM_COL32(220, 60, 60, 30));
+        dl2->AddCircleFilled({cx2 + 7.f, cy2}, 5.5f,
+                             IM_COL32(220, 60, 60, 255));
+      }
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20.f);
-      if (!hub.shocksDisabled)
-        ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
+
+      if (hub.shocksDisabled)
+        ImGui::TextColored({1.f, 0.28f, 0.28f, 1.f}, "SHOCKS DISABLED");
       else
-        ImGui::TextColored({1.f, 0.3f, 0.3f, 1.f}, "SHOCKS DISABLED");
+        ImGui::Text(hub.isConnected ? "Connected" : "Disconnected");
 
-      ImGui::SameLine(0, 12);
+      ImGui::SameLine(0, 14);
       ImGui::TextDisabled("|");
-      ImGui::SameLine(0, 12);
+      ImGui::SameLine(0, 14);
 
-      // \xe2\x9a\xa1 = ⚡ symbol
+      // Session shock count with lightning icon
       ImGui::TextColored(settings.curveLineColor, "\xe2\x9a\xa1 %d",
                          gStats.sessionShocks);
 
-      ImGui::SameLine(0, 12);
+      ImGui::SameLine(0, 14);
       ImGui::TextDisabled("|");
-      ImGui::SameLine(0, 12);
+      ImGui::SameLine(0, 14);
 
-      // Cooldown indicator
+      // Cooldown
       if (settings.cooldownEnabled) {
         double rem =
             std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
         if (rem > 0.0)
-          ImGui::TextColored({1.f, 0.4f, 0.4f, 1.f}, "Cooldown: %.1fs", rem);
+          ImGui::TextColored({1.f, 0.45f, 0.45f, 1.f}, "CD: %.1fs", rem);
         else
-          ImGui::TextDisabled("Cooldown: 0.0s");
+          ImGui::TextDisabled("CD: 0.0s");
 
         ImGui::SameLine(0, 8);
 
-        // Cooldown bar
-        double remaining =
-            std::max(0.0, hub.cooldownUntil.load() - hub.getCurrentTime());
-        float fraction = (float)(remaining / settings.maxCooldown);
-        float height = 3.f, textH = ImGui::GetTextLineHeight();
+        // Thin cooldown bar
+        float textH = ImGui::GetTextLineHeight();
         ImVec2 p = ImGui::GetCursorScreenPos();
-        p.y += (textH - height) * 0.7f;
-        float len = ImGui::GetContentRegionAvail().x * 0.28f;
-        float rnd = height * 0.5f;
-        dl2->AddRectFilled(p, {p.x + len, p.y + height},
+        p.y += (textH - 4.f) * 0.75f;
+        float fraction = (float)(rem / std::max(1, settings.maxCooldown));
+        float barLen = ImGui::GetContentRegionAvail().x * 0.26f;
+        float rnd = 2.f;
+        dl2->AddRectFilled(p, {p.x + barLen, p.y + 4.f},
                            ImGui::ColorConvertFloat4ToU32(
                                ImGui::GetStyle().Colors[ImGuiCol_FrameBg]),
                            rnd);
-        if (fraction > 0.f)
-          dl2->AddRectFilled(p, {p.x + len * fraction, p.y + height},
-                             IM_COL32(220, 80, 80, 220), rnd);
-        ImGui::Dummy({len, height});
+        if (fraction > 0.f) {
+          // Gradient bar: yellow → red
+          ImU32 barLeft = IM_COL32(230, 190, 50, 230);
+          ImU32 barRight = IM_COL32(220, 60, 60, 230);
+          dl2->AddRectFilledMultiColor(p, {p.x + barLen * fraction, p.y + 4.f},
+                                       barLeft, barRight, barRight, barLeft);
+        }
+        ImGui::Dummy({barLen + 4.f, 4.f});
       }
 
-      // Right-align version
-      float verW = ImGui::CalcTextSize("v" APP_VERSION).x;
+      // Version (right-aligned)
+      float verW = ImGui::CalcTextSize("v" APP_VERSION).x + 4.f;
       ImGui::SameLine(ImGui::GetContentRegionMax().x - verW);
       ImGui::TextDisabled("v" APP_VERSION);
     }
 
     ImGui::End();
 
+    // Auto-update
     if (updateReady.exchange(false)) {
 #ifdef _WIN32
       Updater::applyAndRestart(nullptr);
@@ -1904,6 +1991,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       glfwSetWindowShouldClose(g_window, 1);
     }
 
+    // commitAll lambda
     auto commitAll = [&]() {
       settings.shockParameter = stgShockParam;
       settings.secondShockParameter = stgSecondParam;
@@ -1941,9 +2029,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.save(settingsPath);
     };
 
-    // Settings panel
+    // ── Settings panel ───────────────────────────────────────────────────────
     if (showSettings) {
-      float sPanelW = settingsAnim * 542.f;
+      float sPanelW = settingsAnim * 556.f;
       ImGui::SetNextWindowSize({sPanelW, (float)settings.windowH - 40},
                                ImGuiCond_Always);
       ImGui::SetNextWindowPos({statsW + (float)settings.windowW, 0.f},
@@ -1952,55 +2040,99 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                        ImGuiWindowFlags_NoTitleBar);
 
-      ImGui::BeginChild("##settingsscroll", {0, -56}, false);
-      ImGui::TextDisabled("(?) Hover for details | CTRL+Z/Y to Undo/Redo");
+      float settFooterH = ImGui::GetFrameHeightWithSpacing() +
+                          ImGui::GetTextLineHeightWithSpacing() +
+                          ImGui::GetStyle().ItemSpacing.y * 2.f + 6.f;
+      ImGui::BeginChild("##settingsscroll", {0, -settFooterH}, false);
+
+      // Top hint row
+      ImGui::TextDisabled(
+          "\xe2\x84\xb9  Hover items for details   \xe2\x86\xba Ctrl+Z/Y "
+          "undo/redo");
       ImGui::Spacing();
 
-      // OSC / Avatar
+      // ── OSC / Avatar ──────────────────────────────────────────────────────
       ImGui::SeparatorText("OSC / Avatar");
 
       std::vector<std::string> curveNames;
-      curveNames.reserve(settings.curves.size());
-      for (int ci = 0; ci < (int)settings.curves.size(); ++ci) {
+      for (int ci = 0; ci < (int)settings.curves.size(); ++ci)
         curveNames.push_back(settings.curves[ci].name.empty()
                                  ? ("Curve " + std::to_string(ci + 1))
                                  : settings.curves[ci].name);
-      }
       std::vector<const char*> curveNamePtrs;
-      curveNamePtrs.reserve(curveNames.size());
       for (auto& name : curveNames) curveNamePtrs.push_back(name.c_str());
 
       for (int i = 0; i < (int)stgParameters.size(); ++i) {
         auto& param = stgParameters[i];
         ImGui::PushID(i);
-        char paramNameBuf[128] = {};
-        snprintf(paramNameBuf, sizeof(paramNameBuf), "%s", param.name.c_str());
-        if (ImGui::InputText("Parameter name", paramNameBuf,
-                             sizeof(paramNameBuf)))
-          param.name = paramNameBuf;
-        if (param.curveIndex < 0) param.curveIndex = 0;
-        if (param.curveIndex >= (int)curveNamePtrs.size())
-          param.curveIndex = std::max(0, (int)curveNamePtrs.size() - 1);
-        if (!curveNamePtrs.empty()) {
-          ImGui::Combo("Curve", &param.curveIndex, curveNamePtrs.data(),
-                       curveNamePtrs.size());
-        } else {
-          ImGui::TextDisabled("No curves available. Create a preset first.");
+
+        // Parameter header
+        float paramH = ImGui::GetFrameHeightWithSpacing() * 3.8f +
+                       ImGui::GetStyle().WindowPadding.y * 2.f;
+        ImGui::PushStyleColor(ImGuiCol_ChildBg,
+                              ImVec4(settings.accentColor.x * 0.08f,
+                                     settings.accentColor.y * 0.08f,
+                                     settings.accentColor.z * 0.12f, 1.f));
+        ImGui::BeginChild(("##param" + std::to_string(i)).c_str(), {-1, paramH},
+                          true, ImGuiWindowFlags_None);
+
+        // Inline name + delete button
+        {
+          char paramNameBuf[128] = {};
+          snprintf(paramNameBuf, sizeof(paramNameBuf), "%s",
+                   param.name.c_str());
+          ImGui::SetNextItemWidth(-60.f);
+          if (ImGui::InputText("##pname", paramNameBuf, sizeof(paramNameBuf)))
+            param.name = paramNameBuf;
+          ImGui::SameLine();
+          ImGui::PushStyleColor(ImGuiCol_Button, {0.45f, 0.10f, 0.10f, 1.f});
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                {0.65f, 0.15f, 0.15f, 1.f});
+          bool del = ImGui::Button("Del##p");
+          ImGui::PopStyleColor(2);
+          if (del) {
+            stgParameters.erase(stgParameters.begin() + i);
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            ImGui::PopID();
+            break;
+          }
         }
 
-        const char* rangeNames[] = {"Full Curve", "First Half", "Second Half"};
-        int rangeIndex = (int)param.range;
-        ImGui::Combo("Range", &rangeIndex, rangeNames,
-                     IM_ARRAYSIZE(rangeNames));
-        param.range = static_cast<CurveRange>(rangeIndex);
+        // Curve + Range side by side
+        if (!curveNamePtrs.empty()) {
+          float halfw = (ImGui::GetContentRegionAvail().x -
+                         ImGui::GetStyle().ItemSpacing.x) *
+                        0.5f;
+          ImGui::SetNextItemWidth(halfw);
+          if (param.curveIndex < 0) param.curveIndex = 0;
+          if (param.curveIndex >= (int)curveNamePtrs.size())
+            param.curveIndex = std::max(0, (int)curveNamePtrs.size() - 1);
+          ImGui::Combo("##pcurve", &param.curveIndex, curveNamePtrs.data(),
+                       curveNamePtrs.size());
+          ImGui::SetItemTooltip("Intensity curve for this parameter");
+          ImGui::SameLine();
+          const char* rangeNames[] = {"Full", "Low Half", "High Half"};
+          int rangeIndex = (int)param.range;
+          ImGui::SetNextItemWidth(-1);
+          ImGui::Combo("##prange", &rangeIndex, rangeNames,
+                       IM_ARRAYSIZE(rangeNames));
+          ImGui::SetItemTooltip("Intensity range to sample from");
+          param.range = static_cast<CurveRange>(rangeIndex);
+        } else {
+          ImGui::TextDisabled("No curves - create a preset first.");
+        }
 
+        // Shocker IDs for this parameter
         {
           std::string shockerStr;
           for (int j = 0; j < (int)param.shockerIDs.size(); j++)
             shockerStr += (j ? ", " : "") + param.shockerIDs[j];
           char shockerBuf[512] = {};
           snprintf(shockerBuf, sizeof(shockerBuf), "%s", shockerStr.c_str());
-          if (ImGui::InputText("Shocker IDs", shockerBuf, sizeof(shockerBuf))) {
+          ImGui::SetNextItemWidth(-1);
+          if (ImGui::InputTextWithHint("##pids", "Shocker IDs (blank = global)",
+                                       shockerBuf, sizeof(shockerBuf))) {
             param.shockerIDs.clear();
             std::istringstream ss(shockerBuf);
             std::string tok;
@@ -2011,242 +2143,175 @@ inline void runUI(Settings& settings, ShockerHub& hub,
             }
           }
           ImGui::SetItemTooltip(
-              "Shocker IDs for this parameter only.\n"
-              "Leave empty to use the global list from Hardware settings.");
-          ImGui::Checkbox("Sequential order (vs Random)##seq",
-                          &param.randomOrSeq);
+              "Leave empty to use the global shocker list.\n"
+              "Separate multiple IDs with commas.");
+          ImGui::Checkbox("Sequential##pseq", &param.randomOrSeq);
           ImGui::SetItemTooltip(
-              "Sequential cycling vs random for this parameter's shockers.");
+              "Cycle shockers sequentially instead of randomly.");
         }
 
-        if (ImGui::Button("Delete")) {
-          stgParameters.erase(stgParameters.begin() + i);
-          ImGui::PopID();
-          break;
-        }
-        ImGui::Separator();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
         ImGui::PopID();
+        ImGui::Spacing();
       }
 
-      if (ImGui::Button(" + ")) stgParameters.emplace_back();
-      ImGui::SetItemTooltip("Add a new OSC parameter mapping");
+      if (ImGui::Button("  + Add Parameter  ")) stgParameters.emplace_back();
       ImGui::SameLine();
-      ImGui::TextDisabled("Use a unique parameter name.");
+      ImGui::TextDisabled("Each maps an OSC param to a curve + shockers.");
 
       if (stgParameters.empty())
-        ImGui::TextDisabled("No parameters configured yet.");
-      ImGui::TextDisabled("Changes here require a restart");
-
+        ImGui::TextColored({1.f, 0.6f, 0.2f, 1.f},
+                           "No parameters configured. Add one above.");
+      ImGui::TextDisabled("Changes require restart.");
       ImGui::Spacing();
 
-      // Hardware
+      // ── Hardware ──────────────────────────────────────────────────────────
       ImGui::SeparatorText("Hardware");
 
-      // Backend toggle: Openshock | PiShock
-      if (!stgUsePishock)
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-      else
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
-      if (ImGui::Button("OpenShock", {100, 0})) stgUsePishock = false;
-      ImGui::PopStyleColor();
-      ImGui::SameLine(0, 0);
-      if (stgUsePishock)
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-      else
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
-      if (ImGui::Button("PiShock##hw", {100, 0})) stgUsePishock = true;
-      ImGui::PopStyleColor();
+      // Backend selector
+      ImGui::TextDisabled("Backend:");
       ImGui::SameLine();
-      ImGui::Text("Backend/Hub");
+      auto toggleBtn = [&](const char* label, bool active,
+                           float w = 110.f) -> bool {
+        ImVec4 col = active ? ImVec4(0.13f, 0.48f, 0.30f, 1.f)
+                            : ImGui::GetStyle().Colors[ImGuiCol_Button];
+        ImGui::PushStyleColor(ImGuiCol_Button, col);
+        ImGui::PushStyleColor(
+            ImGuiCol_ButtonHovered,
+            {col.x + 0.09f, col.y + 0.09f, col.z + 0.09f, 1.f});
+        bool clicked = ImGui::Button(label, {w, 0});
+        ImGui::PopStyleColor(2);
+        return clicked;
+      };
+
+      if (toggleBtn("OpenShock", !stgUsePishock)) stgUsePishock = false;
+      ImGui::SameLine(0, 2);
+      if (toggleBtn("PiShock##hw", stgUsePishock)) stgUsePishock = true;
 
       ImGui::Spacing();
-
-      // Connection mode toggle: Serial | API
-      if (stgUseSerial)
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-      else
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
-      if (ImGui::Button("Serial##cm", {100, 0})) stgUseSerial = true;
-      ImGui::PopStyleColor();
-      ImGui::SameLine(0, 0);
-      if (!stgUseSerial)
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-      else
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImGui::GetStyle().Colors[ImGuiCol_Button]);
-      if (ImGui::Button("API##cm", {100, 0})) stgUseSerial = false;
-      ImGui::PopStyleColor();
+      ImGui::TextDisabled("Mode:");
       ImGui::SameLine();
-      ImGui::Text("Connection Mode");
-
+      if (toggleBtn("Serial##cm", stgUseSerial)) stgUseSerial = true;
+      ImGui::SameLine(0, 2);
+      if (toggleBtn("API##cm", !stgUseSerial)) stgUseSerial = false;
       ImGui::Spacing();
 
       if (stgUseSerial) {
-        ImGui::InputTextWithHint("Serial Port##s", "(blank = auto)",
+        ImGui::InputTextWithHint("Serial Port", "(blank = auto-detect)",
                                  stgSerialPort, sizeof(stgSerialPort));
-        ImGui::SetItemTooltip("Leave blank to auto-detect");
-        ImGui::InputText("Shocker IDs (#, #, ...)##s", stgShockerIDs,
-                         sizeof(stgShockerIDs));
-        ImGui::SetItemTooltip(
-            "Shocker IDs as found on the PiShock or OpenShock website.\n"
-            "Separate with comma");
-        ImGui::Checkbox("Sequential shocker order (vs Random)",
-                        &stgRandomOrSeq);
-        ImGui::SetItemTooltip(
-            "If using multiple shockers, this option chooses between "
-            "randomizing or using them sequentially\n"
-            "No for random // Yes for sequential");
+        ImGui::InputTextWithHint("Shocker IDs", "ID, ID, ...", stgShockerIDs,
+                                 sizeof(stgShockerIDs));
+        ImGui::SetItemTooltip("Comma-separated shocker IDs.");
+        ImGui::Checkbox("Sequential order (vs Random)##seq", &stgRandomOrSeq);
       } else {
         if (stgUsePishock) {
           ImGui::InputText("Username##psa", stgPishockUser,
                            sizeof(stgPishockUser));
-          ImGui::SetItemTooltip("Your PiShock account username");
+          ImGui::SetNextItemWidth(-36.f);
           ImGui::InputText("API Key##psk", stgPishockKey, sizeof(stgPishockKey),
                            ImGuiInputTextFlags_Password);
-          ImGui::SetItemTooltip(
-              "Your PiShock API key (from Account > API Access)");
           ImGui::SameLine();
           ImGui::TextLinkOpenURL("?", "https://login.pishock.com/Account");
-          ImGui::InputText("Shocker IDs (ID, ID, ...)##ps", stgShockerIDs,
-                           sizeof(stgShockerIDs));
-          ImGui::SetItemTooltip(
-              "Share ID(s) for each shocker, comma-separated.\n"
-              "Found on the PiShock website under your shocker.\nIf left "
-              "empty, will try to get the IDs automatically");
+          ImGui::InputTextWithHint("Shocker IDs##ps",
+                                   "ID, ID, ... (blank = auto)", stgShockerIDs,
+                                   sizeof(stgShockerIDs));
         } else {
+          ImGui::SetNextItemWidth(-36.f);
           ImGui::InputText("API Token##ost", stgOpenshockToken,
                            sizeof(stgOpenshockToken),
                            ImGuiInputTextFlags_Password);
-          ImGui::SetItemTooltip(
-              "Your OpenShock API token.\n"
-              "Create one at your OpenShock dashboard under API Tokens.");
           ImGui::SameLine();
           ImGui::TextLinkOpenURL("?",
                                  "https://openshock.app/#/dashboard/tokens");
-          ImGui::InputText("Server URL##oss", stgOpenshockServer,
-                           sizeof(stgOpenshockServer));
+          ImGui::InputTextWithHint("Server URL##oss", "api.openshock.app",
+                                   stgOpenshockServer,
+                                   sizeof(stgOpenshockServer));
+          ImGui::InputTextWithHint("Shocker IDs##os",
+                                   "UUID, UUID, ... (blank = auto)",
+                                   stgShockerIDs, sizeof(stgShockerIDs));
           ImGui::SetItemTooltip(
-              "OpenShock server hostname\n"
-              "Default: api.openshock.app");
-          ImGui::InputText("Shocker IDs (uuid, uuid, ...)##os", stgShockerIDs,
-                           sizeof(stgShockerIDs));
-          ImGui::SetItemTooltip(
-              "Shocker UUID(s) from your OpenShock dashboard, "
-              "comma-separated.\nIf left empty, will find them automatically "
-              "using the API\nDO NOT MISTAKE THIS FOR SHOCKER IDs\nThe UUID "
-              "is the long string of text and dashes");
+              "UUID from OpenShock dashboard — the long string with dashes.\n"
+              "Leave empty to find automatically.");
         }
-        ImGui::Checkbox("Sequential shocker order (vs Random)",
+        ImGui::Checkbox("Sequential order (vs Random)##seqapi",
                         &stgRandomOrSeq);
-        ImGui::SetItemTooltip(
-            "If using multiple shockers, this option chooses between "
-            "randomizing or using them sequentially\n"
-            "No for random // Yes for sequential");
       }
-      ImGui::TextDisabled("Changes here require a restart");
+      ImGui::TextDisabled("Changes require restart.");
       ImGui::Spacing();
 
-      // Notification
+      // ── VR Notifications ──────────────────────────────────────────────────
       ImGui::SeparatorText("Notifications");
-
 #ifdef _WIN32
-      ImGui::Checkbox("Enable##notif", &stgNotifEnabled);
-      ImGui::SetItemTooltip(
-          "Send a VR notification showing shock strength and duration");
+      ImGui::Checkbox("Enable VR notifications##notif", &stgNotifEnabled);
+      ImGui::SetItemTooltip("Shows shock strength + duration in VR overlay");
       if (stgNotifEnabled) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("Provider:");
-        ImGui::SameLine();
-
-        if (!stgNotifUseOvr)
-          ImGui::PushStyleColor(
-              ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-        else
-          ImGui::PushStyleColor(ImGuiCol_Button,
-                                ImGui::GetStyle().Colors[ImGuiCol_Button]);
-
-        if (ImGui::Button("XSOverlay##np", {90, 0})) stgNotifUseOvr = false;
-        ImGui::PopStyleColor();
-
-        ImGui::SameLine(0, 0);
-
-        if (stgNotifUseOvr)
-          ImGui::PushStyleColor(
-              ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-        else
-          ImGui::PushStyleColor(ImGuiCol_Button,
-                                ImGui::GetStyle().Colors[ImGuiCol_Button]);
-
-        if (ImGui::Button("OVRToolkit##np", {90, 0})) stgNotifUseOvr = true;
-        ImGui::PopStyleColor();
+        ImGui::SameLine(0, 12);
+        ImGui::TextDisabled("via:");
+        ImGui::SameLine(0, 8);
+        if (toggleBtn("XSOverlay##np", !stgNotifUseOvr, 90.f))
+          stgNotifUseOvr = false;
+        ImGui::SameLine(0, 2);
+        if (toggleBtn("OVRToolkit##np", stgNotifUseOvr, 90.f))
+          stgNotifUseOvr = true;
       }
 #else
-      ImGui::Checkbox("Enable WayVR Notifications##notif", &stgNotifEnabled);
-      ImGui::SetItemTooltip(
-          "Send a VR notification showing shock strength and duration");
-
-      if (stgNotifEnabled) {
-        ImGui::TextDisabled("Example notification:");
-        ImGui::TextDisabled("⚡ Shock");
-        ImGui::TextDisabled("37%% | 1.3s");
-      }
-
+      ImGui::Checkbox("Enable WayVR notifications##notif", &stgNotifEnabled);
+      ImGui::SetItemTooltip("Shows shock strength + duration in WayVR overlay");
       stgNotifUseOvr = false;
 #endif
       ImGui::Spacing();
 
-      // Cooldown
+      // ── Cooldown ──────────────────────────────────────────────────────────
       ImGui::SeparatorText("Cooldown");
-      ImGui::SliderInt("Base Cooldown (s)##s", &stgBaseCooldown, 1, 15);
+      ImGui::SetNextItemWidth(-1);
+      ImGui::SliderInt("Base (s)##cd", &stgBaseCooldown, 1, 15);
       ImGui::SetItemTooltip(
-          "Starting cooldown after each shock.\nFormula: Base + Factor * "
-          "shocks_in_window");
-      ImGui::SliderInt("Max Cooldown (s)##s", &stgMaxCooldown, 1, 30);
+          "Starting cooldown after each shock.\nFormula: base + factor * "
+          "recent_shocks");
+      ImGui::SetNextItemWidth(-1);
+      ImGui::SliderInt("Max (s)##cdm", &stgMaxCooldown, 1, 30);
+      ImGui::SetItemTooltip("Cooldown is capped at this value.");
+      ImGui::SetNextItemWidth(-1);
+      ImGui::SliderFloat("Factor##cdf", &stgCooldownFactor, 0.f, 2.f, "%.2f");
       ImGui::SetItemTooltip(
-          "Cooldown is capped at this value regardless of shock count.");
-      ImGui::SliderFloat("Cooldown Factor##s", &stgCooldownFactor, 0.f, 2.f,
-                         "%.2f");
-      ImGui::SetItemTooltip(
-          "Added to cooldown per shock within the window.\nHigher = longer "
+          "Added to cooldown per shock in the window.\nHigher = longer "
           "cooldown after bursts.");
-      ImGui::SliderInt("Cooldown Window (s)##s", &stgCooldownWindow, 5, 120);
+      ImGui::SetNextItemWidth(-1);
+      ImGui::SliderInt("Window (s)##cdw", &stgCooldownWindow, 5, 120);
       ImGui::SetItemTooltip(
-          "How far back to count shocks for the factor.\nShocks older than "
-          "this are ignored.");
-
+          "How far back to count shocks. Older shocks are ignored.");
       ImGui::Spacing();
 
-      ImGui::SeparatorText("Hotkey");
-      ImGui::TextDisabled("Panic button:");
-      ImGui::SameLine();
-      std::string keyLabel =
-          capturingHotkey
-              ? "Press any key..."
-              : (settings.hotkeyVk ? formatKeyNameFromVk(settings.hotkeyVk,
-                                                         settings.hotkeyMods)
-                                   : "None");
-      if (ImGui::Button(keyLabel.c_str(), {160, 0})) {
-        capturingHotkey = true;
+      // ── Panic Hotkey ──────────────────────────────────────────────────────
+      ImGui::SeparatorText("Panic Hotkey");
+      ImGui::TextDisabled("Disables shocks from anywhere, even unfocused:");
+      ImGui::Spacing();
+      {
+        std::string keyLabel =
+            capturingHotkey
+                ? "Press any key..."
+                : (settings.hotkeyVk ? formatKeyNameFromVk(settings.hotkeyVk,
+                                                           settings.hotkeyMods)
+                                     : "None");
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              capturingHotkey
+                                  ? ImVec4(0.45f, 0.28f, 0.05f, 1.f)
+                                  : ImGui::GetStyle().Colors[ImGuiCol_Button]);
+        if (ImGui::Button(keyLabel.c_str(), {-54.f, 0})) {
+          capturingHotkey = true;
 #ifndef _WIN32
-        unregisterGlobalHotkeyLinux();
+          unregisterGlobalHotkeyLinux();
 #endif
+        }
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        if (ImGui::Button("Clear##hk", {-1, 0})) {
+          settings.hotkeyVk = 0;
+          settings.hotkeyMods = 0;
+        }
+        ImGui::SetItemTooltip("Remove hotkey");
       }
-      ImGui::SetItemTooltip("Hotkey to disable shocks\nWorks anywhere");
-      ImGui::SetItemTooltip("Disables shocks.");
-      ImGui::SameLine();
-      if (ImGui::Button("Clear##hk")) {
-        settings.hotkeyVk = 0;
-        settings.hotkeyMods = 0;
-      }
-      ImGui::SetItemTooltip("Clear the button (disables hotkey)");
-
       if (capturingHotkey) {
         int mods = 0;
         if (glfwGetKey(g_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
@@ -2258,7 +2323,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         if (glfwGetKey(g_window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
             glfwGetKey(g_window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
           mods |= 4;
-
         bool captured = false;
         auto tryKey = [&](int k) {
           if (!captured && glfwGetKey(g_window, k) == GLFW_PRESS) {
@@ -2279,124 +2343,116 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       ImGui::Spacing();
 
-      // Style
-      ImGui::SeparatorText("Style (live preview)");
-      ImGui::SliderInt("Preset Count*##s", &stgPresetCount, 1, 8);
-      ImGui::SetItemTooltip("Amount of presets");
+      // ── Style ─────────────────────────────────────────────────────────────
+      ImGui::SeparatorText("Style");
+      ImGui::SetNextItemWidth(-1);
+      ImGui::SliderInt("Preset Slots*##s", &stgPresetCount, 1, 8);
+      ImGui::SetNextItemWidth(-1);
       ImGui::SliderFloat("Marker Size##s", &settings.touchMarkerSize, 50.f,
                          300.f, "%.0f");
-      ImGui::SetItemTooltip("Size of points in the curve");
-      ImGui::SliderFloat("Curve Line Width##s", &settings.lineWidth, 1.f, 6.f,
+      ImGui::SetNextItemWidth(-1);
+      ImGui::SliderFloat("Curve Width##s", &settings.lineWidth, 1.f, 6.f,
                          "%.1f");
-      ImGui::SetItemTooltip("Width of the curve line");
-
-      auto liftMinLum = [](ImVec4 c, float minLum) {
-        float lum = c.x * 0.299f + c.y * 0.587f + c.z * 0.114f;
-        if (lum < minLum) {
-          float sc = minLum / (lum + 1e-5f);
-          c.x *= sc;
-          c.y *= sc;
-          c.z *= sc;
-        }
-        return ImVec4(std::min(c.x, 1.f), std::min(c.y, 1.f),
-                      std::min(c.z, 1.f), c.w);
-      };
-      ImVec4 base = liftMinLum(settings.accentColor, 0.35f);
-      ImGui::PushStyleColor(
-          ImGuiCol_FrameBg,
-          ImVec4(base.x * 1.25f, base.y * 1.25f, base.z * 1.25f, 1.0f));
-
-      ImGui::ColorEdit4("Background##s", (float*)&settings.backgroundColor,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip("Main window background color.");
-      ImGui::ColorEdit4("Outside Curve BG##s", (float*)&settings.outsideCurveBg,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip("Area outside of the curve/plot UI.");
-      ImGui::ColorEdit4("Accent##s", (float*)&settings.accentColor,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip("Buttons, sliders, checkboxes, input fields.");
-      ImGui::ColorEdit4("Curve Line##s", (float*)&settings.curveLineColor,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip("The bezier curve line.");
-      ImGui::ColorEdit4("Markers##s", (float*)&settings.markerColor,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip("The draggable curve control points.");
-      ImGui::ColorEdit4("Labels##s", (float*)&settings.labelColor,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip("All text labels and axis text.");
-      ImGui::ColorEdit4("Gradient Left##s", (float*)&settings.gradientLeftColor,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip(
-          "Plot background gradient - left/low intensity side.");
-      ImGui::ColorEdit4("Gradient Right##s",
-                        (float*)&settings.gradientRightColor,
-                        ImGuiColorEditFlags_NoInputs);
-      ImGui::SetItemTooltip(
-          "Plot background gradient - right/high intensity side.");
-
-      ImGui::TextDisabled("* - Restart required");
-
-      ImGui::PopStyleColor(1);
-
       ImGui::Spacing();
 
-      // VRChat
+      // Color pickers in 2-column layout
+      ImGui::TextDisabled("Colors (live preview):");
+      ImGui::Spacing();
+
+      if (ImGui::BeginTable("##colors", 2, ImGuiTableFlags_SizingStretchSame)) {
+        auto colorRow = [&](const char* label, ImVec4& col, const char* tip) {
+          ImGui::TableNextColumn();
+          ImGui::ColorEdit4(
+              label, (float*)&col,
+              ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaBar);
+          if (tip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+        };
+        colorRow("Background##s", settings.backgroundColor,
+                 "Main window background");
+        colorRow("Curve BG##s", settings.outsideCurveBg,
+                 "Area outside plot bounds");
+        colorRow("Accent##s", settings.accentColor, "Buttons, sliders, inputs");
+        colorRow("Curve Line##s", settings.curveLineColor, "Bezier curve line");
+        colorRow("Markers##s", settings.markerColor,
+                 "Draggable control points");
+        colorRow("Labels##s", settings.labelColor, "All text and axis labels");
+        colorRow("Gradient L##s", settings.gradientLeftColor,
+                 "Plot gradient — low intensity");
+        colorRow("Gradient R##s", settings.gradientRightColor,
+                 "Plot gradient — high intensity");
+        ImGui::EndTable();
+      }
+      ImGui::TextDisabled("* Requires restart");
+      ImGui::Spacing();
+
+      // ── VRChat ────────────────────────────────────────────────────────────
       ImGui::SeparatorText("VRChat");
-      ImGui::Checkbox("Send shocks to ChatBox", &stgChatboxShockEnabled);
-      ImGui::Checkbox("Send cooldowns to ChatBox", &stgChatboxCooldownEnabled);
-
+      ImGui::Checkbox("Send shocks to ChatBox##cbx", &stgChatboxShockEnabled);
+      ImGui::Checkbox("Send cooldown msgs to ChatBox##cbcd",
+                      &stgChatboxCooldownEnabled);
+      ImGui::Spacing();
+      ImGui::InputTextWithHint("VRChat Host##s", "127.0.0.1", stgVrchatHost,
+                               sizeof(stgVrchatHost));
+      ImGui::SetItemTooltip(
+          "Usually 127.0.0.1. Change only if VRChat is on another machine.");
       ImGui::Spacing();
 
-      ImGui::InputText("VRChat Host##s", stgVrchatHost, sizeof(stgVrchatHost));
-      ImGui::SetItemTooltip("Usually doesn't need a change.");
+      ImGui::EndChild();  // settingsscroll
 
-      ImGui::Spacing();
-
-      ImGui::EndChild();
-
+      // Settings footer
       ImGui::Separator();
-
       if (settingsDirty)
-        ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "* Unsaved changes");
+        ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "  * Unsaved changes");
+      else
+        ImGui::TextDisabled("  No unsaved changes");
       ImGui::Separator();
-      std::string currentIDs;
-      for (int i = 0; i < (int)settings.shockerIDs.size(); i++)
-        currentIDs += (i ? ", " : "") + settings.shockerIDs[i];
+
       bool needsRestart = settings.parameters != stgParameters ||
                           settings.serialPort != stgSerialPort ||
                           settings.usePishock != stgUsePishock ||
                           settings.randomOrSeq != stgRandomOrSeq ||
                           settings.vrchatHost != stgVrchatHost ||
                           settings.presetCount != stgPresetCount ||
-                          currentIDs != stgShockerIDs ||
                           settings.useSerial != stgUseSerial ||
                           settings.pishockUsername != stgPishockUser ||
                           settings.pishockApiKey != stgPishockKey ||
                           settings.openshockApiToken != stgOpenshockToken ||
                           settings.openshockServerUrl != stgOpenshockServer;
 
-      if (needsRestart) {
-        if (ImGui::Button("Save & Restart", {150, 0})) {
-          commitAll();
-          registerPanicHotkey(settings);
-          shouldRestart = true;
-          glfwSetWindowShouldClose(g_window, 1);
+      {
+        float btnW = 130.f;
+        if (needsRestart) {
+          ImGui::PushStyleColor(ImGuiCol_Button, {0.45f, 0.28f, 0.05f, 1.f});
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                {0.60f, 0.36f, 0.08f, 1.f});
+          if (ImGui::Button("Save & Restart", {btnW, 0})) {
+            commitAll();
+            registerPanicHotkey(settings);
+            shouldRestart = true;
+            glfwSetWindowShouldClose(g_window, 1);
+          }
+          ImGui::PopStyleColor(2);
+        } else {
+          ImGui::PushStyleColor(ImGuiCol_Button, {0.13f, 0.48f, 0.30f, 1.f});
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                {0.18f, 0.62f, 0.38f, 1.f});
+          if (ImGui::Button("Save##sett", {btnW, 0})) {
+            commitAll();
+            registerPanicHotkey(settings);
+            showSettings = false;
+          }
+          ImGui::PopStyleColor(2);
         }
-      } else {
-        if (ImGui::Button("Save", {80, 0})) {
-          commitAll();
-          registerPanicHotkey(settings);
-          showSettings = false;
-        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##sett", {90, 0})) closeSettingsModal();
+        ImGui::SetItemTooltip(
+            "Close without saving. Theme changes will revert.");
       }
-      ImGui::SameLine();
-      if (ImGui::Button("Cancel", {80, 0})) closeSettingsModal();
-      ImGui::SetItemTooltip(
-          "Closes settings without saving\nTheme settings will be reverted");
+
       ImGui::End();
     }
 
-    // Stats panel (slides out left)
+    // ── Stats panel ──────────────────────────────────────────────────────────
     if (statsAnim > 0.43f) {
       ImGui::SetNextWindowPos({0.f, 0.f}, ImGuiCond_Always);
       ImGui::SetNextWindowSize({statsW, (float)settings.windowH},
@@ -2425,7 +2481,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::SameLine(112.f);
         ImGui::TextUnformatted(val.c_str());
       };
-
       auto fmtMs = [](double ms) -> std::string {
         int ts = (int)(ms / 1000.0);
         if (ts < 60) return fmt::format("{:.1f}s", ms / 1000.0);
@@ -2442,18 +2497,17 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       row("Shock time", fmtMs(gStats.totalShockDurationMs));
       if (gStats.totalShocks > 0) {
         row("Avg intensity", fmt::format("{:.0f}%", gStats.averageIntensity()));
-        row("Peak intensity", fmt::format("{}%", gStats.highestIntensity));
-        row("Longest shock",
-            fmt::format("{:.1f}s", gStats.longestShockMs / 1000.0));
+        row("Peak", fmt::format("{}%", gStats.highestIntensity));
+        row("Longest", fmt::format("{:.1f}s", gStats.longestShockMs / 1000.0));
       }
-      row("Cooldown blocks", std::to_string(gStats.totalCooldownHits));
+      row("CD blocks", std::to_string(gStats.totalCooldownHits));
 
       ImGui::Spacing();
-      ImGui::SeparatorText("This Session");
+      ImGui::SeparatorText("Session");
       row("Shocks", std::to_string(gStats.sessionShocks));
       row("Vibrations", std::to_string(gStats.sessionVibrations));
       row("Shock time", fmtMs(gStats.sessionShockDurationMs));
-      row("Cooldown blocks", std::to_string(gStats.sessionCooldownHits));
+      row("CD blocks", std::to_string(gStats.sessionCooldownHits));
 
       ImGui::Spacing();
       ImGui::SeparatorText("Records");
@@ -2515,7 +2569,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           int max_i = (int)std::ceil(maxv);
           int step = max_i <= 4 ? 1 : (int)std::ceil(max_i / 4.0);
           for (int i = 0; i <= max_i; i += step) yticks.push_back((double)i);
-          if (yticks.back() < max_i) yticks.push_back((double)max_i);
+          if (!yticks.empty() && yticks.back() < max_i)
+            yticks.push_back((double)max_i);
           ImPlot::SetupAxisTicks(ImAxis_Y1, yticks.data(), yticks.size());
           ImPlot::SetNextFillStyle(settings.curveLineColor, 0.85f);
           ImPlot::PlotBars("##bars", vals, 7, 0.6);
@@ -2542,11 +2597,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
 
       ImGui::EndChild();
-      ImGui::PopStyleVar();  // Alpha
+      ImGui::PopStyleVar();
       ImGui::End();
     }
 
-    // Ctrl+Z / Ctrl+Y
+    // ── Ctrl+Z / Y / S ───────────────────────────────────────────────────────
     const bool editingText = io.WantTextInput;
     bool ctrlDown = glfwGetKey(g_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                     glfwGetKey(g_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
@@ -2564,8 +2619,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         performUndoRedo(false, undoStack, redoStack, ui, isPerformingUndoRedo);
         didUndoRedo = true;
       }
-      if (ctrlDown && sDown && !ctrlSPrev) {
-        // Flush active curve state first
+      if (ctrlDown && sDown && !ctrlSPrev && loadedPresetIndex >= 0) {
         if (currentCurveIndex >= 0 &&
             currentCurveIndex < (int)settings.curves.size()) {
           settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
@@ -2574,15 +2628,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           settings.curves[currentCurveIndex].minShockDuration = minDur;
           settings.curves[currentCurveIndex].maxShockDuration = maxDur;
         }
-
-        // Snapshot ALL curves into this preset slot
         SavedPreset sp;
         sp.curves = settings.curves;
         sp.activeCurveIndex = currentCurveIndex;
         sp.name = settings.presets[loadedPresetIndex].has_value()
                       ? settings.presets[loadedPresetIndex]->name
                       : ("Preset " + std::to_string(loadedPresetIndex + 1));
-
         settings.presets[loadedPresetIndex] = sp;
         settings.save(settingsPath);
         commitLoadedPresetSnapshot();
@@ -2604,7 +2655,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     stateChangedPreviousFrame = isEditingThisFrame;
 
-    // Render
+    // ── Render ───────────────────────────────────────────────────────────────
     ImGui::Render();
     int fb_w, fb_h;
     glfwGetFramebufferSize(g_window, &fb_w, &fb_h);
@@ -2617,7 +2668,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     forceFrame = false;
   }
 
-  // Cleanup
+  // ── Cleanup ──────────────────────────────────────────────────────────────
   running = false;
   g_wakeUiFunc = nullptr;
 
@@ -2625,7 +2676,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   settings.minShockDuration = minDur;
-  // Save current curve state before exiting
   if (currentCurveIndex >= 0 &&
       currentCurveIndex < (int)settings.curves.size()) {
     settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
@@ -2634,7 +2684,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     settings.curves[currentCurveIndex].minShockDuration = minDur;
     settings.curves[currentCurveIndex].maxShockDuration = maxDur;
   }
-
   settings.maxShockDuration = maxDur;
   settings.xViewMin = xViewMin;
   settings.xViewMax = xViewMax;
