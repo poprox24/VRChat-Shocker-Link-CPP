@@ -482,8 +482,7 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
   return changed;
 }
 
-// ─── Theme
-// ────────────────────────────────────────────────────────────────────
+// Theme
 inline void applyUiTheme(Settings& settings) {
   ImGuiStyle& style = ImGui::GetStyle();
 
@@ -667,7 +666,7 @@ inline std::string formatKeyNameFromVk(int glfwKey, int mods) {
   return s;
 }
 
-// ─── Helper: small colored pill/badge ────────────────────────────────────────
+// Helper: small colored pill/badge
 static void drawBadge(ImDrawList* dl, ImVec2 pos, const char* text, ImU32 bgCol,
                       ImU32 textCol) {
   ImVec2 ts = ImGui::CalcTextSize(text);
@@ -678,8 +677,7 @@ static void drawBadge(ImDrawList* dl, ImVec2 pos, const char* text, ImU32 bgCol,
   dl->AddText({bMin.x + padX, bMin.y + padY}, textCol, text);
 }
 
-// ─── UI entry point
-// ───────────────────────────────────────────────────────────
+// UI entry point
 inline void runUI(Settings& settings, ShockerHub& hub,
                   const std::string& settingsPath) {
   extern std::atomic<bool> running;
@@ -914,9 +912,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   float settingsAnim = 0.f, statsAnim = 0.f;
   if (settings.showStats) statsAnim = 1.f;
 
+  // Initial window positionin
   {
-    int sw = (int)roundf(statsAnim * 280.f);
-    int settW = (int)roundf(settingsAnim * 560.f);
+    float kSM_ =
+        std::max(180.f, std::min(280.f, (float)settings.windowW * 0.32f));
+    float kSetM_ =
+        std::max(320.f, std::min(556.f, (float)settings.windowW * 0.63f));
+    int sw = (int)roundf(statsAnim * kSM_);
+    int settW = (int)roundf(settingsAnim * kSetM_);
     glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
     glfwSetWindowSize(g_window, settings.windowW + sw + settW,
                       settings.windowH);
@@ -1031,7 +1034,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool forceFrame = true;
   auto lastAnimTime = steady_clock::now();
 
-  // ─── Main loop ─────────────────────────────────────────────────────────────
+  // Main loop
   while (!glfwWindowShouldClose(g_window) && running.load()) {
     bool minimized = glfwGetWindowAttrib(g_window, GLFW_ICONIFIED);
     bool focused = glfwGetWindowAttrib(g_window, GLFW_FOCUSED) || showSettings;
@@ -1065,14 +1068,28 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       glfwGetWindowPos(g_window, &wx, &wy);
       glfwGetWindowSize(g_window, &ww, &wh);
       if (!statsAnimating && !settAnimating) {
-        int sw_i = (int)roundf(statsAnim * 280.f);
-        int settW_i = (int)roundf(settingsAnim * 560.f);
+        // Use previous-frame windowW to compute panel widths (stable when
+        // panels aren't moving)
+        float kSM_t =
+            std::max(180.f, std::min(280.f, (float)settings.windowW * 0.32f));
+        float kSetM_t =
+            std::max(320.f, std::min(556.f, (float)settings.windowW * 0.63f));
+        int sw_i = (int)roundf(statsAnim * kSM_t);
+        int settW_i = (int)roundf(settingsAnim * kSetM_t);
         settings.windowX = wx + sw_i;
         settings.windowW = ww - sw_i - settW_i;
       }
       settings.windowY = wy;
       settings.windowH = wh;
     }
+    // Per-frame dynamic panel sizing — derived from the actual content width.
+    // Baseline: windowW=903 → stats=280 (0.32×903≈289, capped 280), sett=556
+    // (0.63×903≈569, capped 556). Shrinks proportionally for smaller windows,
+    // with sensible minimums.
+    const float kStatsMaxW =
+        std::max(180.f, std::min(280.f, (float)settings.windowW * 0.32f));
+    const float kSettMaxW =
+        std::max(320.f, std::min(556.f, (float)settings.windowW * 0.63f));
 
     // Panel slide animations
     {
@@ -1089,8 +1106,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (statsAnim < 0.043f) statsAnim = 0.f;
       if (fabs(statsAnim - prevStats) > 0.001f ||
           fabs(settingsAnim - prevSett) > 0.001f) {
-        int sw = (int)roundf(statsAnim * 280.f);
-        int settW = (int)roundf(settingsAnim * 560.f);
+        int sw = (int)roundf(statsAnim * kStatsMaxW);
+        int settW = (int)roundf(settingsAnim * kSettMaxW);
         glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
         glfwSetWindowSize(g_window, settings.windowW + sw + settW,
                           settings.windowH);
@@ -1116,7 +1133,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     applyUiTheme(settings);
 
-    float statsW = statsAnim * 280.f;
+    float statsW = statsAnim * kStatsMaxW;
     ImGui::SetNextWindowPos({statsW, 0});
     ImGui::SetNextWindowSize(
         {ImGui::GetIO().DisplaySize.x - statsW, ImGui::GetIO().DisplaySize.y});
@@ -1128,10 +1145,18 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     float fontSize = ImGui::GetFontSize();
 
-    // ── Left panel ──────────────────────────────────────────────────────────
-    float leftPanelWidth = std::max(210.f, fontSize * 12.f);
+    // Left panel
+    // Scale with window width: ~24% of content area, clamped between 9–14 em.
+    // At baseline 903px: 903×0.24≈217 ≈ fontSize(18)×12. Shrinks on small
+    // windows.
+    float leftPanelWidth = std::clamp((float)settings.windowW * 0.24f,
+                                      fontSize * 9.f, fontSize * 14.f);
+
     float lineH = ImGui::GetTextLineHeightWithSpacing();
-    float logH = lineH * 3.f + ImGui::GetStyle().WindowPadding.y * 2.f;
+    // Use 2 log lines on short windows to free vertical space for content
+    int logLines = (settings.windowH < 520) ? 2 : 3;
+    float logH =
+        lineH * (float)logLines + ImGui::GetStyle().WindowPadding.y * 2.f;
     float rowH = ImGui::GetTextLineHeightWithSpacing() + 3.f;
     float sepH = 1.f + ImGui::GetStyle().ItemSpacing.y * 2.f;
     float bottomH = rowH + logH + sepH;
@@ -1144,14 +1169,14 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                    settings.backgroundColor.y * 0.92f,
                    settings.backgroundColor.z * 1.05f,
                    1.f))
-            ? settings.backgroundColor  // just use as-is, color is via
+            ? settings.backgroundColor  // Just use as-is, color is via
                                         // alpha/blend below
             : settings.backgroundColor);
     ImGui::PopStyleColor();
 
     ImGui::BeginChild("##controls", ImVec2(leftPanelWidth, -bottomH), true);
 
-    // ── Presets section ─────────────────────────────────────────────────────
+    // Presets section
     ImGui::SeparatorText("Presets");
 
     for (int i = 0; i < (int)settings.presets.size(); i++) {
@@ -1340,7 +1365,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::EndPopup();
     }
 
-    // ── Curve parameters ────────────────────────────────────────────────────
+    // Curve parameters
     ImGui::Spacing();
     ImGui::SeparatorText("Duration");
 
@@ -1395,7 +1420,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::PopStyleColor(2);
     }
 
-    // ── Test buttons ────────────────────────────────────────────────────────
+    // Test buttons
     ImGui::Spacing();
     ImGui::SeparatorText("Test");
 
@@ -1424,13 +1449,22 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::PopStyleColor(3);
     }
 
-    // ── Bottom action buttons ────────────────────────────────────────────────
+    // Bottom action buttons
+    // Compute total height needed for the bottom buttons section
+    float totalBtnsH;
     {
       int extraRows = (!hub.isConnected ? 1 : 0) + (hub.shocksDisabled ? 1 : 0);
-      float totalBtnsH =
-          (0.8f + extraRows) * ImGui::GetFrameHeightWithSpacing() +
-          ImGui::GetStyle().WindowPadding.y;
-      ImGui::SetCursorPosY(ImGui::GetWindowHeight() - totalBtnsH);
+      totalBtnsH = (0.8f + extraRows) * ImGui::GetFrameHeightWithSpacing() +
+                   ImGui::GetStyle().WindowPadding.y;
+    }
+    // Only jump to the bottom if there is actually space — prevents overlapping
+    // content above when the window is short or there are many presets.
+    {
+      float actionY = ImGui::GetWindowHeight() - totalBtnsH;
+      if (actionY > ImGui::GetCursorPosY() + ImGui::GetStyle().ItemSpacing.y)
+        ImGui::SetCursorPosY(actionY);
+      else
+        ImGui::Spacing();
     }
 
     if (!hub.isConnected) {
@@ -1506,10 +1540,13 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     ImGui::EndChild();
 
-    // ── Curve editor ────────────────────────────────────────────────────────
+    // Curve editor
     ImGui::SameLine();
-    ImGui::BeginChild(
-        "##plot", {settings.windowW - leftPanelWidth - 20.f, -bottomH}, false);
+    // Clamp plot width to always be positive regardless of window size
+    float plotW = std::max(150.f, (float)settings.windowW - leftPanelWidth -
+                                      ImGui::GetStyle().ItemSpacing.x -
+                                      ImGui::GetStyle().WindowPadding.x * 2.f);
+    ImGui::BeginChild("##plot", {plotW, -bottomH}, false);
 
     // Curve tab bar
     {
@@ -1888,7 +1925,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     ImGui::EndChild();
 
-    // ── Log bar ──────────────────────────────────────────────────────────────
+    // Log bar
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - rowH - logH - sepH -
                          ImGui::GetStyle().WindowPadding.y);
     ImGui::Separator();
@@ -1902,7 +1939,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
 
-    // ── Status bar ───────────────────────────────────────────────────────────
+    // Status bar
     ImGui::Separator();
     {
       ImGui::SetCursorPosY(ImGui::GetWindowHeight() - rowH);
@@ -2029,9 +2066,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.save(settingsPath);
     };
 
-    // ── Settings panel ───────────────────────────────────────────────────────
+    // Settings panel
     if (showSettings) {
-      float sPanelW = settingsAnim * 556.f;
+      float sPanelW = settingsAnim * kSettMaxW;
       ImGui::SetNextWindowSize({sPanelW, (float)settings.windowH - 40},
                                ImGuiCond_Always);
       ImGui::SetNextWindowPos({statsW + (float)settings.windowW, 0.f},
@@ -2051,7 +2088,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           "undo/redo");
       ImGui::Spacing();
 
-      // ── OSC / Avatar ──────────────────────────────────────────────────────
+      // OSC / Avatar
       ImGui::SeparatorText("OSC / Avatar");
 
       std::vector<std::string> curveNames;
@@ -2166,7 +2203,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::TextDisabled("Changes require restart.");
       ImGui::Spacing();
 
-      // ── Hardware ──────────────────────────────────────────────────────────
+      // Hardware
       ImGui::SeparatorText("Hardware");
 
       // Backend selector
@@ -2240,7 +2277,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::TextDisabled("Changes require restart.");
       ImGui::Spacing();
 
-      // ── VR Notifications ──────────────────────────────────────────────────
+      // VR Notifications
       ImGui::SeparatorText("Notifications");
 #ifdef _WIN32
       ImGui::Checkbox("Enable VR notifications##notif", &stgNotifEnabled);
@@ -2262,7 +2299,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 #endif
       ImGui::Spacing();
 
-      // ── Cooldown ──────────────────────────────────────────────────────────
+      // Cooldown
       ImGui::SeparatorText("Cooldown");
       ImGui::SetNextItemWidth(-1);
       ImGui::SliderInt("Base (s)##cd", &stgBaseCooldown, 1, 15);
@@ -2283,7 +2320,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           "How far back to count shocks. Older shocks are ignored.");
       ImGui::Spacing();
 
-      // ── Panic Hotkey ──────────────────────────────────────────────────────
+      // Panic Hotkey
       ImGui::SeparatorText("Panic Hotkey");
       ImGui::TextDisabled("Disables shocks from anywhere, even unfocused:");
       ImGui::Spacing();
@@ -2343,7 +2380,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       }
       ImGui::Spacing();
 
-      // ── Style ─────────────────────────────────────────────────────────────
+      // Style
       ImGui::SeparatorText("Style");
       ImGui::SetNextItemWidth(-1);
       ImGui::SliderInt("Preset Slots*##s", &stgPresetCount, 1, 8);
@@ -2385,7 +2422,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::TextDisabled("* Requires restart");
       ImGui::Spacing();
 
-      // ── VRChat ────────────────────────────────────────────────────────────
+      // VRChat
       ImGui::SeparatorText("VRChat");
       ImGui::Checkbox("Send shocks to ChatBox##cbx", &stgChatboxShockEnabled);
       ImGui::Checkbox("Send cooldown msgs to ChatBox##cbcd",
@@ -2452,7 +2489,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::End();
     }
 
-    // ── Stats panel ──────────────────────────────────────────────────────────
+    // Stats panel
     if (statsAnim > 0.43f) {
       ImGui::SetNextWindowPos({0.f, 0.f}, ImGuiCond_Always);
       ImGui::SetNextWindowSize({statsW, (float)settings.windowH},
@@ -2601,7 +2638,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::End();
     }
 
-    // ── Ctrl+Z / Y / S ───────────────────────────────────────────────────────
+    // Ctrl+Z / Y / S
     const bool editingText = io.WantTextInput;
     bool ctrlDown = glfwGetKey(g_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                     glfwGetKey(g_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
@@ -2655,7 +2692,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
     stateChangedPreviousFrame = isEditingThisFrame;
 
-    // ── Render ───────────────────────────────────────────────────────────────
+    // Render
     ImGui::Render();
     int fb_w, fb_h;
     glfwGetFramebufferSize(g_window, &fb_w, &fb_h);
@@ -2668,7 +2705,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     forceFrame = false;
   }
 
-  // ── Cleanup ──────────────────────────────────────────────────────────────
+  // Cleanup
   running = false;
   g_wakeUiFunc = nullptr;
 
