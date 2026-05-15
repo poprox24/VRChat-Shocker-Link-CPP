@@ -113,6 +113,12 @@ See [open issues](https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues) fo
 
 ---
 
+## Building from Source
+
+See **[BUILD.md](BUILD.md)** for detailed instructions.
+
+---
+
 ## Contributing
 
 Fork the repo and open a pull request, or file an issue tagged `enhancement`.
