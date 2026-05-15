@@ -98,21 +98,6 @@ ShockerLink automatically sends three float parameters to your avatar after ever
 
 ---
 
-## Roadmap
-
-- [x] Undo/redo support
-- [x] Auto-updater
-- [x] Stats menu
-- [x] PiShock and OpenShock API support
-- [x] Multiple OSC parameters with per-parameter curve and shocker config
-- [x] Multiple curves per preset
-- [x] Linux support (Arch, Wayland/XWayland)
-- [x] Visual avatar parameters
-
-See [open issues](https://github.com/poprox24/VRChat-Shocker-Link-CPP/issues) for proposed features and known issues.
-
----
-
 ## Building from Source
 
 See **[BUILD.md](BUILD.md)** for detailed instructions.
