@@ -1209,19 +1209,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       float saveIconW = 22.f + ImGui::GetStyle().ItemSpacing.x;
       float btnW = ImGui::GetContentRegionAvail().x - saveIconW;
 
-      // Indicator dot on left edge
-      {
-        ImVec2 cp = ImGui::GetCursorScreenPos();
-        float fh = ImGui::GetFrameHeight();
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImU32 dotCol = isDirty     ? IM_COL32(255, 190, 50, 220)
-                       : isDefault ? IM_COL32(60, 220, 130, 220)
-                       : isLoaded  ? IM_COL32(80, 160, 255, 220)
-                                   : IM_COL32(80, 80, 100, 120);
-        dl->AddCircleFilled({cp.x + 5.f, cp.y + fh * 0.5f}, 3.5f, dotCol);
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 2.f);
-      }
-
       if (ImGui::Button(label.c_str(), ImVec2(btnW - 2.f, 0))) {
         if (hasData) {
           if (isLoadedPresetDirty()) {
