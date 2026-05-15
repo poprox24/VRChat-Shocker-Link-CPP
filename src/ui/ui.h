@@ -483,32 +483,32 @@ inline bool drawRangeSliderFloat(const char* id, float* vMin, float* vMax,
 }
 
 // Theme
-inline void applyUiTheme(Settings& settings) {
+inline void applyUiTheme(Settings& settings, float uiScale = 1.f) {
   ImGuiStyle& style = ImGui::GetStyle();
 
-  // Geometry - more modern, breathing room
-  style.WindowRounding = 10.f;
-  style.ChildRounding = 8.f;
-  style.FrameRounding = 6.f;
-  style.PopupRounding = 8.f;
-  style.ScrollbarRounding = 8.f;
-  style.GrabRounding = 6.f;
-  style.TabRounding = 6.f;
   style.TabBarBorderSize = 0.f;
   style.WindowBorderSize = 1.f;
   style.ChildBorderSize = 1.f;
   style.FrameBorderSize = 0.f;
   style.PopupBorderSize = 1.f;
-  style.WindowPadding = {12.f, 12.f};
-  style.FramePadding = {10.f, 6.f};
-  style.CellPadding = {8.f, 5.f};
-  style.ItemSpacing = {8.f, 8.f};
-  style.ItemInnerSpacing = {6.f, 4.f};
-  style.ScrollbarSize = 8.f;
-  style.GrabMinSize = 10.f;
-  style.IndentSpacing = 18.f;
-  style.SeparatorTextBorderSize = 2.f;
-  style.SeparatorTextPadding = {8.f, 3.f};
+
+  style.WindowRounding = 10.f * uiScale;
+  style.ChildRounding = 8.f * uiScale;
+  style.FrameRounding = 6.f * uiScale;
+  style.PopupRounding = 8.f * uiScale;
+  style.ScrollbarRounding = 8.f * uiScale;
+  style.GrabRounding = 6.f * uiScale;
+  style.TabRounding = 6.f * uiScale;
+  style.WindowPadding = {12.f * uiScale, 12.f * uiScale};
+  style.FramePadding = {10.f * uiScale, 6.f * uiScale};
+  style.CellPadding = {8.f * uiScale, 5.f * uiScale};
+  style.ItemSpacing = {8.f * uiScale, 8.f * uiScale};
+  style.ItemInnerSpacing = {6.f * uiScale, 4.f * uiScale};
+  style.ScrollbarSize = 8.f * uiScale;
+  style.GrabMinSize = 10.f * uiScale;
+  style.IndentSpacing = 18.f * uiScale;
+  style.SeparatorTextBorderSize = 2.f * uiScale;
+  style.SeparatorTextPadding = {8.f * uiScale, 3.f * uiScale};
 
   // Color helpers
   auto mul = [](ImVec4 c, float s) -> ImVec4 {
@@ -1131,7 +1131,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    applyUiTheme(settings);
+    float uiScale = std::clamp(std::min((float)settings.windowW / 900.f,
+                                        (float)settings.windowH / 600.f),
+                               0.78f, 1.22f);
+    io.FontGlobalScale = uiScale;
+
+    applyUiTheme(settings, uiScale);
 
     float statsW = statsAnim * kStatsMaxW;
     ImGui::SetNextWindowPos({statsW, 0});
@@ -1154,7 +1159,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
     float lineH = ImGui::GetTextLineHeightWithSpacing();
     // Use 2 log lines on short windows to free vertical space for content
-    int logLines = (settings.windowH < 520) ? 2 : 3;
+    int logLines = std::clamp((settings.windowH - 200) / 130, 1, 6);
     float logH =
         lineH * (float)logLines + ImGui::GetStyle().WindowPadding.y * 2.f;
     float rowH = ImGui::GetTextLineHeightWithSpacing() + 3.f;
@@ -2565,7 +2570,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       {
         auto days = gStats.lastNDays(7);
         double vals[7] = {};
-        if (ImPlot::BeginPlot("##7d", {-1, 110},
+        float statsChartH = std::max(60.f, settings.windowH * 0.18f);
+        if (ImPlot::BeginPlot("##7d", {-1, statsChartH},
                               ImPlotFlags_NoTitle | ImPlotFlags_NoLegend |
                                   ImPlotFlags_NoMouseText)) {
           ImPlot::SetupAxes(
