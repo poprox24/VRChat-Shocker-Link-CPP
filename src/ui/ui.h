@@ -744,7 +744,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
 
   glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
-    glfwSetWindowShouldClose(win, GLFW_FALSE);
     g_pendingClose = true;
     if (g_wakeUiFunc) g_wakeUiFunc();
   });
@@ -1057,7 +1056,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   auto lastAnimTime = steady_clock::now();
 
   // Main loop
-  while (!glfwWindowShouldClose(g_window) && running.load()) {
+  while (running.load()) {
     bool minimized = glfwGetWindowAttrib(g_window, GLFW_ICONIFIED);
     bool focused = glfwGetWindowAttrib(g_window, GLFW_FOCUSED) || showSettings;
 
@@ -2063,6 +2062,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       Updater::applyAndRestart();
 #endif
       glfwSetWindowShouldClose(g_window, 1);
+      running = false;
     }
 
     // commitAll lambda
