@@ -1090,14 +1090,17 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       glfwGetWindowPos(g_window, &wx, &wy);
       glfwGetWindowSize(g_window, &ww, &wh);
       if (!statsAnimating && !settAnimating) {
-        // Use previous-frame windowW to compute panel widths (stable when
-        // panels aren't moving)
-        float kSM_t =
-            std::max(180.f, std::min(280.f, (float)settings.windowW * 0.32f));
-        float kSetM_t =
-            std::max(320.f, std::min(556.f, (float)settings.windowW * 0.63f));
-        int sw_i = (int)roundf(statsAnim * kSM_t);
-        int settW_i = (int)roundf(settingsAnim * kSetM_t);
+        float W = (float)settings.windowW;
+        for (int iter = 0; iter < 3; iter++) {
+          float sm = statsAnim * std::max(180.f, std::min(280.f, W * 0.32f));
+          float stm =
+              settingsAnim * std::max(320.f, std::min(556.f, W * 0.63f));
+          W = (float)ww - sm - stm;
+        }
+        int sw_i = (int)roundf(statsAnim *
+                               std::max(180.f, std::min(280.f, W * 0.32f)));
+        int settW_i = (int)roundf(settingsAnim *
+                                  std::max(320.f, std::min(556.f, W * 0.63f)));
         settings.windowX = wx + sw_i;
         settings.windowW = ww - sw_i - settW_i;
       }
