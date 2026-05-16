@@ -60,7 +60,6 @@ static bool setWindowIcon(GLFWwindow* window) {
 static GLFWwindow* g_window = nullptr;
 static ShockerHub* g_hub = nullptr;
 static Settings* g_settingsForHotkey = nullptr;
-static std::atomic<bool> g_pendingClose{false};
 
 #ifdef _WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -744,7 +743,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
 
   glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
-    g_pendingClose = true;
     if (g_wakeUiFunc) g_wakeUiFunc();
   });
 
@@ -1082,6 +1080,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       double targetInterval = focused ? (1.0 / 60.0) : (1.0 / 16.0);
       glfwWaitEventsTimeout(targetInterval);
     }
+
+    bool closeRequestedThisFrame = glfwWindowShouldClose(g_window);
+    if (closeRequestedThisFrame) glfwSetWindowShouldClose(g_window, GLFW_FALSE);
 
     // Window position tracking
     {
@@ -2702,12 +2703,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::PopStyleVar();
 
       // Close warning modal
-      if (g_pendingClose.exchange(false)) {
+      if (closeRequestedThisFrame) {
         if (settingsDirty || isLoadedPresetDirty())
           ImGui::OpenPopup("##closewarn");
         else {
           running = false;
-          glfwSetWindowShouldClose(g_window, GLFW_TRUE);
           g_wakeUiFunc = nullptr;
           if (g_hub) g_hub->queueCV.notify_all();
         }
@@ -2739,7 +2739,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
           ImGui::CloseCurrentPopup();
           running = false;
-          glfwSetWindowShouldClose(g_window, GLFW_TRUE);
           g_wakeUiFunc = nullptr;
           if (g_hub) g_hub->queueCV.notify_all();
         }
@@ -2748,7 +2747,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         if (ImGui::Button("Discard & Quit", {130, 0})) {
           ImGui::CloseCurrentPopup();
           running = false;
-          glfwSetWindowShouldClose(g_window, GLFW_TRUE);
           g_wakeUiFunc = nullptr;
           if (g_hub) g_hub->queueCV.notify_all();
         }
