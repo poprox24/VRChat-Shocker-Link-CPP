@@ -2704,63 +2704,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::End();
     }
 
-    // Close warning modal
-    if (g_pendingClose.exchange(false)) {
-      if (settingsDirty || isLoadedPresetDirty())
-        ImGui::OpenPopup("##closewarn");
-      else {
-        running = false;
-        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
-        g_wakeUiFunc = nullptr;
-        if (g_hub) g_hub->queueCV.notify_all();
-      }
-    }
-    if (ImGui::BeginPopupModal("##closewarn", nullptr,
-                               ImGuiWindowFlags_AlwaysAutoResize)) {
-      ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "Unsaved changes");
-
-      ImGui::Spacing();
-
-      if (settingsDirty) ImGui::BulletText("Settings");
-      if (isLoadedPresetDirty()) ImGui::BulletText("Current preset");
-
-      ImGui::Spacing();
-
-      if (ImGui::Button("Save & Quit", {120, 0})) {
-        if (settingsDirty) commitAll();
-        if (isLoadedPresetDirty() && loadedPresetIndex >= 0) {
-          flushCurrentCurve();
-          SavedPreset sp;
-          sp.curves = settings.curves;
-          sp.activeCurveIndex = currentCurveIndex;
-          sp.name = settings.presets[loadedPresetIndex].has_value()
-                        ? settings.presets[loadedPresetIndex]->name
-                        : ("Preset " + std::to_string(loadedPresetIndex + 1));
-          settings.presets[loadedPresetIndex] = sp;
-          settings.save(settingsPath);
-        }
-
-        ImGui::CloseCurrentPopup();
-        running = false;
-        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
-        g_wakeUiFunc = nullptr;
-        if (g_hub) g_hub->queueCV.notify_all();
-      }
-
-      ImGui::SameLine();
-      if (ImGui::Button("Discard & Quit", {130, 0})) {
-        ImGui::CloseCurrentPopup();
-        running = false;
-        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
-        g_wakeUiFunc = nullptr;
-        if (g_hub) g_hub->queueCV.notify_all();
-      }
-
-      ImGui::SameLine();
-      if (ImGui::Button("Cancel", {80, 0})) ImGui::CloseCurrentPopup();
-      ImGui::EndPopup();
-    }
-
     // Ctrl+Z / Y / S
     const bool editingText = io.WantTextInput;
     bool ctrlDown = glfwGetKey(g_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
@@ -2831,6 +2774,63 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       lastCommittedState = snapshotAppState(ui);
     }
     stateChangedPreviousFrame = isEditingThisFrame;
+
+    // Close warning modal
+    if (g_pendingClose.exchange(false)) {
+      if (settingsDirty || isLoadedPresetDirty())
+        ImGui::OpenPopup("##closewarn");
+      else {
+        running = false;
+        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
+        g_wakeUiFunc = nullptr;
+        if (g_hub) g_hub->queueCV.notify_all();
+      }
+    }
+    if (ImGui::BeginPopupModal("##closewarn", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "Unsaved changes");
+
+      ImGui::Spacing();
+
+      if (settingsDirty) ImGui::BulletText("Settings");
+      if (isLoadedPresetDirty()) ImGui::BulletText("Current preset");
+
+      ImGui::Spacing();
+
+      if (ImGui::Button("Save & Quit", {120, 0})) {
+        if (settingsDirty) commitAll();
+        if (isLoadedPresetDirty() && loadedPresetIndex >= 0) {
+          flushCurrentCurve();
+          SavedPreset sp;
+          sp.curves = settings.curves;
+          sp.activeCurveIndex = currentCurveIndex;
+          sp.name = settings.presets[loadedPresetIndex].has_value()
+                        ? settings.presets[loadedPresetIndex]->name
+                        : ("Preset " + std::to_string(loadedPresetIndex + 1));
+          settings.presets[loadedPresetIndex] = sp;
+          settings.save(settingsPath);
+        }
+
+        ImGui::CloseCurrentPopup();
+        running = false;
+        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
+        g_wakeUiFunc = nullptr;
+        if (g_hub) g_hub->queueCV.notify_all();
+      }
+
+      ImGui::SameLine();
+      if (ImGui::Button("Discard & Quit", {130, 0})) {
+        ImGui::CloseCurrentPopup();
+        running = false;
+        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
+        g_wakeUiFunc = nullptr;
+        if (g_hub) g_hub->queueCV.notify_all();
+      }
+
+      ImGui::SameLine();
+      if (ImGui::Button("Cancel", {80, 0})) ImGui::CloseCurrentPopup();
+      ImGui::EndPopup();
+    }
 
     // Render
     ImGui::Render();
