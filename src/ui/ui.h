@@ -102,6 +102,7 @@ static KeyCode g_x11GrabbedKey = 0;
 static unsigned int g_x11GrabbedMods = 0;
 static std::thread g_hotkeyThread;
 static std::atomic<bool> g_hotkeyThreadRunning{false};
+static std::atomic<bool> g_pendingClose{false};
 
 static int glfwKeyToKeysym(int glfwKey) {
   if (glfwKey >= GLFW_KEY_F1 && glfwKey <= GLFW_KEY_F25)
@@ -743,6 +744,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
 
   glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
+    glfwSetWindowShouldClose(win, GLFW_FALSE);
+    g_pendingClose = true;
     if (g_wakeUiFunc) g_wakeUiFunc();
   });
 
@@ -1054,7 +1057,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   auto lastAnimTime = steady_clock::now();
 
   // Main loop
-  while (running.load()) {
+  while (!glfwWindowShouldClose(g_window) && running.load()) {
     bool minimized = glfwGetWindowAttrib(g_window, GLFW_ICONIFIED);
     bool focused = glfwGetWindowAttrib(g_window, GLFW_FOCUSED) || showSettings;
 
@@ -1080,9 +1083,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       double targetInterval = focused ? (1.0 / 60.0) : (1.0 / 16.0);
       glfwWaitEventsTimeout(targetInterval);
     }
-
-    bool closeRequestedThisFrame = glfwWindowShouldClose(g_window);
-    if (closeRequestedThisFrame) glfwSetWindowShouldClose(g_window, GLFW_FALSE);
 
     // Window position tracking
     {
@@ -2063,7 +2063,6 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       Updater::applyAndRestart();
 #endif
       glfwSetWindowShouldClose(g_window, 1);
-      running = false;
     }
 
     // commitAll lambda
@@ -2702,61 +2701,64 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       ImGui::EndChild();
       ImGui::PopStyleVar();
 
-      // Close warning modal
-      if (closeRequestedThisFrame) {
-        if (settingsDirty || isLoadedPresetDirty())
-          ImGui::OpenPopup("##closewarn");
-        else {
-          running = false;
-          g_wakeUiFunc = nullptr;
-          if (g_hub) g_hub->queueCV.notify_all();
-        }
-      }
-      if (ImGui::BeginPopupModal("##closewarn", nullptr,
-                                 ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "Unsaved changes");
-
-        ImGui::Spacing();
-
-        if (settingsDirty) ImGui::BulletText("Settings");
-        if (isLoadedPresetDirty()) ImGui::BulletText("Current preset");
-
-        ImGui::Spacing();
-
-        if (ImGui::Button("Save & Quit", {120, 0})) {
-          if (settingsDirty) commitAll();
-          if (isLoadedPresetDirty() && loadedPresetIndex >= 0) {
-            flushCurrentCurve();
-            SavedPreset sp;
-            sp.curves = settings.curves;
-            sp.activeCurveIndex = currentCurveIndex;
-            sp.name = settings.presets[loadedPresetIndex].has_value()
-                          ? settings.presets[loadedPresetIndex]->name
-                          : ("Preset " + std::to_string(loadedPresetIndex + 1));
-            settings.presets[loadedPresetIndex] = sp;
-            settings.save(settingsPath);
-          }
-
-          ImGui::CloseCurrentPopup();
-          running = false;
-          g_wakeUiFunc = nullptr;
-          if (g_hub) g_hub->queueCV.notify_all();
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Discard & Quit", {130, 0})) {
-          ImGui::CloseCurrentPopup();
-          running = false;
-          g_wakeUiFunc = nullptr;
-          if (g_hub) g_hub->queueCV.notify_all();
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", {80, 0})) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-      }
-
       ImGui::End();
+    }
+
+    // Close warning modal
+    if (g_pendingClose.exchange(false)) {
+      if (settingsDirty || isLoadedPresetDirty())
+        ImGui::OpenPopup("##closewarn");
+      else {
+        running = false;
+        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
+        g_wakeUiFunc = nullptr;
+        if (g_hub) g_hub->queueCV.notify_all();
+      }
+    }
+    if (ImGui::BeginPopupModal("##closewarn", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextColored({1.f, 0.75f, 0.2f, 1.f}, "Unsaved changes");
+
+      ImGui::Spacing();
+
+      if (settingsDirty) ImGui::BulletText("Settings");
+      if (isLoadedPresetDirty()) ImGui::BulletText("Current preset");
+
+      ImGui::Spacing();
+
+      if (ImGui::Button("Save & Quit", {120, 0})) {
+        if (settingsDirty) commitAll();
+        if (isLoadedPresetDirty() && loadedPresetIndex >= 0) {
+          flushCurrentCurve();
+          SavedPreset sp;
+          sp.curves = settings.curves;
+          sp.activeCurveIndex = currentCurveIndex;
+          sp.name = settings.presets[loadedPresetIndex].has_value()
+                        ? settings.presets[loadedPresetIndex]->name
+                        : ("Preset " + std::to_string(loadedPresetIndex + 1));
+          settings.presets[loadedPresetIndex] = sp;
+          settings.save(settingsPath);
+        }
+
+        ImGui::CloseCurrentPopup();
+        running = false;
+        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
+        g_wakeUiFunc = nullptr;
+        if (g_hub) g_hub->queueCV.notify_all();
+      }
+
+      ImGui::SameLine();
+      if (ImGui::Button("Discard & Quit", {130, 0})) {
+        ImGui::CloseCurrentPopup();
+        running = false;
+        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
+        g_wakeUiFunc = nullptr;
+        if (g_hub) g_hub->queueCV.notify_all();
+      }
+
+      ImGui::SameLine();
+      if (ImGui::Button("Cancel", {80, 0})) ImGui::CloseCurrentPopup();
+      ImGui::EndPopup();
     }
 
     // Ctrl+Z / Y / S
