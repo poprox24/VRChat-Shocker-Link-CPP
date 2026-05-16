@@ -203,10 +203,11 @@ struct AppState {
       stgOpenshockServer;
   bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
        stgNotifUseOvr = false, stgUseSerial = true, chatboxShockEnabled = true,
-       chatboxCooldownEnabled = true;
+       chatboxCooldownEnabled = true, stgManualScaling = false;
   int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
       stgPresetCount = 3;
-  float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f;
+  float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f,
+        stgManualUiScale = 1.00f;
   std::vector<Parameter> stgParameters;
 
   bool operator==(const AppState& o) const {
@@ -235,7 +236,9 @@ struct AppState {
            stgOpenshockServer == o.stgOpenshockServer &&
            stgPresetCount == o.stgPresetCount &&
            stgTouchThreshold == o.stgTouchThreshold &&
-           stgParameters == o.stgParameters;
+           stgParameters == o.stgParameters &&
+           stgManualScaling == o.stgManualScaling &&
+           stgManualUiScale == o.stgManualUiScale;
   }
   bool operator!=(const AppState& o) const { return !(*this == o); }
 };
@@ -271,6 +274,8 @@ struct UiContext {
   int& stgPresetCount;
   float& stgTouchThreshold;
   std::vector<Parameter>& stgParameters;
+  bool& stgManualScaling;
+  float& stgManualUiScale;
 };
 
 static AppState snapshotAppState(const UiContext& ui) {
@@ -305,6 +310,8 @@ static AppState snapshotAppState(const UiContext& ui) {
   st.stgPresetCount = ui.stgPresetCount;
   st.stgTouchThreshold = ui.stgTouchThreshold;
   st.stgParameters = ui.stgParameters;
+  st.stgManualScaling = ui.stgManualScaling;
+  st.stgManualUiScale = ui.stgManualUiScale;
   return st;
 }
 
@@ -347,6 +354,8 @@ static void restoreAppState(const AppState& st, UiContext& ui) {
   ui.stgPresetCount = st.stgPresetCount;
   ui.stgTouchThreshold = st.stgTouchThreshold;
   ui.stgParameters = st.stgParameters;
+  ui.stgManualScaling = st.stgManualScaling;
+  ui.stgManualUiScale = st.stgManualUiScale;
   ui.chatboxShockEnabled = st.chatboxShockEnabled;
   ui.chatboxCooldownEnabled = st.chatboxCooldownEnabled;
 }
@@ -879,7 +888,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
   std::deque<AppState> undoStack, redoStack;
   bool isPerformingUndoRedo = false;
-  bool ctrlZPrev = false, ctrlYPrev = false, ctrlSPrev = false;
+  bool ctrlZPrev = false, ctrlYPrev = false, ctrlSPrev = false,
+       ctrlPlusPrev = false, ctrlMinusPrev = false;
   bool stateChangedPreviousFrame = false;
 
   // Load default preset
@@ -929,10 +939,12 @@ inline void runUI(Settings& settings, ShockerHub& hub,
        stgSerialPort[64] = {}, stgVrchatHost[64] = {};
   bool stgUsePishock = false, stgRandomOrSeq = false, stgNotifEnabled = false,
        stgNotifUseOvr = false, stgUseSerial = true,
-       stgChatboxShockEnabled = true, stgChatboxCooldownEnabled = true;
+       stgChatboxShockEnabled = true, stgChatboxCooldownEnabled = true,
+       stgManualScaling = false, origManualScaling = false;
   int stgBaseCooldown = 2, stgMaxCooldown = 6, stgCooldownWindow = 30,
       stgPresetCount = 3;
-  float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f;
+  float stgCooldownFactor = 0.4f, stgTouchThreshold = 8.f,
+        stgManualUiScale = 1.00f, origManualUiScale = 1.00f;
   char stgPishockUser[128] = {}, stgPishockKey[128] = {},
        stgOpenshockToken[256] = {}, stgOpenshockServer[128] = {};
   std::vector<Parameter> stgParameters;
@@ -966,7 +978,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                stgOpenshockServer,
                stgPresetCount,
                stgTouchThreshold,
-               stgParameters};
+               stgParameters,
+               stgManualScaling,
+               stgManualUiScale};
 
   AppState lastCommittedState = snapshotAppState(ui);
 
@@ -1005,6 +1019,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     stgChatboxShockEnabled = settings.chatboxShockEnabled;
     stgChatboxCooldownEnabled = settings.chatboxCooldownEnabled;
     stgParameters = settings.parameters;
+    stgManualScaling = settings.manualScaling;
+    stgManualUiScale = settings.manualUiScale;
+    origManualScaling = settings.manualScaling;
+    origManualUiScale = settings.manualUiScale;
   };
 
   auto closeSettingsModal = [&]() {
@@ -1017,6 +1035,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     settings.labelColor = reverted.labelColor;
     settings.gradientLeftColor = reverted.gradientLeftColor;
     settings.gradientRightColor = reverted.gradientRightColor;
+    settings.manualScaling = origManualScaling;
+    settings.manualUiScale = origManualUiScale;
+    stgManualScaling = origManualScaling;
+    stgManualUiScale = origManualUiScale;
     showSettings = false;
   };
 
@@ -1091,6 +1113,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     const float kSettMaxW =
         std::max(320.f, std::min(556.f, (float)settings.windowW * 0.63f));
 
+    int lastSetWindowX = INT_MIN, lastSetWindowW = INT_MIN,
+        lastSetWindowH = INT_MIN;
+
     // Panel slide animations
     {
       auto now = steady_clock::now();
@@ -1103,14 +1128,23 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settingsAnim += (settTarget - settingsAnim) * std::min(1.f, dt * 14.f);
       statsAnim += (statsTarget - statsAnim) * std::min(1.f, dt * 14.f);
       if (settingsAnim < 0.001f) settingsAnim = 0.f;
+      if (settingsAnim > 0.999f) settingsAnim = 1.f;
       if (statsAnim < 0.043f) statsAnim = 0.f;
+      if (statsAnim > 0.957f) statsAnim = 1.f;
       if (fabs(statsAnim - prevStats) > 0.001f ||
           fabs(settingsAnim - prevSett) > 0.001f) {
         int sw = (int)roundf(statsAnim * kStatsMaxW);
         int settW = (int)roundf(settingsAnim * kSettMaxW);
-        glfwSetWindowPos(g_window, settings.windowX - sw, settings.windowY);
-        glfwSetWindowSize(g_window, settings.windowW + sw + settW,
-                          settings.windowH);
+        int newX = settings.windowX - sw;
+        int newW = settings.windowW + sw + settW;
+        if (newX != lastSetWindowX || newW != lastSetWindowW ||
+            settings.windowH != lastSetWindowH) {
+          glfwSetWindowPos(g_window, newX, settings.windowY);
+          glfwSetWindowSize(g_window, newW, settings.windowH);
+          lastSetWindowX = newX;
+          lastSetWindowW = newW;
+          lastSetWindowH = settings.windowH;
+        }
       }
       if ((settingsAnim == 0.f && prevSett > 0.f) ||
           (statsAnim == 0.f && prevStats > 0.f))
@@ -1131,9 +1165,15 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    float uiScale = std::clamp(std::min((float)settings.windowW / 900.f,
-                                        (float)settings.windowH / 600.f),
-                               0.78f, 1.22f);
+    bool effectiveManual =
+        showSettings ? stgManualScaling : settings.manualScaling;
+    float effectiveUiScale =
+        showSettings ? stgManualUiScale : settings.manualUiScale;
+    float uiScale = effectiveManual
+                        ? std::clamp(effectiveUiScale, 0.50f, 2.00f)
+                        : std::clamp(std::min((float)settings.windowW / 900.f,
+                                              (float)settings.windowH / 600.f),
+                                     0.78f, 1.22f);
     io.FontGlobalScale = uiScale;
 
     applyUiTheme(settings, uiScale);
@@ -1499,7 +1539,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
          settings.openshockServerUrl != stgOpenshockServer ||
          settings.parameters != stgParameters ||
          settings.chatboxShockEnabled != stgChatboxShockEnabled ||
-         settings.chatboxCooldownEnabled != stgChatboxCooldownEnabled);
+         settings.chatboxCooldownEnabled != stgChatboxCooldownEnabled ||
+         origManualScaling != stgManualScaling ||
+         origManualUiScale != stgManualUiScale);
 
     // Stats button
     ImVec4 statsCol = settings.showStats
@@ -2042,6 +2084,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       settings.presetCount = stgPresetCount;
       settings.touchSelectThreshold = stgTouchThreshold;
       settings.parameters = stgParameters;
+      settings.manualScaling = stgManualScaling;
+      settings.manualUiScale = stgManualUiScale;
       settings.chatboxShockEnabled = stgChatboxShockEnabled;
       settings.chatboxCooldownEnabled = stgChatboxCooldownEnabled;
       {
@@ -2411,6 +2455,31 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                  "Plot gradient — high intensity");
         ImGui::EndTable();
       }
+      ImGui::Spacing();
+
+      // UI Scaling
+      ImGui::TextDisabled("UI Scaling:");
+      ImGui::SameLine();
+      if (toggleBtn("Automatic", !stgManualScaling)) stgManualScaling = false;
+      ImGui::SameLine(0, 2);
+      if (toggleBtn("Manual##uis", stgManualScaling)) stgManualScaling = true;
+      if (stgManualScaling) {
+        ImGui::SameLine(0, 14);
+        if (ImGui::Button("-##uisdn"))
+          stgManualUiScale = std::max(0.50f, stgManualUiScale - 0.05f);
+        ImGui::SetItemTooltip("Decrease 5%%  (Ctrl -)");
+        ImGui::SameLine(0, 6);
+        ImGui::Text("%.0f%%", stgManualUiScale * 100.f);
+        ImGui::SameLine(0, 6);
+        if (ImGui::Button("+##uisup"))
+          stgManualUiScale = std::min(2.00f, stgManualUiScale + 0.05f);
+        ImGui::SetItemTooltip("Increase 5%%  (Ctrl +)");
+      }
+      // Always live-apply so switching back to Automatic takes effect
+      // immediately
+      settings.manualScaling = stgManualScaling;
+      settings.manualUiScale = stgManualUiScale;
+
       ImGui::TextDisabled("* Requires restart");
       ImGui::Spacing();
 
@@ -2638,18 +2707,19 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     bool zDown = glfwGetKey(g_window, GLFW_KEY_Z) == GLFW_PRESS;
     bool yDown = glfwGetKey(g_window, GLFW_KEY_Y) == GLFW_PRESS;
     bool sDown = glfwGetKey(g_window, GLFW_KEY_S) == GLFW_PRESS;
+    bool plusDown = glfwGetKey(g_window, GLFW_KEY_EQUAL) == GLFW_PRESS;
+    bool minusDown = glfwGetKey(g_window, GLFW_KEY_MINUS) == GLFW_PRESS;
+
     bool didUndoRedo = false;
 
     if (!editingText) {
       if (ctrlDown && zDown && !ctrlZPrev) {
         performUndoRedo(true, undoStack, redoStack, ui, isPerformingUndoRedo);
         didUndoRedo = true;
-      }
-      if (ctrlDown && yDown && !ctrlYPrev) {
+      } else if (ctrlDown && yDown && !ctrlYPrev) {
         performUndoRedo(false, undoStack, redoStack, ui, isPerformingUndoRedo);
         didUndoRedo = true;
-      }
-      if (ctrlDown && sDown && !ctrlSPrev && loadedPresetIndex >= 0) {
+      } else if (ctrlDown && sDown && !ctrlSPrev && loadedPresetIndex >= 0) {
         if (currentCurveIndex >= 0 &&
             currentCurveIndex < (int)settings.curves.size()) {
           settings.curves[currentCurveIndex].curvePoints = hub.curvePoints;
@@ -2668,10 +2738,26 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         settings.save(settingsPath);
         commitLoadedPresetSnapshot();
       }
+      if (ctrlDown && plusDown && !ctrlPlusPrev) {
+        settings.manualScaling = true;
+        settings.manualUiScale =
+            std::clamp(settings.manualUiScale + 0.05f, 0.50f, 2.00f);
+        stgManualScaling = true;
+        stgManualUiScale = settings.manualUiScale;
+      }
+      if (ctrlDown && minusDown && !ctrlMinusPrev) {
+        settings.manualScaling = true;
+        settings.manualUiScale =
+            std::clamp(settings.manualUiScale - 0.05f, 0.50f, 2.00f);
+        stgManualScaling = true;
+        stgManualUiScale = settings.manualUiScale;
+      }
     }
     ctrlZPrev = ctrlDown && zDown;
     ctrlYPrev = ctrlDown && yDown;
     ctrlSPrev = ctrlDown && sDown;
+    ctrlPlusPrev = ctrlDown && plusDown;
+    ctrlMinusPrev = ctrlDown && minusDown;
 
     AppState currentState = snapshotAppState(ui);
     bool isEditingThisFrame = ImGui::IsAnyItemActive() || io.WantTextInput;

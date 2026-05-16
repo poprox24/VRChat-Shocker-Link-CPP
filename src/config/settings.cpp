@@ -118,6 +118,9 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
     gradientLeftColor = loadColor(j, "gradientLeftColor", gradientLeftColor);
     gradientRightColor = loadColor(j, "gradientRightColor", gradientRightColor);
 
+    manualScaling = j.value("manualScaling", false);
+    manualUiScale = j.value("manualUiScale", 1.0f);
+
     // VRChat Config
     vrchatHost = j.value("vrchatHost", "127.0.0.1");
     chatboxShockEnabled = j.value("chatboxShockEnabled", true);
@@ -283,6 +286,9 @@ nlohmann::json Settings::toJson() const {
   j["gradientLeftColor"] = saveColor(gradientLeftColor);
   j["gradientRightColor"] = saveColor(gradientRightColor);
 
+  j["manualScaling"] = manualScaling;
+  j["manualUIScale"] = manualUiScale;
+
   // VRChat
   j["vrchatHost"] = vrchatHost;
   j["chatboxShockEnabled"] = chatboxShockEnabled;
@@ -375,6 +381,8 @@ bool Settings::operator==(const Settings& other) const {
          chatboxShockEnabled == other.chatboxShockEnabled &&
          chatboxCooldownEnabled == other.chatboxCooldownEnabled &&
          parameters == other.parameters &&
+         manualScaling == other.manualScaling &&
+         manualUiScale == other.manualUiScale &&
          presets.size() == other.presets.size() &&
          vec4Eq(backgroundColor, other.backgroundColor) &&
          vec4Eq(outsideCurveBg, other.outsideCurveBg) &&

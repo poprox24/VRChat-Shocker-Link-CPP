@@ -122,6 +122,9 @@ class Settings {
   ImVec4 gradientLeftColor = {0.259f, 0.584f, 0.231f, 1.f};
   ImVec4 gradientRightColor = {0.431f, 0.090f, 0.231f, 1.f};
 
+  bool manualScaling = false;
+  float manualUiScale = 1.00f;
+
   // VRChat Config
   std::string vrchatHost = "127.0.0.1";
   bool chatboxShockEnabled = true;
