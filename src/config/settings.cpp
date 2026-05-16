@@ -287,7 +287,7 @@ nlohmann::json Settings::toJson() const {
   j["gradientRightColor"] = saveColor(gradientRightColor);
 
   j["manualScaling"] = manualScaling;
-  j["manualUIScale"] = manualUiScale;
+  j["manualUiScale"] = manualUiScale;
 
   // VRChat
   j["vrchatHost"] = vrchatHost;
