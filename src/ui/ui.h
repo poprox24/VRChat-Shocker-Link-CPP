@@ -60,6 +60,7 @@ static bool setWindowIcon(GLFWwindow* window) {
 static GLFWwindow* g_window = nullptr;
 static ShockerHub* g_hub = nullptr;
 static Settings* g_settingsForHotkey = nullptr;
+static std::atomic<bool> g_pendingClose{false};
 
 #ifdef _WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -102,7 +103,6 @@ static KeyCode g_x11GrabbedKey = 0;
 static unsigned int g_x11GrabbedMods = 0;
 static std::thread g_hotkeyThread;
 static std::atomic<bool> g_hotkeyThreadRunning{false};
-static std::atomic<bool> g_pendingClose{false};
 
 static int glfwKeyToKeysym(int glfwKey) {
   if (glfwKey >= GLFW_KEY_F1 && glfwKey <= GLFW_KEY_F25)
