@@ -212,7 +212,6 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
 void Settings::save(const std::string& path) {
   std::ofstream file(path);
   file << toJson().dump(2);
-  logMsg("Settings saved");
 }
 
 nlohmann::json Settings::toJson() const {
