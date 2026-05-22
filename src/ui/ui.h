@@ -922,7 +922,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   float settingsAnim = 0.f, statsAnim = 0.f;
   if (settings.showStats) statsAnim = 1.f;
 
-  // Initial window positionin
+  // Initial window positioning
   {
     float kSM_ =
         std::max(180.f, std::min(280.f, (float)settings.windowW * 0.32f));
@@ -1045,6 +1045,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   bool capturingHotkey = false;
   bool panicWasPressedLastFrame = false;
 
+  double lastCtrlSSaveTime = -999.0;
+  // Track window title dirty state to avoid redundant glfwSetWindowTitle calls
+  bool lastTitleDirty = false;
+
   std::array<CurvePoint, 3>& pts = hub.curvePoints;
   struct CurveCache {
     std::array<CurvePoint, 3> lastPts{};
@@ -1067,8 +1071,11 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         fabs(statsAnim - (settings.showStats ? 1.f : 0.f)) > 0.001f;
     bool settAnimating =
         fabs(settingsAnim - (showSettings ? 1.f : 0.f)) > 0.001f;
+
+    bool saveIndicatorActive = (glfwGetTime() - lastCtrlSSaveTime) < 2.0;
     bool needsAnimation = cooldownActive || !hub.isConnected ||
-                          statsAnimating || settAnimating || forceFrame;
+                          statsAnimating || settAnimating || forceFrame ||
+                          saveIndicatorActive;
 
     if (minimized) {
       glfwWaitEvents();
@@ -1209,19 +1216,10 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     float sepH = 1.f + ImGui::GetStyle().ItemSpacing.y * 2.f;
     float bottomH = rowH + logH + sepH;
 
-    // Left panel has a subtle background tint
-    ImGui::PushStyleColor(
-        ImGuiCol_ChildBg,
-        ImGui::ColorConvertFloat4ToU32(
-            ImVec4(settings.backgroundColor.x * 0.92f,
-                   settings.backgroundColor.y * 0.92f,
-                   settings.backgroundColor.z * 1.05f,
-                   1.f))
-            ? settings.backgroundColor  // Just use as-is, color is via
-                                        // alpha/blend below
-            : settings.backgroundColor);
-    ImGui::PopStyleColor();
-
+    ImGui::PushStyleColor(ImGuiCol_ChildBg,
+                          ImVec4(settings.backgroundColor.x * 0.92f,
+                                 settings.backgroundColor.y * 0.92f,
+                                 settings.backgroundColor.z * 1.05f, 1.f));
     ImGui::BeginChild("##controls", ImVec2(leftPanelWidth, -bottomH), true);
 
     // Presets section
@@ -1233,8 +1231,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       bool isDirty = isLoaded && isLoadedPresetDirty();
       bool isDefault = (settings.defaultPreset == i);
 
-      std::string label = hasData ? settings.presets[i]->name
-                                  : ("Preset " + std::to_string(i + 1));
+      std::string presetName = hasData ? settings.presets[i]->name
+                                       : ("Preset " + std::to_string(i + 1));
+      std::string label = presetName;
       if (isDirty) label += "  *";
 
       // Button color: dirty=amber, default=green, loaded=blue, else normal
@@ -1291,9 +1290,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
         if (boldFont) ImGui::PushFont(boldFont);
-        ImGui::Text("%s", hasData
-                              ? settings.presets[i]->name.c_str()
-                              : ("Preset " + std::to_string(i + 1)).c_str());
+        ImGui::Text("%s", presetName.c_str());
         if (boldFont) ImGui::PopFont();
         ImGui::Separator();
         ImGui::TextDisabled("LClick  Load");
@@ -1318,8 +1315,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       if (ImGui::BeginPopup(("##rename" + std::to_string(i)).c_str())) {
         static char nameBuf[64] = {};
+
         if (ImGui::IsWindowAppearing())
-          snprintf(nameBuf, sizeof(nameBuf), "%s", label.c_str());
+          snprintf(nameBuf, sizeof(nameBuf), "%s", presetName.c_str());
         ImGui::SetKeyboardFocusHere();
         if (ImGui::InputText("Name##rn", nameBuf, sizeof(nameBuf),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
@@ -1492,7 +1490,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       totalBtnsH = (0.8f + extraRows) * ImGui::GetFrameHeightWithSpacing() +
                    ImGui::GetStyle().WindowPadding.y;
     }
-    // Only jump to the bottom if there is actually space — prevents overlapping
+    // Only jump to the bottom if there is actually space - prevents overlapping
     // content above when the window is short or there are many presets.
     {
       float actionY = ImGui::GetWindowHeight() - totalBtnsH;
@@ -1543,6 +1541,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
          settings.parameters != stgParameters ||
          settings.chatboxShockEnabled != stgChatboxShockEnabled ||
          settings.chatboxCooldownEnabled != stgChatboxCooldownEnabled ||
+         settings.presetCount != stgPresetCount ||
+         settings.touchSelectThreshold != stgTouchThreshold ||
          origManualScaling != stgManualScaling ||
          origManualUiScale != stgManualUiScale);
 
@@ -1576,6 +1576,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     if (showSettings) ImGui::SetItemTooltip("Close without saving");
 
     ImGui::EndChild();
+    ImGui::PopStyleColor();
 
     // Curve editor
     ImGui::SameLine();
@@ -1618,9 +1619,28 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                                 ImGui::GetStyle().Colors[ImGuiCol_TabHovered]);
         }
 
-        std::string label = settings.curves[i].name.empty()
-                                ? ("Curve " + std::to_string(i + 1))
-                                : settings.curves[i].name;
+        std::string fullName = settings.curves[i].name.empty()
+                                   ? ("Curve " + std::to_string(i + 1))
+                                   : settings.curves[i].name;
+
+        // Truncate long tab names with ellipsis so they don't clip
+        // mid-character. Show full name in tooltip when truncated.
+        std::string label = fullName;
+        {
+          float availW =
+              tabButtonWidth - ImGui::GetStyle().FramePadding.x * 2.f - 4.f;
+          if (ImGui::CalcTextSize(fullName.c_str()).x > availW) {
+            std::string truncated = fullName;
+            while (truncated.size() > 1) {
+              truncated.pop_back();
+              if (ImGui::CalcTextSize((truncated + "...").c_str()).x <=
+                  availW) {
+                label = truncated + "...";
+                break;
+              }
+            }
+          }
+        }
 
         if (ImGui::Button(label.c_str(), {tabButtonWidth, 0})) {
           saveCurrentCurve();
@@ -1633,6 +1653,9 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           settings.minShockDuration = minDur;
           settings.maxShockDuration = maxDur;
         }
+
+        if (label != fullName && ImGui::IsItemHovered())
+          ImGui::SetTooltip("%s", fullName.c_str());
 
         ImGui::PopStyleColor(2);
 
@@ -2045,6 +2068,21 @@ inline void runUI(Settings& settings, ShockerHub& hub,
                                        barLeft, barRight, barRight, barLeft);
         }
         ImGui::Dummy({barLen + 4.f, 4.f});
+      }
+
+      // Ctrl+S save confirmation - fades over 2 seconds
+      {
+        double timeSinceSave = glfwGetTime() - lastCtrlSSaveTime;
+        if (timeSinceSave < 2.0) {
+          float alpha = (float)std::min(1.0, (2.0 - timeSinceSave) * 3.0);
+          ImGui::SameLine(0, 14);
+          ImGui::TextDisabled("|");
+          ImGui::SameLine(0, 14);
+          ImGui::PushStyleColor(ImGuiCol_Text,
+                                ImVec4(0.35f, 1.f, 0.55f, alpha));
+          ImGui::Text("Saved \xe2\x9c\x93");
+          ImGui::PopStyleColor();
+        }
       }
 
       // Version (right-aligned)
@@ -2741,6 +2779,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         settings.presets[loadedPresetIndex] = sp;
         settings.save(settingsPath);
         commitLoadedPresetSnapshot();
+        lastCtrlSSaveTime = glfwGetTime();
       }
       if (ctrlDown && plusDown && !ctrlPlusPrev) {
         settings.manualScaling = true;
@@ -2774,6 +2813,16 @@ inline void runUI(Settings& settings, ShockerHub& hub,
       lastCommittedState = snapshotAppState(ui);
     }
     stateChangedPreviousFrame = isEditingThisFrame;
+
+    // Update window title to reflect dirty state
+    {
+      bool anyDirty = isLoadedPresetDirty() || settingsDirty;
+      if (anyDirty != lastTitleDirty) {
+        glfwSetWindowTitle(g_window,
+                           anyDirty ? "Shocker Link *" : kWindowTitle);
+        lastTitleDirty = anyDirty;
+      }
+    }
 
     // Close warning modal
     if (g_pendingClose.exchange(false)) {
