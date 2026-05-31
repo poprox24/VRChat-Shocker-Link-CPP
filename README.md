@@ -33,6 +33,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
   - [Usage](#usage)
 - [Features](#features)
 - [Visual Parameters](#visual-parameters)
+- [Building](#building-from-source)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
