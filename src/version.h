@@ -1,6 +1,6 @@
 // clang-format off
 #pragma once
 
-#define APP_VERSION "1.7.11"
-#define APP_RELEASE_NAME "Responsive UI"
-#define APP_RELEASE_NOTES "Patch: - Responsive UI\n - UI elements match the size of the window"
+#define APP_VERSION "1.8.0"
+#define APP_RELEASE_NAME "Shared shocks"
+#define APP_RELEASE_NOTES "Patch:\n - New session window and parameter settings\n - You can now share shocks between friends"
