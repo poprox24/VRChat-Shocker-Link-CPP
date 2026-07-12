@@ -2,6 +2,9 @@
 
 #include <curl/curl.h>
 
+#include <chrono>
+#include <thread>
+
 #include "logger.h"
 
 #ifdef _WIN32
@@ -21,6 +24,7 @@ bool WsClient::connect(const std::string& url) {
   curl_easy_setopt(c, CURLOPT_URL, url.c_str());
   curl_easy_setopt(c, CURLOPT_CONNECT_ONLY, 2L);  // 2L => WebSocket mode
   curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
+  curl_easy_setopt(c, CURLOPT_MAXCONNECTS, 0L);
   // TLS verification uses the system CA store by default. If your platform has
   // no CA bundle you can point CURLOPT_CAINFO at one here.
 
@@ -70,34 +74,38 @@ void WsClient::close() {
 void WsClient::runLoop() {
   CURL* c = (CURL*)curl_;
 
-  curl_socket_t sock;
-  if (curl_easy_getinfo(c, CURLINFO_ACTIVESOCKET, &sock) != CURLE_OK) {
-    connected_ = false;
-    if (onState) onState(false, "no socket");
-    return;
-  }
+  curl_socket_t sock = CURL_SOCKET_BAD;
+  CURLcode gi = curl_easy_getinfo(c, CURLINFO_ACTIVESOCKET, &sock);
+  bool havePoll = (gi == CURLE_OK &&
+                   sock != CURL_SOCKET_BAD);  // CHANGED: also check the value
+  logMsg("[WS] runLoop entered, sock={}, havePoll={}, stop_={}", (long)sock,
+         havePoll, stop_.load());
 
   while (!stop_.load()) {
-    // Wait up to 100ms for readable data. The short timeout keeps us responsive
-    // to stop_ and lets us flush the send queue promptly.
+    // Poll only as a ~100ms wait, NOT as a gate. With CONNECT_ONLY, curl can
+    // hold received frames in its own buffer, so the fd never signals readable
+    // even when a message is waiting — we must call curl_ws_recv regardless.
 #ifdef _WIN32
     WSAPOLLFD pfd;
     pfd.fd = sock;
     pfd.events = POLLIN;
     pfd.revents = 0;
-    int pr = WSAPoll(&pfd, 1, 100);
+    if (havePoll)
+      WSAPoll(&pfd, 1, 100);
+    else
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
 #else
     struct pollfd pfd;
     pfd.fd = sock;
     pfd.events = POLLIN;
     pfd.revents = 0;
-    int pr = poll(&pfd, 1, 100);
+    if (havePoll)
+      poll(&pfd, 1, 100);
+    else
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
 #endif
 
-    if (pr < 0) break;  // poll error -> bail out
-    if (pr > 0 && (pfd.revents & POLLIN)) {
-      if (!pumpRecv()) break;  // server closed or fatal error
-    }
+    if (!pumpRecv()) break;
     if (!pumpSend()) break;
   }
 
