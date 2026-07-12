@@ -6,9 +6,7 @@
 
 <br />
 <div align="center">
-  <a href="https://private-user-images.githubusercontent.com/48130451/591418965-b465d8db-b01a-450f-acfc-ab1f20126a9a.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODAyNjgzNTYsIm5iZiI6MTc4MDI2ODA1NiwicGF0aCI6Ii80ODEzMDQ1MS81OTE0MTg5NjUtYjQ2NWQ4ZGItYjAxYS00NTBmLWFjZmMtYWIxZjIwMTI2YTlhLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNjA1MzElMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjYwNTMxVDIyNTQxNlomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTcyOGNhMzZkM2Y5ZTFiODczOTNkMGFhNjlmNTY2MDc3YmY1ZDJkNDZlMmViNDY2MzkzYzY4NjhiOTUzNTZjYTYmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0JnJlc3BvbnNlLWNvbnRlbnQtdHlwZT1pbWFnZSUyRnBuZyJ9.LRQ5Ugor99l7QXOxLrgYntDDC41vMwwsjd6vLU_pwHA">
-    <img width="1734" height="695" alt="image" src="https://github.com/user-attachments/assets/b465d8db-b01a-450f-acfc-ab1f20126a9a" />
-  </a>
+    <img width="1527" height="605" alt="image" src="https://github.com/user-attachments/assets/fcc58b44-e7f3-447d-9d97-f037bb5248d9" />
 
   <h3 align="center">ShockerLink</h3>
 
