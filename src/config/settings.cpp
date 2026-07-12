@@ -68,6 +68,8 @@ Settings::Settings(const std::string& path) : presets(3), parameters(1) {
             static_cast<CurveRange>(item.value("range", (int)CurveRange::Full));
         p.shockerIDs = item.value("shockerIDs", std::vector<std::string>{});
         p.randomOrSeq = item.value("randomOrSeq", false);
+        p.scope = static_cast<SessionScope>(
+            item.value("scope", (int)SessionScope::OnlyMe));
         parameters.push_back(p);
       }
       if (parameters.empty()) parameters.push_back(Parameter());
@@ -299,7 +301,8 @@ nlohmann::json Settings::toJson() const {
                                {"curveIndex", p.curveIndex},
                                {"range", (int)p.range},
                                {"shockerIDs", p.shockerIDs},
-                               {"randomOrSeq", p.randomOrSeq}});
+                               {"randomOrSeq", p.randomOrSeq},
+                               {"scope", (int)p.scope}});
   }
 
   // Save full curve snapshots per preset slot
