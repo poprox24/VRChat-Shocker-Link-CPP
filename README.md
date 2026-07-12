@@ -76,6 +76,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 ## Features
 
 - PiShock and OpenShock support via serial or API
+- Shared shocks between friends using room codes
 - Bezier intensity curve with weighted random sampling
 - Dynamic cooldown system
 - Presets with per-preset curve and view state
