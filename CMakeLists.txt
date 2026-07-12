@@ -35,6 +35,13 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
+FetchContent_Declare(curl
+  GIT_REPOSITORY https://github.com/curl/curl.git
+  GIT_TAG curl-8_11_0)
+set(CURL_USE_LIBPSL OFF CACHE BOOL "" FORCE)
+set(CURL_ENABLE_WEBSOCKETS ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(curl)
+
 set(SHOCKER_COMMON_SOURCES
     src/main.cpp
     src/shockerhub.cpp
