@@ -1,7 +1,12 @@
 #include "shockerhub.h"
 
 ShockerHub::ShockerHub(Settings& set)
-    : settings(set), oscSender(set.vrchatHost) {}
+    : settings(set), oscSender(set.vrchatHost) {
+  session = std::make_unique<SessionManager>(
+      settings.sessionServerUrl, [this](int strength, int durMs, bool vibrate) {
+        applyRemoteShock(strength, durMs, vibrate);
+      });
+}
 
 bool ShockerHub::connectSerial() {
   if (!settings.useSerial) {
@@ -73,6 +78,33 @@ void ShockerHub::queueShockFor(int parameterIndex, int duration, bool vibrate) {
          parameterIndex, range, vibrate});
   }
   queueCV.notify_one();
+}
+
+void ShockerHub::applyRemoteShock(int strength, int durationMs, bool vibrate) {
+  if (shocksDisabled.load()) return;
+  ShockRequest req;
+  req.fromRemote = true;
+  req.forcedStrength = std::clamp(strength, 0, 100);
+  req.forcedDurationMs = std::max(0, durationMs);
+  req.vibrate = vibrate;
+  {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    shockQueue.push(req);
+  }
+  queueCV.notify_one();
+}
+
+bool ShockerHub::broadcastIfNeeded(int parameterIndex, int strength,
+                                   int durationMs, bool vibrate) {
+  SessionScope scope = SessionScope::OnlyMe;
+  if (parameterIndex >= 0 && parameterIndex < (int)settings.parameters.size())
+    scope = settings.parameters[parameterIndex].scope;
+
+  if (session && session->isActive() &&
+      (scope == SessionScope::Everyone || scope == SessionScope::OnlyOthers))
+    session->broadcastShock(strength, durationMs, vibrate);
+
+  return scope != SessionScope::OnlyOthers;  // "Others only" => don't fire here
 }
 
 void ShockerHub::emptyQueue() {
@@ -595,6 +627,17 @@ void ShockerHub::workerLoop() {
       intensity = sampleIntensityLowerHalf(*pts, rng);
     else
       intensity = sampleIntensity(*pts, rng);
+
+    if (item.fromRemote) {
+      // Use the strength/duration the sender already resolved.
+      if (item.forcedStrength) intensity = *item.forcedStrength;
+      if (item.forcedDurationMs) durationMs = *item.forcedDurationMs;
+    } else if (!broadcastIfNeeded(parameterIndex, intensity, durationMs,
+                                  vibrate)) {
+      // "Others only" scope: sent to the room, don't shock ourselves.
+      continue;
+    }
+
     sendShock(durationMs, intensity, chosenShocker, vibrate);
 
     if (settings.cooldownEnabled)

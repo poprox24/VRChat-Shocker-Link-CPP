@@ -31,6 +31,7 @@ using namespace std::chrono;
 #include "imgui_internal.h"
 #include "implot.h"
 #include "logger.h"
+#include "session_ui.h"
 #include "settings.h"
 #include "shockerhub.h"
 #include "stats.h"
@@ -742,6 +743,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   g_settingsForHotkey = &settings;
   registerPanicHotkey(settings);
   g_wakeUiFunc = [] { glfwPostEmptyEvent(); };
+  if (hub.session) hub.session->onChange = [] { glfwPostEmptyEvent(); };
 
   glfwSetWindowCloseCallback(g_window, [](GLFWwindow* win) {
     glfwSetWindowShouldClose(win, GLFW_FALSE);
@@ -919,6 +921,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
   }
 
   bool showSettings = false;
+  bool showSessionPanel = false;
   float settingsAnim = 0.f, statsAnim = 0.f;
   if (settings.showStats) statsAnim = 1.f;
 
@@ -1487,7 +1490,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     float totalBtnsH;
     {
       int extraRows = (!hub.isConnected ? 1 : 0) + (hub.shocksDisabled ? 1 : 0);
-      totalBtnsH = (0.8f + extraRows) * ImGui::GetFrameHeightWithSpacing() +
+      totalBtnsH = (1.8f + extraRows) * ImGui::GetFrameHeightWithSpacing() +
                    ImGui::GetStyle().WindowPadding.y;
     }
     // Only jump to the bottom if there is actually space - prevents overlapping
@@ -1515,6 +1518,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
     }
 
     // Stats / Settings buttons - equal width, at very bottom
+    if (hub.session) drawSessionButton(*hub.session, showSessionPanel);
     float halfBtn =
         (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
         0.5f;
@@ -2181,7 +2185,7 @@ inline void runUI(Settings& settings, ShockerHub& hub,
         ImGui::PushID(i);
 
         // Parameter header
-        float paramH = ImGui::GetFrameHeightWithSpacing() * 3.8f +
+        float paramH = ImGui::GetFrameHeightWithSpacing() * 5.0f +
                        ImGui::GetStyle().WindowPadding.y * 2.f;
         ImGui::PushStyleColor(ImGuiCol_ChildBg,
                               ImVec4(settings.accentColor.x * 0.08f,
@@ -2262,6 +2266,43 @@ inline void runUI(Settings& settings, ShockerHub& hub,
           ImGui::Checkbox("Sequential##pseq", &param.randomOrSeq);
           ImGui::SetItemTooltip(
               "Cycle shockers sequentially instead of randomly.");
+        }
+
+        // Session scope — who this parameter's shocks apply to
+        {
+          ImGui::TextDisabled("Applies to:");
+          ImGui::SameLine();
+          auto scopeBtn = [&](const char* lbl, SessionScope s, float w) {
+            bool on = (param.scope == s);
+            ImVec4 col = on ? ImVec4(0.13f, 0.48f, 0.30f, 1.f)
+                            : ImGui::GetStyle().Colors[ImGuiCol_Button];
+            ImGui::PushStyleColor(ImGuiCol_Button, col);
+            ImGui::PushStyleColor(
+                ImGuiCol_ButtonHovered,
+                {col.x + 0.09f, col.y + 0.09f, col.z + 0.09f, 1.f});
+            if (ImGui::Button(lbl, {w, 0})) param.scope = s;
+            ImGui::PopStyleColor(2);
+          };
+          float w = (ImGui::GetContentRegionAvail().x -
+                     ImGui::GetStyle().ItemSpacing.x * 2.f) /
+                    3.f;
+          scopeBtn("Me", SessionScope::OnlyMe, w);
+          ImGui::SetItemTooltip(
+              "Me = fire only on your hardware.\n"
+              "Others = send to the room, skip yourself.\n"
+              "Everyone = fire locally AND send to the room.");
+          ImGui::SameLine(0, 2);
+          scopeBtn("Others", SessionScope::OnlyOthers, w);
+          ImGui::SetItemTooltip(
+              "Me = fire only on your hardware.\n"
+              "Others = send to the room, skip yourself.\n"
+              "Everyone = fire locally AND send to the room.");
+          ImGui::SameLine(0, 2);
+          scopeBtn("Everyone", SessionScope::Everyone, -1);
+          ImGui::SetItemTooltip(
+              "Me = fire only on your hardware.\n"
+              "Others = send to the room, skip yourself.\n"
+              "Everyone = fire locally AND send to the room.");
         }
 
         ImGui::EndChild();
@@ -2741,6 +2782,8 @@ inline void runUI(Settings& settings, ShockerHub& hub,
 
       ImGui::End();
     }
+
+    if (hub.session) drawSessionWindow(*hub.session, showSessionPanel);
 
     // Ctrl+Z / Y / S
     const bool editingText = io.WantTextInput;

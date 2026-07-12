@@ -48,6 +48,9 @@ set(SHOCKER_COMMON_SOURCES
     src/network/oscqclient.cpp
     src/network/mdns_advertiser.cpp
 
+    src/network/session.cpp
+    src/network/ws_client.cpp
+    
     lib/serialib.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp

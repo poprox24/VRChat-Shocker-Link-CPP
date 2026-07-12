@@ -40,18 +40,21 @@ struct SavedPreset {
 
 enum class CurveRange { Full = 0, FirstHalf = 1, SecondHalf = 2 };
 
+enum class SessionScope { Everyone = 0, OnlyMe = 1, OnlyOthers = 2 };
+
 struct Parameter {
   std::string name = "Shock";
   int curveIndex = 0;
   CurveRange range = CurveRange::Full;
   std::vector<std::string> shockerIDs;
   bool randomOrSeq = false;
+  SessionScope scope = SessionScope::OnlyMe;
 };
 
 inline bool operator==(const Parameter& a, const Parameter& b) {
   return a.name == b.name && a.curveIndex == b.curveIndex &&
          a.range == b.range && a.shockerIDs == b.shockerIDs &&
-         a.randomOrSeq == b.randomOrSeq;
+         a.randomOrSeq == b.randomOrSeq && a.scope == b.scope;
 }
 
 class Settings {
@@ -92,6 +95,10 @@ class Settings {
   // OpenShock API credentials
   std::string openshockApiToken = "";
   std::string openshockServerUrl = "api.openshock.app";
+
+  // Shared shocks session server URL
+  std::string sessionServerUrl =
+      "wss://shocker-session.hudec-matyas-2006.workers.dev";
 
   // Cooldown Config
   int baseCooldown = 2;

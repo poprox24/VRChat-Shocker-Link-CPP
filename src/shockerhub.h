@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -22,6 +23,7 @@
 #include "logger.h"
 #include "notifications.h"
 #include "oscsender.h"
+#include "session.h"
 #include "settings.h"
 #include "stats.h"
 #include "version.h"
@@ -56,6 +58,11 @@ class ShockerHub {
   std::array<CurvePoint, 3> curvePoints = {
       {{20.0, 0.8}, {50.0, 0.5}, {80.0, 0.2}}};
 
+  std::unique_ptr<SessionManager> session;
+  void applyRemoteShock(int strength, int durationMs, bool vibrate);
+  bool broadcastIfNeeded(int parameterIndex, int strength, int durationMs,
+                         bool vibrate);
+
   ShockerHub(Settings& set);
 
   bool connectSerial();
@@ -65,6 +72,11 @@ class ShockerHub {
     int parameterIndex = -1;
     CurveRange range = CurveRange::Full;
     bool vibrate = false;
+
+    // Remote/Shared shocks
+    std::optional<int> forcedStrength;
+    std::optional<int> forcedDurationMs;
+    bool fromRemote = false;
   };
 
   void queueShock(int duration = -1, bool vibrate = false);
