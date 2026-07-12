@@ -78,8 +78,6 @@ void WsClient::runLoop() {
   CURLcode gi = curl_easy_getinfo(c, CURLINFO_ACTIVESOCKET, &sock);
   bool havePoll = (gi == CURLE_OK &&
                    sock != CURL_SOCKET_BAD);  // CHANGED: also check the value
-  logMsg("[WS] runLoop entered, sock={}, havePoll={}, stop_={}", (long)sock,
-         havePoll, stop_.load());
 
   while (!stop_.load()) {
     // Poll only as a ~100ms wait, NOT as a gate. With CONNECT_ONLY, curl can
