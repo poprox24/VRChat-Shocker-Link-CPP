@@ -3,7 +3,9 @@
         {
             "name": "curl",
             "features": [
-                "websockets"
+                "ssl",
+                "websockets",
+                "non-http"
             ]
         }
     ]
