@@ -54,6 +54,13 @@ int main() {
   OscQueryServer oscQuery(Settings::oscPort, std::string(Settings::serviceName),
                           settings.vrchatHost);
   oscQuery.setParameterPaths(settings.getParameterPaths());
+  oscQuery.setFixedListenPaths(
+      Settings::makeOscPath(std::string(Settings::intensityInputParam)),
+      Settings::makeOscPath(std::string(Settings::isShockingInputParam)));
+  oscQuery.setIntensityCallback(
+      [&hub](float level) { hub.setIntensityLevel(level); });
+  oscQuery.setIsShockingCallback(
+      [&hub](bool active) { hub.setIsShocking(active); });
   if (!oscQuery.start()) {
     logMsg("Failed to start OSCQuery\n");
     hub.shutdown();

@@ -144,6 +144,12 @@ class Settings {
   static constexpr int oscPort = 39570;
   static constexpr std::string_view serviceName = "ShockerLink";
 
+  // Input parameters for manual "hold to shock" control, independent of
+  // the configurable curve-triggered "parameters" list. SHOCK/Intensity is an
+  // int 1-5 level; Shock/IsShocking is a bool gate.
+  static constexpr std::string_view intensityInputParam = "SHOCK/Intensity";
+  static constexpr std::string_view isShockingInputParam = "SHOCK/IsShocking";
+
   void pushShockerId(const std::string& id);
   static std::string makeOscPath(const std::string& name);
   std::vector<std::string> getParameterPaths() const;

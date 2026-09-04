@@ -72,11 +72,26 @@ class OscQueryServer {
   void stop();
   void setParameterPaths(const std::vector<std::string>& paths);
 
+  // Fixed, always-listened-to paths for the manual hold-shock control,
+  // separate from the configurable "parameters" list. Safe to call before
+  // start().
+  void setFixedListenPaths(const std::string& intensityPath,
+                           const std::string& isShockingPath);
+  void setIntensityCallback(std::function<void(float)> cb) {
+    intensityCb_ = std::move(cb);
+  }
+  void setIsShockingCallback(std::function<void(bool)> cb) {
+    isShockingCb_ = std::move(cb);
+  }
+
  private:
   int oscPort_, httpPort_ = -1;
   std::string serviceName_, hostIp_;
   std::vector<std::string> parameterPaths_;
   std::unordered_map<std::string, int> pathToParameterIndex_;
+  std::string intensityPath_, isShockingPath_;
+  std::function<void(float)> intensityCb_;
+  std::function<void(bool)> isShockingCb_;
   httplib::Server httpServer_;
   std::thread httpThread_;
   OscListener oscListener_;

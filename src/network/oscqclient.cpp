@@ -148,6 +148,13 @@ void OscQueryServer::setParameterPaths(const std::vector<std::string>& paths) {
     pathToParameterIndex_[parameterPaths_[i]] = i;
 }
 
+void OscQueryServer::setFixedListenPaths(const std::string& intensityPath,
+                                         const std::string& isShockingPath) {
+  std::lock_guard<std::mutex> lock(shockMutex);
+  intensityPath_ = intensityPath;
+  isShockingPath_ = isShockingPath;
+}
+
 void OscQueryServer::handleHttpRequest(const httplib::Request& req,
                                        httplib::Response& res) {
   bool isHostInfo = req.params.find("HOST_INFO") != req.params.end() ||
@@ -169,6 +176,16 @@ void OscQueryServer::handleHttpRequest(const httplib::Request& req,
     for (auto& path : parameterPaths_) {
       std::string name = path.substr(path.rfind('/') + 1);
       contents[name] = {{"FULL_PATH", path}, {"ACCESS", 2}, {"TYPE", "T"}};
+    }
+    if (!intensityPath_.empty()) {
+      std::string name = intensityPath_.substr(intensityPath_.rfind('/') + 1);
+      contents[name] = {
+          {"FULL_PATH", intensityPath_}, {"ACCESS", 2}, {"TYPE", "i"}};
+    }
+    if (!isShockingPath_.empty()) {
+      std::string name = isShockingPath_.substr(isShockingPath_.rfind('/') + 1);
+      contents[name] = {
+          {"FULL_PATH", isShockingPath_}, {"ACCESS", 2}, {"TYPE", "T"}};
     }
     nlohmann::json r = {{"FULL_PATH", "/"},
                         {"ACCESS", 0},
@@ -193,6 +210,16 @@ void OscQueryServer::onOscMessage(const std::string& path, float value) {
     if (it != lastValues_.end() && it->second == value) return;
     lastValues_[path] = value;
   }
+
+  if (!intensityPath_.empty() && path == intensityPath_) {
+    if (intensityCb_) intensityCb_(value);
+    return;
+  }
+  if (!isShockingPath_.empty() && path == isShockingPath_) {
+    if (isShockingCb_) isShockingCb_(value > 0.5f);
+    return;
+  }
+
   if (value > 0.f) {
     auto it = pathToParameterIndex_.find(path);
     if (it != pathToParameterIndex_.end()) {

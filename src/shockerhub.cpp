@@ -158,6 +158,10 @@ void ShockerHub::shutdown() {
   if (workerThread.joinable()) workerThread.join();
   serial.closeDevice();
 
+  continuousActive_ = false;
+  continuousCV_.notify_all();
+  if (continuousThread_.joinable()) continuousThread_.join();
+
   stopVisual = true;
   visualParamCV_.notify_one();
   if (visualParamThread.joinable()) visualParamThread.join();
@@ -646,17 +650,23 @@ void ShockerHub::workerLoop() {
 }
 
 void ShockerHub::sendShock(int durationMs, int strength,
-                           const std::string& shockerID, bool vibrate) {
+                           const std::string& shockerID, bool vibrate,
+                           bool silent) {
   if (settings.useSerial)
-    sendShockSerial(durationMs, strength, shockerID, vibrate);
+    sendShockSerial(durationMs, strength, shockerID, vibrate, silent);
   else
-    sendShockApi(durationMs, strength, shockerID, vibrate);
+    sendShockApi(durationMs, strength, shockerID, vibrate, silent);
 }
 
 // Stuff to do after the shock was sent
 // (Send chat message, handle cooldown math, send notifications, record shock)
+// silent=true is used by the continuous hold-shock pulses: those are on a
+// separate cooldown/stats-free path so a held button doesn't spam chatbox,
+// blow up shock stats, or fight the curve-trigger cooldown timer.
 void ShockerHub::afterShockSent(int durationMs, int strength,
-                                const std::string& opType) {
+                                const std::string& opType, bool silent) {
+  if (silent) return;
+
   lastTriggerTimeAtomic = getCurrentTime();
   shockTimestamps.push_back(lastTriggerTimeAtomic);
 
@@ -686,7 +696,8 @@ void ShockerHub::afterShockSent(int durationMs, int strength,
 }
 
 void ShockerHub::sendShockSerial(int durationMs, int strength,
-                                 const std::string& shockerID, bool vibrate) {
+                                 const std::string& shockerID, bool vibrate,
+                                 bool silent) {
   std::string opType = vibrate ? "vibrate" : "shock";
   std::string command;
 
@@ -715,7 +726,7 @@ void ShockerHub::sendShockSerial(int durationMs, int strength,
     return;
   }
 
-  afterShockSent(durationMs, strength, opType);
+  afterShockSent(durationMs, strength, opType, silent);
 }
 
 double ShockerHub::calcDynamicCooldown() const {
@@ -726,7 +737,8 @@ double ShockerHub::calcDynamicCooldown() const {
 }
 
 void ShockerHub::sendShockApi(int durationMs, int strength,
-                              const std::string& shockerID, bool vibrate) {
+                              const std::string& shockerID, bool vibrate,
+                              bool silent) {
   std::string opType = vibrate ? "vibrate" : "shock";
 
   try {
@@ -810,7 +822,7 @@ void ShockerHub::sendShockApi(int durationMs, int strength,
     return;
   }
 
-  afterShockSent(durationMs, strength, opType);
+  afterShockSent(durationMs, strength, opType, silent);
 }
 
 void ShockerHub::triggerVisualParams(float intensityPct, float durationSecs) {
@@ -866,5 +878,123 @@ void ShockerHub::visualParamLoop() {
         oscSender.sendFloat(std::string(kOscDurationSecs), 0.0f);
       }
     }
+  }
+}
+
+// Manual "hold to shock" control (SHOCK/Intensity int 1-5, Shock/IsShocking
+// bool). Fully separate from the curve/cooldown-driven queue above: while
+// IsShocking is true this resends short overlapping pulses at the current
+// intensity level until it goes false, rather than going through the
+// probabilistic curve/cooldown system (which would otherwise just eat the
+// first pulse and then block every subsequent one on cooldown).
+
+void ShockerHub::setIntensityLevel(float level) {
+  int lvl = std::clamp((int)std::lround(level), 1, 5);
+  intensityLevel_.store(lvl);
+}
+
+void ShockerHub::setIsShocking(bool active) {
+  bool was = continuousActive_.exchange(active);
+  if (was == active) return;  // no real transition, ignore
+
+  if (active) {
+    // Clean up a previous session's thread if it already wound down.
+    if (continuousThread_.joinable()) continuousThread_.join();
+    continuousThread_ = std::thread([this] { continuousShockLoop(); });
+  } else {
+    // Don't join here - this runs on the OSC receive thread and joining
+    // would block it for however long the in-flight pulse takes to send.
+    // The thread is reaped on the next activation or in shutdown().
+    continuousCV_.notify_all();
+  }
+}
+
+std::vector<std::string> ShockerHub::pickIdsForContinuous() {
+  std::lock_guard<std::mutex> lock(queueMutex);
+  std::vector<std::string> ids = settings.shockerIDs;
+  if (ids.empty()) {
+    for (const auto& param : settings.parameters)
+      for (const auto& id : param.shockerIDs)
+        if (std::find(ids.begin(), ids.end(), id) == ids.end())
+          ids.push_back(id);
+  }
+  return ids;
+}
+
+// Best-effort immediate stop. OpenShock's API has a real "Stop" control type;
+// PiShock/serial don't have an equivalent we can rely on, so those just wait
+// out the last pulse's (short) duration.
+void ShockerHub::sendStopSignal(const std::string& shockerID) {
+  if (settings.useSerial || settings.usePishock) return;
+
+  try {
+    nlohmann::json payload = {
+        {"shocks",
+         nlohmann::json::array({{{"id", shockerID}, {"type", "Stop"}}})},
+        {"customName", "ShockerLink"}};
+
+    std::string serverUrl = settings.openshockServerUrl;
+    if (serverUrl.starts_with("https://"))
+      serverUrl = serverUrl.substr(8);
+    else if (serverUrl.starts_with("http://"))
+      serverUrl = serverUrl.substr(7);
+    if (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
+
+    winHttpRequest("POST", "https://" + serverUrl + "/2/shockers/control",
+                   payload.dump(),
+                   {"openshocktoken: " + settings.openshockApiToken});
+  } catch (...) {
+    // Best-effort; the pulse will expire on its own shortly regardless.
+  }
+}
+
+void ShockerHub::continuousShockLoop() {
+  constexpr int kPulseIntervalMs = 300;
+  constexpr int kPulseDurationMs = 600;  // > interval, so pulses overlap
+
+  auto ids = pickIdsForContinuous();
+  if (ids.empty()) {
+    logMsg("[ShockerHub] IsShocking: no shocker IDs configured, ignoring\n");
+    continuousActive_ = false;
+    return;
+  }
+
+  double holdStart = getCurrentTime();
+  int lastPct = 20;
+  bool announced = false;
+
+  std::unique_lock<std::mutex> lock(continuousMutex_);
+  while (continuousActive_.load() && !stopWorker.load()) {
+    lock.unlock();
+
+    if (!shocksDisabled.load()) {
+      int level = intensityLevel_.load();
+      lastPct = std::clamp((level < 1 ? 1 : level) * 20, 20, 100);
+      for (auto& id : ids)
+        sendShock(kPulseDurationMs, lastPct, id, /*vibrate=*/false,
+                  /*silent=*/true);
+      if (!announced) {
+        if (settings.chatboxShockEnabled)
+          oscSender.send(fmt::format("\xe2\x9a\xa1 Holding {}%", lastPct));
+        logMsg("[ShockerHub] Continuous shock started ({}%)\n", lastPct);
+        announced = true;
+      }
+    }
+
+    lock.lock();
+    continuousCV_.wait_for(
+        lock, std::chrono::milliseconds(kPulseIntervalMs),
+        [this] { return !continuousActive_.load() || stopWorker.load(); });
+  }
+  lock.unlock();
+
+  for (auto& id : ids) sendStopSignal(id);
+
+  if (announced) {
+    double heldSec = getCurrentTime() - holdStart;
+    gStats.recordShock((int)(heldSec * 1000.0), lastPct);
+    if (settings.chatboxShockEnabled)
+      oscSender.send(fmt::format("\xe2\x9a\xa1 Released ({:.1f}s)", heldSec));
+    logMsg("[ShockerHub] Continuous shock stopped after {:.1f}s\n", heldSec);
   }
 }

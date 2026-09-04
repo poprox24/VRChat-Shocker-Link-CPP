@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <memory>
@@ -93,6 +94,12 @@ class ShockerHub {
   bool resolveOpenShockApi();
   bool resolvePiShockApi();
 
+  // Manual "hold to shock" control, driven by the fixed SHOCK/Intensity
+  // (int 1-5) and Shock/IsShocking (bool) avatar parameters. Independent of
+  // the curve/cooldown-driven queue above.
+  void setIntensityLevel(float level);  // raw OSC value, expected 1-5
+  void setIsShocking(bool active);
+
  private:
   Settings& settings;
   std::unordered_map<int, int> lastShockerIndexPerParam;
@@ -124,13 +131,24 @@ class ShockerHub {
   void startWorkerThread();
   void workerLoop();
   void sendShock(int durationMs, int strength, const std::string& shockerID,
-                 bool vibrate);
-  void afterShockSent(int durationMs, int strength, const std::string& opType);
+                 bool vibrate, bool silent = false);
+  void afterShockSent(int durationMs, int strength, const std::string& opType,
+                      bool silent);
   void sendShockSerial(int durationMs, int strength,
-                       const std::string& shockerID, bool vibrate);
+                       const std::string& shockerID, bool vibrate, bool silent);
   double calcDynamicCooldown() const;
   void sendShockApi(int durationMs, int strength, const std::string& shockerID,
-                    bool vibrate);
+                    bool vibrate, bool silent);
+
+  // Manual hold-shock state
+  std::atomic<int> intensityLevel_{-1};  // 1-5, -1 = not yet received
+  std::atomic<bool> continuousActive_{false};
+  std::thread continuousThread_;
+  std::mutex continuousMutex_;
+  std::condition_variable continuousCV_;
+  std::vector<std::string> pickIdsForContinuous();
+  void continuousShockLoop();
+  void sendStopSignal(const std::string& shockerID);
 
   struct VisualUpdate {
     float intensityPct;
